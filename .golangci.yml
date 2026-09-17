@@ -16,6 +16,12 @@ linters:
     - errorlint      # errors.Is/As instead of == and type assertions (apierr depends on this)
     - gocritic
     - gosec
+    # No misspell locale is configured on purpose. PayCLI's prose is British
+    # ("normalise", "behaviour") while the Payload API it mirrors is American
+    # and appears verbatim in identifiers and strings: `localized: true` is a
+    # Payload field name, `Unauthorized` is an HTTP status. Pinning either
+    # locale makes the linter demand that one of those two be wrong. With no
+    # locale, misspell still catches real typos.
     - misspell
     - nilerr
     - noctx          # every outbound request carries a context (§6 deadlines)
@@ -64,14 +70,6 @@ linters:
     staticcheck:
       checks:
         - all
-    misspell:
-      # No locale is set on purpose. PayCLI's prose is British ("normalise",
-      # "behaviour") while the Payload API it mirrors is American and appears
-      # verbatim in identifiers and strings: `localized: true` is a Payload
-      # field name, `Unauthorized` is an HTTP status. Pinning either locale
-      # makes the linter demand that one of those two be wrong. Unset, misspell
-      # still catches real typos.
-
   exclusions:
     generated: lax
     presets:
