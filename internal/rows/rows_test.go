@@ -2,6 +2,7 @@ package rows
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -299,12 +300,11 @@ func TestResolveOneErrors(t *testing.T) {
 	}
 }
 
+// asErr is errors.As under a generic signature, so a wrapped error is still
+// matched — a bare type assertion would pass today and break the moment a
+// caller wraps one of these with %w.
 func asErr[T error](err error, target *T) bool {
-	t, ok := err.(T)
-	if ok {
-		*target = t
-	}
-	return ok
+	return errors.As(err, target)
 }
 
 // The emitted selector has to survive the next edit in the pipe, which an index

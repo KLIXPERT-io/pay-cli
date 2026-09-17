@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -285,15 +286,20 @@ func parseSelector(raw, where string) (rows.Selector, error) {
 // resolveErr converts the rows package's typed misses into PayCLI errors, with
 // the rows that DO exist attached — a "no such block" that does not say what
 // is there costs the caller another round trip to find out.
+// It matches with errors.As rather than a type switch: the rows package returns
+// these bare today, but a future caller wrapping one with %w must not silently
+// downgrade a precise selector_no_match into a generic invalid_args.
 func resolveErr(err error, rf *rowField) error {
-	switch e := err.(type) {
-	case *rows.NoMatchError:
-		return apierr.New(apierr.CodeSelectorNoMatch, "%s", e.Error()).
-			WithDidYouMean(selectorSuggestions(e.Sel, e.Have)...).
-			WithHint("%s", haveHint(e.Have))
-	case *rows.AmbiguousError:
-		return apierr.New(apierr.CodeSelectorAmbiguous, "%s", e.Error()).
-			WithDidYouMean(matchedSelectors(e.Matched, e.Have)...).
+	var miss *rows.NoMatchError
+	if errors.As(err, &miss) {
+		return apierr.New(apierr.CodeSelectorNoMatch, "%s", miss.Error()).
+			WithDidYouMean(selectorSuggestions(miss.Sel, miss.Have)...).
+			WithHint("%s", haveHint(miss.Have))
+	}
+	var amb *rows.AmbiguousError
+	if errors.As(err, &amb) {
+		return apierr.New(apierr.CodeSelectorAmbiguous, "%s", amb.Error()).
+			WithDidYouMean(matchedSelectors(amb.Matched, amb.Have)...).
 			WithHint("address one row (the did_you_mean list is ready to paste), or pass --all where the verb accepts it")
 	}
 	if err != nil {
