@@ -110,7 +110,7 @@ func PathsFor(env Env, goos, home string) Paths {
 		if value == "" {
 			return false
 		}
-		*field = filepath.Clean(value)
+		*field = cleanFor(goos, value)
 		*source = src
 		return true
 	}
@@ -122,47 +122,47 @@ func PathsFor(env Env, goos, home string) Paths {
 	case set(&p.ConfigDir, &cfgSrc, env.Get("PAY_CONFIG_DIR"), "env:PAY_CONFIG_DIR"):
 	case set(&p.ConfigDir, &cfgSrc, payHome, "env:PAY_HOME"):
 	case goos == "windows":
-		set(&p.ConfigDir, &cfgSrc, filepath.Join(appData(env, home), "pay"), "windows:%AppData%")
+		set(&p.ConfigDir, &cfgSrc, joinFor(goos, appData(env, home), "pay"), "windows:%AppData%")
 	default:
 		if xdg := env.Get("XDG_CONFIG_HOME"); xdg != "" {
-			set(&p.ConfigDir, &cfgSrc, filepath.Join(xdg, "pay"), "env:XDG_CONFIG_HOME")
+			set(&p.ConfigDir, &cfgSrc, joinFor(goos, xdg, "pay"), "env:XDG_CONFIG_HOME")
 		} else {
-			set(&p.ConfigDir, &cfgSrc, filepath.Join(home, ".config", "pay"), "default")
+			set(&p.ConfigDir, &cfgSrc, joinFor(goos, home, ".config", "pay"), "default")
 		}
 	}
 
 	// cache dir
 	switch {
 	case set(&p.CacheDir, &cacheSrc, env.Get("PAY_CACHE_DIR"), "env:PAY_CACHE_DIR"):
-	case set(&p.CacheDir, &cacheSrc, join(payHome, "cache"), "env:PAY_HOME"):
+	case set(&p.CacheDir, &cacheSrc, joinUnder(goos, payHome, "cache"), "env:PAY_HOME"):
 	case goos == "windows":
-		set(&p.CacheDir, &cacheSrc, filepath.Join(localAppData(env, home), "pay", "cache"), "windows:%LocalAppData%")
+		set(&p.CacheDir, &cacheSrc, joinFor(goos, localAppData(env, home), "pay", "cache"), "windows:%LocalAppData%")
 	default:
 		if xdg := env.Get("XDG_CACHE_HOME"); xdg != "" {
-			set(&p.CacheDir, &cacheSrc, filepath.Join(xdg, "pay"), "env:XDG_CACHE_HOME")
+			set(&p.CacheDir, &cacheSrc, joinFor(goos, xdg, "pay"), "env:XDG_CACHE_HOME")
 		} else {
-			set(&p.CacheDir, &cacheSrc, filepath.Join(home, ".cache", "pay"), "default")
+			set(&p.CacheDir, &cacheSrc, joinFor(goos, home, ".cache", "pay"), "default")
 		}
 	}
 
 	// state dir
 	switch {
 	case set(&p.StateDir, &stateSrc, env.Get("PAY_STATE_DIR"), "env:PAY_STATE_DIR"):
-	case set(&p.StateDir, &stateSrc, join(payHome, "state"), "env:PAY_HOME"):
+	case set(&p.StateDir, &stateSrc, joinUnder(goos, payHome, "state"), "env:PAY_HOME"):
 	case goos == "windows":
-		set(&p.StateDir, &stateSrc, filepath.Join(localAppData(env, home), "pay", "state"), "windows:%LocalAppData%")
+		set(&p.StateDir, &stateSrc, joinFor(goos, localAppData(env, home), "pay", "state"), "windows:%LocalAppData%")
 	default:
 		if xdg := env.Get("XDG_STATE_HOME"); xdg != "" {
-			set(&p.StateDir, &stateSrc, filepath.Join(xdg, "pay"), "env:XDG_STATE_HOME")
+			set(&p.StateDir, &stateSrc, joinFor(goos, xdg, "pay"), "env:XDG_STATE_HOME")
 		} else {
-			set(&p.StateDir, &stateSrc, filepath.Join(home, ".local", "state", "pay"), "default")
+			set(&p.StateDir, &stateSrc, joinFor(goos, home, ".local", "state", "pay"), "default")
 		}
 	}
 
-	p.ConfigFile = filepath.Join(p.ConfigDir, ConfigFileName)
+	p.ConfigFile = joinFor(goos, p.ConfigDir, ConfigFileName)
 	fileSrc := "default"
 	if v, ok := env.Lookup("PAY_CONFIG"); ok {
-		p.ConfigFile = filepath.Clean(v)
+		p.ConfigFile = cleanFor(goos, v)
 		fileSrc = "env:PAY_CONFIG"
 	}
 

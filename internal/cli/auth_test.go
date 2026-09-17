@@ -313,7 +313,7 @@ func TestAuthFixPermsRestoresTheMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
 		t.Errorf("mode = %v after fix-perms", st.Mode().Perm())
 	}
 	fixed := cliRun(t, invocation{Home: home, Args: []string{"auth", "test"}})

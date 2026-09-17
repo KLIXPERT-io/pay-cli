@@ -527,6 +527,11 @@ Full list: [INSTALL.md](./INSTALL.md) and `pay explain --section connection`.
   contains an `api_key` key at any depth, and tells you the three places it belongs.
 * **`credentials.json` is `0600`**, and PayCLI refuses to read it when the permissions are
   wider (`auth_insecure_permissions`, exit 2; `pay auth fix-perms` repairs it).
+  **On Windows this check does not apply:** NTFS has no Unix mode bits, `os.Chmod` only
+  toggles the read-only attribute, and Go reports `0666` regardless. Confidentiality there
+  rests on the file living under your `%AppData%` profile directory. If you need a stronger
+  guarantee on Windows, use `--keyring` (Windows Credential Manager) or a
+  `credential_helper`.
 * **The OS keychain is opt-in**, never the default, and never blocks: a keychain that is
   unreachable is a warning, not a failure.
 * **Redaction is structural, not textual.** Secret-shaped keys (`apiKey`, `hash`, `salt`,

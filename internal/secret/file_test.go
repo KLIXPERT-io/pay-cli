@@ -50,8 +50,10 @@ func TestFileStoreRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	if runtime.GOOS != "windows" {
-		if perm := fi.Mode().Perm(); perm != FilePerm {
-			t.Errorf("mode = %04o, want 0600", perm)
+		if runtime.GOOS != "windows" {
+			if perm := fi.Mode().Perm(); perm != FilePerm {
+				t.Errorf("mode = %04o, want 0600", perm)
+			}
 		}
 	}
 

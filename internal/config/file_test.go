@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -157,8 +158,13 @@ func TestSaveIsAtomicAnd0600(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat: %v", err)
 	}
-	if perm := fi.Mode().Perm(); perm != FilePerm {
-		t.Errorf("mode = %04o, want %04o", perm, FilePerm)
+	// Windows has no Unix mode bits: os.Chmod only toggles the read-only
+	// attribute, so Perm() reports 0666 there. Confidentiality on Windows comes
+	// from the file living under %AppData%, not from the mode.
+	if runtime.GOOS != "windows" {
+		if perm := fi.Mode().Perm(); perm != FilePerm {
+			t.Errorf("mode = %04o, want %04o", perm, FilePerm)
+		}
 	}
 	entries, _ := os.ReadDir(filepath.Dir(path))
 	if len(entries) != 1 {
