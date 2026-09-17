@@ -89,6 +89,12 @@ type Paths struct {
 	ConfigFile string
 
 	Sources map[string]string
+
+	// goos is the platform these paths were resolved FOR, captured so the
+	// derived-path helpers below join with the same separator rules PathsFor
+	// used. Unexported: it is an implementation detail, not part of the
+	// documented Paths surface, and Map() must stay at 8 entries.
+	goos string
 }
 
 // PathsFor is the pure form of path resolution: everything it needs is an
@@ -103,7 +109,7 @@ type Paths struct {
 // the more specific variable still wins over it — that is the conventional
 // reading, and it lets a test pin PAY_HOME while redirecting just the cache.
 func PathsFor(env Env, goos, home string) Paths {
-	p := Paths{Sources: map[string]string{}}
+	p := Paths{Sources: map[string]string{}, goos: goos}
 	payHome := env.Get("PAY_HOME")
 
 	set := func(field *string, source *string, value, src string) bool {
@@ -191,7 +197,7 @@ func (p Paths) WithConfigFile(path string) Paths {
 		return p
 	}
 	out := p.clone()
-	out.ConfigFile = filepath.Clean(path)
+	out.ConfigFile = cleanFor(p.goos, path)
 	out.Sources["config_file"] = "flag"
 	return out
 }
@@ -202,7 +208,7 @@ func (p Paths) WithCacheDir(dir string) Paths {
 		return p
 	}
 	out := p.clone()
-	out.CacheDir = filepath.Clean(dir)
+	out.CacheDir = cleanFor(p.goos, dir)
 	out.Sources["cache_dir"] = "config:[cache].dir"
 	return out
 }
@@ -217,20 +223,20 @@ func (p Paths) clone() Paths {
 }
 
 // CredentialsFile is §4.4's 0600 credential store.
-func (p Paths) CredentialsFile() string { return filepath.Join(p.ConfigDir, CredentialsFileName) }
+func (p Paths) CredentialsFile() string { return joinFor(p.goos, p.ConfigDir, CredentialsFileName) }
 
 // AuditFile is §14's 0600 append-only audit log.
-func (p Paths) AuditFile() string { return filepath.Join(p.ConfigDir, AuditFileName) }
+func (p Paths) AuditFile() string { return joinFor(p.goos, p.ConfigDir, AuditFileName) }
 
 // CacheRoot is the generation directory; `rm -rf` on it must only ever cost
 // time (§4.1).
-func (p Paths) CacheRoot() string { return filepath.Join(p.CacheDir, CacheGeneration) }
+func (p Paths) CacheRoot() string { return joinFor(p.goos, p.CacheDir, CacheGeneration) }
 
 // ScopeDir is the cache directory for one §8.1 scope key.
-func (p Paths) ScopeDir(scope string) string { return filepath.Join(p.CacheRoot(), scope) }
+func (p Paths) ScopeDir(scope string) string { return joinFor(p.goos, p.CacheRoot(), scope) }
 
 // UpdateStateFile is §15's self-update bookkeeping.
-func (p Paths) UpdateStateFile() string { return filepath.Join(p.StateDir, UpdateStateFileName) }
+func (p Paths) UpdateStateFile() string { return joinFor(p.goos, p.StateDir, UpdateStateFileName) }
 
 // Map renders the paths for `pay config paths --output json`.
 func (p Paths) Map() map[string]string {
