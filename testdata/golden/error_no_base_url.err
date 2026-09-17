@@ -1,0 +1,1 @@
+pay: config_missing (exit 9): no base_url is configured for profile "default" — hint: pay auth login --profile default --base-url http://localhost:3000, or set PAY_BASE_URL

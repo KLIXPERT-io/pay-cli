@@ -1,0 +1,39 @@
+# Dependabot keeps the two things that can rot without anyone noticing current:
+# the Go module graph and the pinned action SHAs.
+#
+# Both are grouped into a single weekly pull request per ecosystem. Ungrouped
+# updates produce one PR per dependency, which nobody reads, which is how a
+# repository ends up with thirty open Dependabot PRs and an out-of-date graph.
+version: 2
+
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: tuesday
+      time: "07:00"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      go-dependencies:
+        patterns: ["*"]
+        update-types: [minor, patch]
+    # Major bumps land as their own PR: the 8 direct dependencies of §3.2 are
+    # pinned deliberately and a major is a decision, not a chore.
+    labels: [dependencies, go]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: tuesday
+      time: "07:00"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(actions)"
+    groups:
+      github-actions:
+        patterns: ["*"]
+    labels: [dependencies, github-actions]

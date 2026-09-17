@@ -1,0 +1,13 @@
+{
+  "errors": [
+    {
+      "locations": [
+        {
+          "column": 36,
+          "line": 1
+        }
+      ],
+      "message": "Cannot query field \"nope\" on type \"Query\"."
+    }
+  ]
+}

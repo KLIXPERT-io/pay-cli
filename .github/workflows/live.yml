@@ -1,0 +1,112 @@
+name: live
+
+# The integration suite: PayCLI against a real Payload 3.x instance.
+#
+# Nightly plus manual. It is guarded on the repository name so that a fork does
+# not get a red cross every night for infrastructure it does not have.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      payload_version:
+        description: "Payload version for the fixture app (npm dist-tag or exact version)"
+        required: false
+        default: "3"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live
+  cancel-in-progress: true
+
+jobs:
+  live:
+    if: github.repository == 'KLIXPERT-io/pay-cli'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: payload
+          POSTGRES_PASSWORD: payload
+          POSTGRES_DB: payload
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U payload"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      PAY_NO_UPDATE: "1"
+      GOTOOLCHAIN: auto
+      DATABASE_URI: postgres://payload:payload@localhost:5432/payload
+      PAYLOAD_SECRET: ci-only-not-a-real-secret
+      PAY_TEST_BASE_URL: http://localhost:3900
+      # The fixture app seeds this key onto its first user. It is a CI-only
+      # value and never appears in a committed fixture: scripts/arch-lint.sh
+      # fails the build if a key literal reaches testdata/.
+      PAY_TEST_API_KEY: ${{ secrets.PAY_TEST_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: .go-version
+          cache: true
+      - uses: actions/setup-node@v5.0.0
+        with:
+          node-version: 22
+
+      - name: Boot the Payload fixture app
+        run: |
+          set -euo pipefail
+          if [ ! -d testdata/fixture-app ]; then
+            echo "::warning::testdata/fixture-app is absent; the live suite has nothing to run against."
+            echo "FIXTURE_APP=0" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          cd testdata/fixture-app
+          npm ci --no-audit --no-fund
+          npm run build
+          PORT=3900 npm start &
+          echo "FIXTURE_APP=1" >> "$GITHUB_ENV"
+
+      - name: Wait for the instance
+        if: env.FIXTURE_APP == '1'
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS "$PAY_TEST_BASE_URL/api/access" >/dev/null 2>&1; then
+              echo "up after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::the fixture app never became reachable at $PAY_TEST_BASE_URL"
+          exit 1
+
+      - name: make test-live
+        if: env.FIXTURE_APP == '1'
+        run: make test-live
+
+      - name: make test-contract
+        if: env.FIXTURE_APP == '1'
+        run: make test-contract
+
+      # The fixtures are recorded from the same instance the contract suite
+      # runs against. A diff here means the fixtures have drifted from reality,
+      # which is the one way an offline test suite can silently start testing
+      # a Payload that no longer exists.
+      - name: fixtures still match the live instance
+        if: env.FIXTURE_APP == '1'
+        continue-on-error: true
+        run: |
+          make fixtures
+          if ! git diff --quiet testdata/fixtures; then
+            echo "::warning::recorded fixtures differ from the live instance:"
+            git diff --stat testdata/fixtures
+          fi

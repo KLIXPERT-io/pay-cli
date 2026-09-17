@@ -1,0 +1,28 @@
+{
+  "errors": [
+    {
+      "data": {
+        "collection": "pages",
+        "errors": [
+          {
+            "label": "Title",
+            "message": "Pflichtfeld",
+            "path": "title"
+          },
+          {
+            "label": "Content > Layout",
+            "message": "Dieses Feld muss mindestens 1 Row enthalten.",
+            "path": "layout"
+          },
+          {
+            "label": "Slug",
+            "message": "Pflichtfeld",
+            "path": "slug"
+          }
+        ]
+      },
+      "message": "Die folgenden Felder sind nicht korrekt: Title, Content > Layout, Slug",
+      "name": "ValidationError"
+    }
+  ]
+}

@@ -1,0 +1,150 @@
+name: ci
+
+# The test workflow. Everything here is offline: no job in this file may reach
+# a Payload instance or the release API. The live suite is live.yml.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # No unit test may contact the release API.
+  PAY_NO_UPDATE: "1"
+  GOTOOLCHAIN: auto
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: .go-version
+          cache: true
+
+      - name: gofmt
+        run: |
+          out="$(gofmt -l . | grep -v '^$' || true)"
+          if [ -n "$out" ]; then
+            echo "::error::these files are not gofmt-clean:"
+            echo "$out"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: staticcheck
+        run: go tool staticcheck ./...
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: latest
+          args: --timeout=5m
+
+      - name: go mod tidy is a no-op
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+
+      # The ARCHITECTURE.md §3.1 rules: os.Stdout/os.Getenv/time.Now
+      # confinement, http.Request construction, the reactive-invalidation ban,
+      # plaintext api_key, and the "PayCLI never writes project source" product
+      # invariant.
+      - name: arch-lint
+        run: ./scripts/arch-lint.sh
+
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows is not optional: lock_windows.go, platform_windows.go, the
+        # rename-self dance and the %LocalAppData% paths are otherwise never
+        # exercised by anything.
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: .go-version
+          cache: true
+
+      - name: test
+        shell: bash
+        run: |
+          export PAY_HOME="$(mktemp -d)"
+          go test -race -shuffle=on -count=1 ./...
+
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: .go-version
+          cache: true
+
+      # A release config that does not compile must fail on the pull request,
+      # not on tag day.
+      - name: goreleaser check
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: check
+
+      - name: goreleaser snapshot
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --snapshot --clean --skip=publish,sign,sbom
+
+      - name: the built binary answers
+        run: |
+          bin="$(find dist -name pay -type f -perm -u+x | grep linux_amd64 | head -n1)"
+          test -n "$bin"
+          "$bin" version
+          "$bin" explain --help >/dev/null
+
+  installers:
+    name: installers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: install.sh is POSIX sh and its dry run works
+        run: |
+          sh -n install.sh
+          sh install.sh --dry-run --version v0.1.0 --dir /tmp/paybin
+
+      - name: shellcheck
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          # Errors fail the build; style warnings do not. The point of this
+          # step is "this script has a bug", not "this script has an opinion".
+          shellcheck --severity=error -s sh   install.sh
+          shellcheck --severity=error -s bash scripts/arch-lint.sh
+
+      - name: install.ps1 parses
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            "$PWD/install.ps1", [ref]$null, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { $errors; exit 1 }

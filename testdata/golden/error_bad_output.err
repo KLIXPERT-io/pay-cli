@@ -1,0 +1,1 @@
+pay: invalid_option (exit 5): "yaml" is not a valid --output format. Valid values: json, jsonl, id, raw, csv, table. — hint: The default is json, which is the format agents should use. `pay explain --section output` describes each one.

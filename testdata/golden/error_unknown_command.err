@@ -1,0 +1,1 @@
+pay: invalid_args (exit 5): unknown command "frobnicate" for "pay" — hint: Check the flag values against `pay <command> --help`.

@@ -1,0 +1,28 @@
+{
+  "errors": [
+    {
+      "data": {
+        "collection": "pages",
+        "errors": [
+          {
+            "label": "Title",
+            "message": "This field is required.",
+            "path": "title"
+          },
+          {
+            "label": "Content > Layout",
+            "message": "This field requires at least 1 Row.",
+            "path": "layout"
+          },
+          {
+            "label": "Slug",
+            "message": "This field is required.",
+            "path": "slug"
+          }
+        ]
+      },
+      "message": "The following fields are invalid: Title, Content > Layout, Slug",
+      "name": "ValidationError"
+    }
+  ]
+}

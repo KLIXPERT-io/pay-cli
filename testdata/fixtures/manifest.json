@@ -1,0 +1,3770 @@
+{
+  "capabilities": {
+    "custom_endpoints": [],
+    "graphql": {
+      "introspection": true,
+      "mode": "ok",
+      "path": "/api/graphql"
+    },
+    "jobs": {
+      "collection": "payload-jobs",
+      "stats_global": "payload-jobs-stats"
+    },
+    "localization": {
+      "default": null,
+      "default_source": "unknown",
+      "enabled": false,
+      "enabled_source": "graphql-arg-absent",
+      "fallback_default": null,
+      "locale_count": null,
+      "locales": [],
+      "locales_source": "graphql-arg-absent"
+    },
+    "method_override": true,
+    "og": true,
+    "preferences": {
+      "collection": "payload-preferences"
+    },
+    "reorder": false
+  },
+  "cli_version": "dev",
+  "collections": [
+    {
+      "date_fields": [
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 12,
+      "fields_sha256": "bc55e873b46451ca9ebbffbe28d1938eb5bd252881561ea1263b92f23b47f79d",
+      "fields_shard": "fields/categories.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCategories",
+        "plural": "Categories",
+        "singular": "Category",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Categories",
+        "singular": "Category",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": true,
+        "delete": true,
+        "field_level": false,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": true
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "categories",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "title",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "occurredAt",
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 21,
+      "fields_sha256": "36f55c89169d910bcdc9faf6c2abc448c000f9011077f847ce847a13b24a45f3",
+      "fields_shard": "fields/crm-activities.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmActivities",
+        "plural": "CrmActivities",
+        "singular": "CrmActivity",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Activities",
+        "singular": "Crm Activity",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": true,
+        "delete": false,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": false
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-activities",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "title",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 20,
+      "fields_sha256": "25d9174a2dbd0c943050edb2afd04f98c40f04f6c175f1bc960f13aab012c830",
+      "fields_shard": "fields/crm-attachments.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": true,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmAttachments",
+        "plural": "CrmAttachments",
+        "singular": "CrmAttachment",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Attachments",
+        "singular": "Crm Attachment",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": false,
+        "delete": false,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": false
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-attachments",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "filename",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "at",
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 30,
+      "fields_sha256": "9d9cbbd57b43693285abc6a4961aa54ba765a733ed9d0aea76fb7b33b2691013",
+      "fields_shard": "fields/crm-audit-log.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmAuditLogs",
+        "plural": "CrmAuditLogs",
+        "singular": "CrmAuditLog",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Audit Log",
+        "singular": "Crm Audit Log",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": false,
+        "delete": false,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": false
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-audit-log",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "action",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 18,
+      "fields_sha256": "4a234e8af08cf15b68475a4d04ea0f90a421dd407c3b3d26a95f85744d1c840d",
+      "fields_shard": "fields/crm-availability-schedules.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmAvailabilitySchedules",
+        "plural": "CrmAvailabilitySchedules",
+        "singular": "CrmAvailabilitySchedule",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Availability Schedules",
+        "singular": "Crm Availability Schedule",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": false,
+        "delete": false,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": false
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-availability-schedules",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "name",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "stats.countedAt",
+        "updatedAt",
+        "createdAt",
+        "deletedAt"
+      ],
+      "fields_count": 57,
+      "fields_sha256": "0bc965cea54f12887397803d61c2af24980cbb9593d905fecbee9d47ddad01e5",
+      "fields_shard": "fields/crm-booking-pages.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": true,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmBookingPages",
+        "plural": "CrmBookingPages",
+        "singular": "CrmBookingPage",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Booking Pages",
+        "singular": "Crm Booking Page",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": false,
+        "delete": false,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": false
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-booking-pages",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "name",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "startsAt",
+        "endsAt",
+        "canceledAt",
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 40,
+      "fields_sha256": "256a43399e37ad2457b82a28a340a0cf2c688c4dd6bfe51d87c04600193ce3d4",
+      "fields_shard": "fields/crm-bookings.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmBookings",
+        "plural": "CrmBookings",
+        "singular": "CrmBooking",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Bookings",
+        "singular": "Crm Booking",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": false,
+        "delete": false,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": false
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-bookings",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "inviteeName",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "occurredAt",
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 22,
+      "fields_sha256": "5f61ad4539e4a12721513a3296397c063582bc841f1a4479b95a3df725d63241",
+      "fields_shard": "fields/crm-campaign-events.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmCampaignEvents",
+        "plural": "CrmCampaignEvents",
+        "singular": "CrmCampaignEvent",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Campaign Events",
+        "singular": "Crm Campaign Event",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": false,
+        "delete": false,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": false
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-campaign-events",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "title",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "scheduledAt",
+        "sendStartedAt",
+        "sentAt",
+        "countedAt",
+        "approval.approvedAt",
+        "updatedAt",
+        "createdAt",
+        "deletedAt"
+      ],
+      "fields_count": 38,
+      "fields_sha256": "54ad9492ad8978f419fc7181364dbbca6448c25cec2b4f587e50084a20fd8dbb",
+      "fields_shard": "fields/crm-campaigns.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": true,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmCampaigns",
+        "plural": "CrmCampaigns",
+        "singular": "CrmCampaign",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Campaigns",
+        "singular": "Crm Campaign",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": false,
+        "delete": false,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": false
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-campaigns",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "name",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "lastActivityAt",
+        "updatedAt",
+        "createdAt",
+        "deletedAt"
+      ],
+      "fields_count": 25,
+      "fields_sha256": "3ba310c06b031f8bd7530a82e0b68acdebd700ec59679709abbe1d4ed32b1864",
+      "fields_shard": "fields/crm-companies.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": true,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmCompanies",
+        "plural": "CrmCompanies",
+        "singular": "CrmCompany",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Companies",
+        "singular": "Crm Company",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": true,
+        "delete": true,
+        "field_level": false,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": true
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-companies",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "name",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "valueDate",
+        "occurredAt",
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 31,
+      "fields_sha256": "032ce83c354852fafae11ad1439a45ffae93998241c9c7511a394e13cf6a5bd1",
+      "fields_shard": "fields/crm-contact-signals.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmContactSignals",
+        "plural": "CrmContactSignals",
+        "singular": "CrmContactSignal",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Contact Signals",
+        "singular": "Crm Contact Signal",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": true,
+        "delete": false,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": true
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-contact-signals",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "value",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "enrichment.enrichedAt",
+        "lastActivityAt",
+        "signalCountedAt",
+        "lastSignalAt",
+        "updatedAt",
+        "createdAt",
+        "deletedAt"
+      ],
+      "fields_count": 52,
+      "fields_sha256": "fccedc165f9a8b8bdec27b46dd1890baa97457f2c1a500fe4b21e110cd5a56af",
+      "fields_shard": "fields/crm-contacts.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": true,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmContacts",
+        "plural": "CrmContacts",
+        "singular": "CrmContact",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Contacts",
+        "singular": "Crm Contact",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": true,
+        "delete": true,
+        "field_level": false,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": true
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-contacts",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "name",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "lastMessageAt",
+        "updatedAt",
+        "createdAt",
+        "deletedAt"
+      ],
+      "fields_count": 27,
+      "fields_sha256": "005f96e7dcec5fb363003d071b9b164828f5d064844617f4bfb195fad1c65257",
+      "fields_shard": "fields/crm-conversations.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": true,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmConversations",
+        "plural": "CrmConversations",
+        "singular": "CrmConversation",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Conversations",
+        "singular": "Crm Conversation",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": true,
+        "delete": true,
+        "field_level": false,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": true
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-conversations",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "subject",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "approval.requestedAt",
+        "approval.decidedAt",
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 26,
+      "fields_sha256": "9330e561a02e26737af1ae120f8d236322767ec658c6deef59ea8f0a4ec66916",
+      "fields_shard": "fields/crm-deal-line-items.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmDealLineItems",
+        "plural": "CrmDealLineItems",
+        "singular": "CrmDealLineItem",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Deal Line Items",
+        "singular": "Crm Deal Line Item",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": true,
+        "delete": true,
+        "field_level": false,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": true
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-deal-line-items",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": null,
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 19,
+      "fields_sha256": "faa52b8c570bb603cb2b4a2752d3d942eac2d022aa7a34a98955b0acb9f51849",
+      "fields_shard": "fields/crm-drafts.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmDrafts",
+        "plural": "CrmDrafts",
+        "singular": "CrmDraft",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Drafts",
+        "singular": "Crm Draft",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": true,
+        "delete": true,
+        "field_level": false,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": true
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-drafts",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "to",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "updatedAt",
+        "createdAt",
+        "deletedAt"
+      ],
+      "fields_count": 38,
+      "fields_sha256": "b882415502982fac0df131e121b69a01ad9ed737dbb541e8b98fae95370493a9",
+      "fields_shard": "fields/crm-email-layouts.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": true,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmEmailLayouts",
+        "plural": "CrmEmailLayouts",
+        "singular": "CrmEmailLayout",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Email Layouts",
+        "singular": "Crm Email Layout",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": false,
+        "delete": false,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": false
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-email-layouts",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "name",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "enteredAt",
+        "lastNodeAt",
+        "exitedAt",
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 24,
+      "fields_sha256": "1884a98a28f3a86774b44e6537681ee279d1169b719a68ab83d14593bca6b008",
+      "fields_shard": "fields/crm-flow-enrolments.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmFlowEnrolments",
+        "plural": "CrmFlowEnrolments",
+        "singular": "CrmFlowEnrolment",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Flow Enrolments",
+        "singular": "Crm Flow Enrolment",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": false,
+        "delete": false,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": false
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-flow-enrolments",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "enrolmentKey",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "countedAt",
+        "nodeStatsAt",
+        "updatedAt",
+        "createdAt",
+        "deletedAt"
+      ],
+      "fields_count": 34,
+      "fields_sha256": "f04309b0d452af445bd5b10a99c094f81123521b7da15443f1101bef433cef95",
+      "fields_shard": "fields/crm-flows.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": true,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmFlows",
+        "plural": "CrmFlows",
+        "singular": "CrmFlow",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Flows",
+        "singular": "Crm Flow",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": false,
+        "delete": false,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": false
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-flows",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "name",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 17,
+      "fields_sha256": "2b180c67b6f8164f62b735b53f97b8aecc5d1f750979315b86fd34acebb71093",
+      "fields_shard": "fields/crm-import-row-errors.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmImportRowErrors",
+        "plural": "CrmImportRowErrors",
+        "singular": "CrmImportRowError",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Import Row Errors",
+        "singular": "Crm Import Row Error",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": false,
+        "delete": false,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": false
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-import-row-errors",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "column",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "countedAt",
+        "startedAt",
+        "finishedAt",
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 36,
+      "fields_sha256": "c925382a1e51c5eb519dd33c1e2a3f290e4e644fd61b3b42aa0930d968b96741",
+      "fields_shard": "fields/crm-imports.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmImports",
+        "plural": "CrmImports",
+        "singular": "CrmImport",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Imports",
+        "singular": "Crm Import",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": false,
+        "delete": false,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": false
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-imports",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "fileName",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "lastMessageAt",
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 19,
+      "fields_sha256": "63ec8f0da15229d65de9301afb2b359e51d0ac2f039868d00bfd80867f33a936",
+      "fields_shard": "fields/crm-inboxes.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmInboxes",
+        "plural": "CrmInboxes",
+        "singular": "CrmInbox",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Inboxes",
+        "singular": "Crm Inbox",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": false,
+        "delete": false,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": false
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-inboxes",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "name",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "addedAt",
+        "lastMatchedAt",
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 15,
+      "fields_sha256": "f055b1fac8c1a0c10586e30864234471115bea9b4bc15f72e7d2fd9e78845712",
+      "fields_shard": "fields/crm-list-memberships.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmListMemberships",
+        "plural": "CrmListMemberships",
+        "singular": "CrmListMembership",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm List Memberships",
+        "singular": "Crm List Membership",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": false,
+        "delete": false,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": false
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-list-memberships",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": null,
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "countedAt",
+        "lastRefreshedAt",
+        "external.lastSyncedAt",
+        "refresh.requestedAt",
+        "updatedAt",
+        "createdAt",
+        "deletedAt"
+      ],
+      "fields_count": 40,
+      "fields_sha256": "09089ae2dd89e6c9837d4d99b72c4b028ec1d1494db0e5b6dcfae6549a7863c6",
+      "fields_shard": "fields/crm-lists.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": true,
+        "orderable": false,
+        "trash": true,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmLists",
+        "plural": "CrmLists",
+        "singular": "CrmList",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Lists",
+        "singular": "Crm List",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": false,
+        "delete": false,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": false
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-lists",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "name",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "google.lastSyncedAt",
+        "openedAt",
+        "closedAt",
+        "updatedAt",
+        "createdAt",
+        "deletedAt"
+      ],
+      "fields_count": 57,
+      "fields_sha256": "15cbb7336f1576ea282977d95f7c6f02dee8f15b1e7b00ef4833a51a21b33a99",
+      "fields_shard": "fields/crm-locations.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": true,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmLocations",
+        "plural": "CrmLocations",
+        "singular": "CrmLocation",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Locations",
+        "singular": "Crm Location",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": false,
+        "delete": false,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": false
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-locations",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "name",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "occurredAt",
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 23,
+      "fields_sha256": "1d628c66fa4a13d5114b4c1f06e019f3be88094369c1d6a891f7a8117af8f310",
+      "fields_shard": "fields/crm-message-events.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmMessageEvents",
+        "plural": "CrmMessageEvents",
+        "singular": "CrmMessageEvent",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Message Events",
+        "singular": "Crm Message Event",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": false,
+        "delete": false,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": false
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-message-events",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "email",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "occurredAt",
+        "deliveredAt",
+        "firstOpenedAt",
+        "lastOpenedAt",
+        "firstClickedAt",
+        "lastClickedAt",
+        "bouncedAt",
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 61,
+      "fields_sha256": "01056d2d23eb60b62561fd0e83956d95b98b6fefa496e14094a7700abc44dd70",
+      "fields_shard": "fields/crm-messages.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmMessages",
+        "plural": "CrmMessages",
+        "singular": "CrmMessage",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Messages",
+        "singular": "Crm Message",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": false,
+        "delete": false,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": false
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-messages",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "messageId",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "stageEnteredAt",
+        "closedAt",
+        "closeDate",
+        "updatedAt",
+        "createdAt",
+        "deletedAt"
+      ],
+      "fields_count": 28,
+      "fields_sha256": "74662312890b29d49bb65e10d17446bf2501669bef9fd5b4a92cb5eea1d7445f",
+      "fields_shard": "fields/crm-opportunities.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": true,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmOpportunities",
+        "plural": "CrmOpportunities",
+        "singular": "CrmOpportunity",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Opportunities",
+        "singular": "Crm Opportunity",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": true,
+        "delete": true,
+        "field_level": false,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": true
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-opportunities",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "name",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "updatedAt",
+        "createdAt",
+        "deletedAt"
+      ],
+      "fields_count": 19,
+      "fields_sha256": "1d7432fdd79f19010e55f8b7517ffc3d89e9ea55bf61430f9ae4f9e29320d135",
+      "fields_shard": "fields/crm-pipelines.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": true,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmPipelines",
+        "plural": "CrmPipelines",
+        "singular": "CrmPipeline",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Pipelines",
+        "singular": "Crm Pipeline",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": false,
+        "delete": false,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": false
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-pipelines",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "name",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "launchedAt",
+        "discontinuedAt",
+        "performance.countedAt",
+        "updatedAt",
+        "createdAt",
+        "deletedAt"
+      ],
+      "fields_count": 62,
+      "fields_sha256": "3339572460f15406e3defa9289d104746fcb741f419ef034afdbc10cbf54ced8",
+      "fields_shard": "fields/crm-products.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": true,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmProducts",
+        "plural": "CrmProducts",
+        "singular": "CrmProduct",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Products",
+        "singular": "Crm Product",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": false,
+        "delete": false,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": false
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-products",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "name",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "connectedAt",
+        "lastCheckedAt",
+        "domains.verifiedAt",
+        "usage.countedAt",
+        "oauth.grantedAt",
+        "oauth.expiresAt",
+        "calendar.lastSyncedAt",
+        "calendar.channelExpiresAt",
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 59,
+      "fields_sha256": "e724518eda84181853c04ca436e6fc9ca48c7b4caac79899722912089417ad22",
+      "fields_shard": "fields/crm-provider-connections.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmProviderConnections",
+        "plural": "CrmProviderConnections",
+        "singular": "CrmProviderConnection",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Provider Connections",
+        "singular": "Crm Provider Connection",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": false,
+        "delete": false,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": false
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-provider-connections",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "key",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "updatedAt",
+        "createdAt",
+        "deletedAt"
+      ],
+      "fields_count": 25,
+      "fields_sha256": "b876a83b128e93a92f10d849d768eb7985df9c7754cf845613946467245287fe",
+      "fields_shard": "fields/crm-saved-views.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": true,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmSavedViews",
+        "plural": "CrmSavedViews",
+        "singular": "CrmSavedView",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Saved Views",
+        "singular": "Crm Saved View",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": true,
+        "delete": true,
+        "field_level": false,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": true
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-saved-views",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "name",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "rollup.firstAt",
+        "rollup.lastAt",
+        "rollup.countedAt",
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 33,
+      "fields_sha256": "75911f4c3a2285a3f4430a76876b64c0d230c740e6ed84f073bf1f23f434be37",
+      "fields_shard": "fields/crm-signal-definitions.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmSignalDefinitions",
+        "plural": "CrmSignalDefinitions",
+        "singular": "CrmSignalDefinition",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Signal Definitions",
+        "singular": "Crm Signal Definition",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": false,
+        "delete": false,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": false
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-signal-definitions",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "name",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "updatedAt",
+        "createdAt",
+        "deletedAt"
+      ],
+      "fields_count": 14,
+      "fields_sha256": "ba85a3e4bf5c5bdac0e46dc486c4697c2302cb51d2a59a08549a9081aac648c3",
+      "fields_shard": "fields/crm-tags.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": true,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmTags",
+        "plural": "CrmTags",
+        "singular": "CrmTag",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Tags",
+        "singular": "Crm Tag",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": true,
+        "delete": false,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": false
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-tags",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "name",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "dueDate",
+        "completedAt",
+        "remindedAt",
+        "updatedAt",
+        "createdAt",
+        "deletedAt"
+      ],
+      "fields_count": 22,
+      "fields_sha256": "9e352b7352a31c2ea0712500f8999afeafb59edb3a5b532da8e743cf301945fb",
+      "fields_shard": "fields/crm-tasks.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": true,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmTasks",
+        "plural": "CrmTasks",
+        "singular": "CrmTask",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Tasks",
+        "singular": "Crm Task",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": true,
+        "delete": true,
+        "field_level": false,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": true
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-tasks",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "title",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "lastUsedAt",
+        "countedAt",
+        "updatedAt",
+        "createdAt",
+        "deletedAt"
+      ],
+      "fields_count": 33,
+      "fields_sha256": "fa2144acb12bcaafca120d853433fcc873556155efe2ef3ee3975b5c5610c251",
+      "fields_shard": "fields/crm-templates.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": true,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmTemplates",
+        "plural": "CrmTemplates",
+        "singular": "CrmTemplate",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Templates",
+        "singular": "Crm Template",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": false,
+        "delete": false,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": false
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-templates",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "title",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "startedAt",
+        "finishedAt",
+        "progress.countedAt",
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 35,
+      "fields_sha256": "baaf18d3c25ae95219e1e9e7728abf8a365c5bcc1f11b8ac99252adfe0ee6ed1",
+      "fields_shard": "fields/crm-workflow-runs.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countCrmWorkflowRuns",
+        "plural": "CrmWorkflowRuns",
+        "singular": "CrmWorkflowRun",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Crm Workflow Runs",
+        "singular": "Crm Workflow Run",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": false,
+        "delete": false,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": false
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "crm-workflow-runs",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "runId",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 8,
+      "fields_sha256": "6e4b0a2c48f9cb5c44e79e7720b9ae20829b674f4cce716d55596183bb55ddf0",
+      "fields_shard": "fields/form-submissions.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countFormSubmissions",
+        "plural": "FormSubmissions",
+        "singular": "FormSubmission",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Form Submissions",
+        "singular": "Form Submission",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": true,
+        "delete": true,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": false
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "form-submissions",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": null,
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 19,
+      "fields_sha256": "4f3b60c922041e54e815913d9746229ccfdb6bb3aaad35cd078cc157f9a7c545",
+      "fields_shard": "fields/forms.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countForms",
+        "plural": "Forms",
+        "singular": "Form",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Forms",
+        "singular": "Form",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": true,
+        "delete": true,
+        "field_level": false,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": true
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "forms",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "title",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 65,
+      "fields_sha256": "8d5b36e5143cbdb7adb30336856a0d59bbc1bba5d881892a691d2e455316fb90",
+      "fields_shard": "fields/media.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": true,
+        "orderable": false,
+        "trash": false,
+        "upload": true,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countallMedia",
+        "plural": "allMedia",
+        "singular": "Media",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Media",
+        "singular": "Media",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": true,
+        "delete": true,
+        "field_level": false,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": true
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "media",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "filename",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "publishedAt",
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 26,
+      "fields_sha256": "87954498cf82339948d0bb761073514587a43b224ae4d62a8292c94bbef13ad6",
+      "fields_shard": "fields/pages.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": true,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": true
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countPages",
+        "plural": "Pages",
+        "singular": "Page",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Pages",
+        "singular": "Page",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": true,
+        "delete": true,
+        "field_level": false,
+        "read": true,
+        "read_versions": true,
+        "unlock": false,
+        "update": true
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "pages",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "title",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 7,
+      "fields_sha256": "7eb5082c73bbff81feb95a7e1401e0934d339fc8182f845d3d7a51dc430a5cdd",
+      "fields_shard": "fields/payload-folders.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": true,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countPayloadFolders",
+        "plural": "PayloadFolders",
+        "singular": "PayloadFolder",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": true,
+      "labels": {
+        "plural": "Payload Folders",
+        "singular": "Payload Folder",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": true,
+        "delete": true,
+        "field_level": false,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": true
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "payload-folders",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "name",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "completedAt",
+        "log.executedAt",
+        "log.completedAt",
+        "waitUntil",
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 24,
+      "fields_sha256": "e4ca4165711da7cf1745d8dfa02e3c0964c305b94f4c5622fdaad37199c9582c",
+      "fields_shard": "fields/payload-jobs.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countPayloadJobs",
+        "plural": "PayloadJobs",
+        "singular": "PayloadJob",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": true,
+      "labels": {
+        "plural": "Payload Jobs",
+        "singular": "Payload Job",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": true,
+        "delete": true,
+        "field_level": false,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": true
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "payload-jobs",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "queue",
+      "warnings": []
+    },
+    {
+      "date_fields": [],
+      "fields_count": 3,
+      "fields_sha256": "24bfb40059c97594cc47a8aca63d716190513ae4daabcc7b1367070cb4435536",
+      "fields_shard": "fields/payload-kv.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countPayloadKvs",
+        "plural": "PayloadKvs",
+        "singular": "PayloadKv",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": true,
+      "labels": {
+        "plural": "Payload Kv",
+        "singular": "Payload Kv",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": false,
+        "delete": false,
+        "field_level": null,
+        "read": false,
+        "read_versions": false,
+        "unlock": false,
+        "update": false
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "access-denied",
+      "slug": "payload-kv",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "key",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 6,
+      "fields_sha256": "6222c239b3e74d423b4a06016944c5fe0cfa793bd53cddda95e1b997410cf8ac",
+      "fields_shard": "fields/payload-locked-documents.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countPayloadLockedDocuments",
+        "plural": "PayloadLockedDocuments",
+        "singular": "PayloadLockedDocument",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": true,
+      "labels": {
+        "plural": "Payload Locked Documents",
+        "singular": "Payload Locked Document",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": true,
+        "delete": true,
+        "field_level": false,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": true
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "payload-locked-documents",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "globalSlug",
+      "warnings": []
+    },
+    {
+      "date_fields": [],
+      "fields_count": 0,
+      "fields_sha256": "4107a31add45840fb46c57444b338d588c1ac75d06821a9bb2849eaf7932645c",
+      "fields_shard": "fields/payload-migrations.json",
+      "fields_source": "unknown",
+      "flags": {
+        "auth": null,
+        "drafts": null,
+        "duplicate": null,
+        "endpoints_disabled": true,
+        "folders": null,
+        "orderable": false,
+        "trash": null,
+        "upload": null,
+        "use_api_key": null,
+        "versions": null
+      },
+      "flags_source": {
+        "auth": "unknown",
+        "drafts": "unknown",
+        "duplicate": "unknown",
+        "endpoints_disabled": "probe",
+        "folders": "unknown",
+        "orderable": "probe",
+        "trash": "unknown",
+        "upload": "unknown",
+        "use_api_key": "unknown",
+        "versions": "unknown"
+      },
+      "graphql": null,
+      "id_type": "unknown",
+      "id_type_source": "unknown",
+      "internal": true,
+      "labels": {
+        "plural": "Payload Migrations",
+        "singular": "Payload Migrations",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": true,
+        "delete": true,
+        "field_level": false,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": true
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "graphql-disabled",
+      "slug": "payload-migrations",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": null,
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 6,
+      "fields_sha256": "4698782949a0be6539143ffbcac0effe84b50e6a3e1594189fc25a159ba52699",
+      "fields_shard": "fields/payload-preferences.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countPayloadPreferences",
+        "plural": "PayloadPreferences",
+        "singular": "PayloadPreference",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": true,
+      "labels": {
+        "plural": "Payload Preferences",
+        "singular": "Payload Preference",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": true,
+        "delete": true,
+        "field_level": false,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": true
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "payload-preferences",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "key",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "publishedAt",
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 20,
+      "fields_sha256": "9ec4df10fcb8ffbe4d4993186d315aa5b7132c679ec044d9290fb4256a80cffc",
+      "fields_shard": "fields/posts.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": true,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": true
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countPosts",
+        "plural": "Posts",
+        "singular": "Post",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Posts",
+        "singular": "Post",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": true,
+        "delete": true,
+        "field_level": true,
+        "read": true,
+        "read_versions": true,
+        "unlock": false,
+        "update": true
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "posts",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "title",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 8,
+      "fields_sha256": "5c566e5af5ff8943257870814f783c10a951d1115d9a329fadfc97f18dbfb65b",
+      "fields_shard": "fields/redirects.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countRedirects",
+        "plural": "Redirects",
+        "singular": "Redirect",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Redirects",
+        "singular": "Redirect",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": true,
+        "delete": true,
+        "field_level": false,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": true
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "redirects",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "from",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "updatedAt",
+        "createdAt"
+      ],
+      "fields_count": 16,
+      "fields_sha256": "e61a14b22e527956c7649f7c6ac77856cee787de56a3dfbb5b46a9f2f095f90e",
+      "fields_shard": "fields/search.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": false,
+        "drafts": false,
+        "duplicate": true,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": false,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countSearches",
+        "plural": "Searches",
+        "singular": "Search",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Search",
+        "singular": "Search",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": false,
+        "delete": true,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": false,
+        "update": true
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "search",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "title",
+      "warnings": []
+    },
+    {
+      "date_fields": [
+        "updatedAt",
+        "createdAt",
+        "resetPasswordExpiration",
+        "lockUntil",
+        "sessions.createdAt",
+        "sessions.expiresAt"
+      ],
+      "fields_count": 20,
+      "fields_sha256": "200a374284a1810d9c6e2cd1ff1ffd3632589073878f9cf78e8affa239d9421b",
+      "fields_shard": "fields/users.json",
+      "fields_source": "graphql",
+      "flags": {
+        "auth": true,
+        "drafts": false,
+        "duplicate": false,
+        "endpoints_disabled": null,
+        "folders": false,
+        "orderable": false,
+        "trash": false,
+        "upload": false,
+        "use_api_key": true,
+        "versions": false
+      },
+      "flags_source": {
+        "auth": "graphql",
+        "drafts": "graphql",
+        "duplicate": "graphql",
+        "endpoints_disabled": "unknown",
+        "folders": "graphql",
+        "orderable": "probe",
+        "trash": "graphql",
+        "upload": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "count": "countUsers",
+        "plural": "Users",
+        "singular": "User",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "labels": {
+        "plural": "Users",
+        "singular": "User",
+        "source": "derived"
+      },
+      "permissions": {
+        "create": true,
+        "delete": true,
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "unlock": true,
+        "update": true
+      },
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "slug": "users",
+      "stats": {
+        "sampled": false,
+        "total_docs": null
+      },
+      "title_field": "name",
+      "warnings": []
+    }
+  ],
+  "diagnostics": {
+    "auth_candidates": [],
+    "block_slug_files": null,
+    "bytes": 683087,
+    "created_and_deleted": [],
+    "degraded": [],
+    "elapsed_ms": 13074,
+    "graphql_batches": 7,
+    "requests": 17,
+    "warnings": []
+  },
+  "expires_at": "2026-09-17T22:08:10.687106424+02:00",
+  "fingerprint": {
+    "checked_at": "2026-09-16T22:08:10.687106424+02:00",
+    "schema_sha256": "c04adfc683c7a3a8d16f89652b9ce14f94ffe37e0cf72ef2183f120a1f5978ef",
+    "server_identity": "Next.js, Payload",
+    "topology_sha256": "4b2e259e863d403780378cec88b4230bdd1376bc41ef0717ca2e246d977d0eb0"
+  },
+  "generated_at": "2026-09-16T22:08:10.687106424+02:00",
+  "generation": "01M2NXAZNYFRXT0FBD4A7VAYN7",
+  "globals": [
+    {
+      "fields_count": 48,
+      "fields_sha256": "d4a3705c89430531e1a4ba74d642ed79ccdac9a051e1fce936f86b8abc38a953",
+      "fields_shard": "fields/_global_crm-brand.json",
+      "fields_source": "graphql",
+      "flags": {
+        "drafts": false,
+        "versions": true
+      },
+      "flags_source": {
+        "drafts": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "singular": "CrmBrand",
+        "source": "access-zip"
+      },
+      "internal": false,
+      "labels": {
+        "plural": "Crm Brand",
+        "singular": "Crm Brand",
+        "source": "derived"
+      },
+      "permissions": {
+        "field_level": true,
+        "read": true,
+        "read_versions": true,
+        "update": false
+      },
+      "reachability": "ok",
+      "slug": "crm-brand",
+      "warnings": []
+    },
+    {
+      "fields_count": 4,
+      "fields_sha256": "455078dd1a0803d564b64d800d274cb614a69d6bac34e3a8f8f1545fe8b5dcce",
+      "fields_shard": "fields/_global_crm-features.json",
+      "fields_source": "graphql",
+      "flags": {
+        "drafts": false,
+        "versions": false
+      },
+      "flags_source": {
+        "drafts": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "singular": "CrmFeature",
+        "source": "access-zip"
+      },
+      "internal": false,
+      "labels": {
+        "plural": "Crm Features",
+        "singular": "Crm Feature",
+        "source": "derived"
+      },
+      "permissions": {
+        "field_level": true,
+        "read": true,
+        "read_versions": false,
+        "update": false
+      },
+      "reachability": "ok",
+      "slug": "crm-features",
+      "warnings": []
+    },
+    {
+      "fields_count": 10,
+      "fields_sha256": "8b655005cce81d400f6720c0c2fd49a688a57347d1ab6b8c42c23855a8e22491",
+      "fields_shard": "fields/_global_footer.json",
+      "fields_source": "graphql",
+      "flags": {
+        "drafts": false,
+        "versions": false
+      },
+      "flags_source": {
+        "drafts": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "singular": "Footer",
+        "source": "access-zip"
+      },
+      "internal": false,
+      "labels": {
+        "plural": "Footer",
+        "singular": "Footer",
+        "source": "derived"
+      },
+      "permissions": {
+        "field_level": false,
+        "read": true,
+        "read_versions": false,
+        "update": true
+      },
+      "reachability": "ok",
+      "slug": "footer",
+      "warnings": []
+    },
+    {
+      "fields_count": 10,
+      "fields_sha256": "2b1dbfc112db96dc835d0a2e24531d041f46851724edf3005e6ab2c96a25e65c",
+      "fields_shard": "fields/_global_header.json",
+      "fields_source": "graphql",
+      "flags": {
+        "drafts": false,
+        "versions": false
+      },
+      "flags_source": {
+        "drafts": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "singular": "Header",
+        "source": "access-zip"
+      },
+      "internal": false,
+      "labels": {
+        "plural": "Header",
+        "singular": "Header",
+        "source": "derived"
+      },
+      "permissions": {
+        "field_level": false,
+        "read": true,
+        "read_versions": false,
+        "update": true
+      },
+      "reachability": "ok",
+      "slug": "header",
+      "warnings": []
+    },
+    {
+      "fields_count": 3,
+      "fields_sha256": "d45878d9aff9addef69337081efd654e7db8ba9f1803bcc0a33300158741cd9d",
+      "fields_shard": "fields/_global_payload-jobs-stats.json",
+      "fields_source": "graphql",
+      "flags": {
+        "drafts": false,
+        "versions": false
+      },
+      "flags_source": {
+        "drafts": "graphql",
+        "versions": "graphql"
+      },
+      "graphql": {
+        "singular": "PayloadJobsStat",
+        "source": "access-zip"
+      },
+      "internal": true,
+      "labels": {
+        "plural": "Payload Jobs Stats",
+        "singular": "Payload Jobs Stat",
+        "source": "derived"
+      },
+      "permissions": {
+        "field_level": false,
+        "read": true,
+        "read_versions": false,
+        "update": true
+      },
+      "reachability": "ok",
+      "slug": "payload-jobs-stats",
+      "warnings": []
+    }
+  ],
+  "identity": {
+    "auth_collection": "users",
+    "auth_collection_source": "flag",
+    "auth_mode": "api-key",
+    "can_access_admin": false,
+    "key_fingerprint": "568c0fa6b29cce66",
+    "strategy": "api-key",
+    "user_id": 66,
+    "verified": true
+  },
+  "learned_operator_failures": [],
+  "limitations": [
+    {
+      "code": "BLOCK_SLUGS_UNKNOWN_NO_SOURCE",
+      "entity": "forms",
+      "field": "fields",
+      "mitigation": "read them from payload.config.ts / src/blocks/*/config.ts (look for `slug:`), then pin them with `pay config set profiles.<p>.blocks.<field> a,b,c`"
+    },
+    {
+      "code": "BLOCK_SLUGS_UNKNOWN_NO_SOURCE",
+      "entity": "pages",
+      "field": "layout",
+      "mitigation": "read them from payload.config.ts / src/blocks/*/config.ts (look for `slug:`), then pin them with `pay config set profiles.<p>.blocks.<field> a,b,c`"
+    },
+    {
+      "code": "CAPABILITY_UNKNOWN",
+      "detail": "one or more capability flags could not be established",
+      "entity": "payload-migrations",
+      "mitigation": "the operation is attempted and the server's answer is classified after the fact; run `pay discover --refresh` once the feature is known"
+    },
+    {
+      "code": "CUSTOM_ENDPOINTS_NOT_ENUMERABLE",
+      "mitigation": "config.endpoints is not introspectable; list them in the profile's custom_endpoints or call them with `pay raw`"
+    },
+    {
+      "code": "HOOK_MUTATION_UNKNOWN",
+      "mitigation": "beforeChange / beforeValidate hooks are not introspectable; list noisy fields in the profile's echo_check_ignore"
+    },
+    {
+      "code": "ID_TYPE_UNKNOWN",
+      "entity": "payload-migrations",
+      "mitigation": "pin it once with `pay config set profiles.<p>.id_type string`; until then ids are passed through unchecked"
+    },
+    {
+      "code": "PAYLOAD_VERSION_UNKNOWN",
+      "mitigation": "no endpoint or header carries it and no package.json was found; version-gated hints use their unconditional wording"
+    },
+    {
+      "code": "RICHTEXT_SHAPE_UNKNOWN",
+      "entity": "media",
+      "field": "caption",
+      "mitigation": "lexical richText maps to the JSON scalar; run `pay describe <slug> --field <field> --sample` to see a real value"
+    },
+    {
+      "code": "RICHTEXT_SHAPE_UNKNOWN",
+      "entity": "pages",
+      "field": "hero.richText",
+      "mitigation": "lexical richText maps to the JSON scalar; run `pay describe <slug> --field <field> --sample` to see a real value"
+    },
+    {
+      "code": "RICHTEXT_SHAPE_UNKNOWN",
+      "entity": "posts",
+      "field": "content",
+      "mitigation": "lexical richText maps to the JSON scalar; run `pay describe <slug> --field <field> --sample` to see a real value"
+    },
+    {
+      "code": "SORTABILITY_HEURISTIC",
+      "detail": "sortability is inferred from the field kind",
+      "mitigation": "sortability was inferred from the field kind, not measured"
+    }
+  ],
+  "manifest_version": 2,
+  "meta": {
+    "api_path": "/api",
+    "base_url": "http://localhost:3900",
+    "confirmed_at": "2026-09-16T22:08:10.687106424+02:00",
+    "created_at": "2026-09-16T22:08:10.687106424+02:00",
+    "graphql_path": "/api/graphql",
+    "header_names": [],
+    "key_fingerprint": "568c0fa6b29cce66",
+    "profiles": [
+      "default"
+    ],
+    "scope": "8c95d0750f63e960"
+  },
+  "source": {
+    "api_path": "/api",
+    "api_path_source": "default",
+    "base_url": "http://localhost:3900",
+    "db_adapter": "postgres",
+    "db_adapter_source": "inferred",
+    "graphql_path": "/api/graphql",
+    "graphql_path_source": "derived:api_path+graphql_route",
+    "payload_version": null,
+    "payload_version_source": "unknown",
+    "powered_by": "Next.js, Payload"
+  },
+  "unreachable": [
+    {
+      "detail": "present in the GraphQL schema, absent from /api/access",
+      "kind": "collection",
+      "reason": "access-denied",
+      "slug": "payload-kv"
+    },
+    {
+      "detail": "HTTP 501 Cannot GET",
+      "kind": "collection",
+      "reason": "endpoints-disabled",
+      "slug": "payload-migrations"
+    }
+  ],
+  "unsupported_operators": []
+}

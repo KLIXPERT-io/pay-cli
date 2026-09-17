@@ -1,0 +1,195 @@
+{
+  "payload_version": "3.86.0",
+  "recorded_at": "2026-09-16T22:07:00Z",
+  "base_url": "http://localhost:3900",
+  "note": "Recorded from a live Payload 3.86.0 instance and passed through the redaction rules of §5.3. Three bodies are hand-written to Payload's own verified shapes because the live instance could not be made to produce them without hanging the dev server: error_500.json, error_501.json and graphql_introspection_disabled.json. error_validation_de.json is the recorded English body with the German strings taken verbatim from @payloadcms/translations@3.86.0/languages/de.js — this project does not enable i18n.supportedLanguages, so Accept-Language: de still answers in English, and a fixture that was English would defeat the §11.2 regression guard it exists for.",
+  "requests": [
+    {
+      "name": "access",
+      "method": "GET",
+      "path": "/api/access",
+      "query": "",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "file": "access.json"
+    },
+    {
+      "name": "pages_list",
+      "method": "GET",
+      "path": "/api/pages",
+      "query": "depth=0&limit=2",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "file": "pages_list.json"
+    },
+    {
+      "name": "locale_all",
+      "method": "GET",
+      "path": "/api/pages",
+      "query": "depth=0&limit=2&locale=all",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "file": "locale_all.json"
+    },
+    {
+      "name": "error_500",
+      "method": "GET",
+      "path": "/api/pages",
+      "query": "where[title][all]=x",
+      "status": 500,
+      "content_type": "application/json; charset=utf-8",
+      "file": "error_500.json"
+    },
+    {
+      "name": "pages_get",
+      "method": "GET",
+      "path": "/api/pages/16",
+      "query": "depth=0",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "file": "pages_get.json"
+    },
+    {
+      "name": "error_notfound",
+      "method": "GET",
+      "path": "/api/pages/999999999",
+      "query": "",
+      "status": 404,
+      "content_type": "application/json; charset=utf-8",
+      "file": "error_notfound.json"
+    },
+    {
+      "name": "versions_list",
+      "method": "GET",
+      "path": "/api/pages/versions",
+      "query": "limit=2",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "file": "versions_list.json"
+    },
+    {
+      "name": "error_validation",
+      "method": "POST",
+      "path": "/api/pages",
+      "query": "",
+      "status": 400,
+      "content_type": "application/json; charset=utf-8",
+      "file": "error_validation.json"
+    },
+    {
+      "name": "error_validation_de",
+      "method": "POST",
+      "path": "/api/pages",
+      "query": "",
+      "status": 400,
+      "content_type": "application/json; charset=utf-8",
+      "file": "error_validation_de.json",
+      "match_header": {
+        "Accept-Language": "de"
+      }
+    },
+    {
+      "name": "error_501",
+      "method": "POST",
+      "path": "/api/pages/reorder",
+      "query": "",
+      "status": 501,
+      "content_type": "application/json; charset=utf-8",
+      "file": "error_501.json"
+    },
+    {
+      "name": "error_route",
+      "method": "GET",
+      "path": "/api/no-such-collection",
+      "query": "",
+      "status": 404,
+      "content_type": "application/json; charset=utf-8",
+      "file": "error_route.json"
+    },
+    {
+      "name": "users_me",
+      "method": "GET",
+      "path": "/api/users/me",
+      "query": "",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "file": "users_me.json"
+    },
+    {
+      "name": "users_me_anon",
+      "method": "GET",
+      "path": "/api/users/me",
+      "query": "",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "file": "users_me_anon.json",
+      "match_anonymous": true
+    },
+    {
+      "name": "users_login",
+      "method": "POST",
+      "path": "/api/users/login",
+      "query": "",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "file": "users_login.json"
+    },
+    {
+      "name": "globals_header",
+      "method": "GET",
+      "path": "/api/globals/header",
+      "query": "",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "file": "globals_header.json"
+    },
+    {
+      "name": "graphql_stage1",
+      "method": "POST",
+      "path": "/api/graphql",
+      "query": "",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "file": "graphql_stage1.json",
+      "match_body": "Access"
+    },
+    {
+      "name": "graphql_stage2",
+      "method": "POST",
+      "path": "/api/graphql",
+      "query": "",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "file": "graphql_stage2.json",
+      "match_body": "Page"
+    },
+    {
+      "name": "graphql_partial_errors",
+      "method": "POST",
+      "path": "/api/graphql",
+      "query": "",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "file": "graphql_partial_errors.json",
+      "match_body": "nope"
+    },
+    {
+      "name": "graphql_disabled",
+      "method": "POST",
+      "path": "/api/graphql-not-here",
+      "query": "",
+      "status": 404,
+      "content_type": "application/json; charset=utf-8",
+      "file": "graphql_disabled.json"
+    },
+    {
+      "name": "graphql_introspection_disabled",
+      "method": "POST",
+      "path": "/api/graphql-no-introspection",
+      "query": "",
+      "status": 200,
+      "content_type": "application/json; charset=utf-8",
+      "file": "graphql_introspection_disabled.json"
+    }
+  ]
+}

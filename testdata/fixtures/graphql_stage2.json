@@ -1,0 +1,103 @@
+{
+  "data": {
+    "__type": {
+      "fields": [
+        {
+          "name": "id",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "SCALAR",
+              "name": "Int"
+            }
+          }
+        },
+        {
+          "name": "title",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "hero",
+          "type": {
+            "kind": "OBJECT",
+            "name": "Page_Hero",
+            "ofType": null
+          }
+        },
+        {
+          "name": "layout",
+          "type": {
+            "kind": "NON_NULL",
+            "name": null,
+            "ofType": {
+              "kind": "LIST",
+              "name": null
+            }
+          }
+        },
+        {
+          "name": "meta",
+          "type": {
+            "kind": "OBJECT",
+            "name": "Page_Meta",
+            "ofType": null
+          }
+        },
+        {
+          "name": "publishedAt",
+          "type": {
+            "kind": "SCALAR",
+            "name": "DateTime",
+            "ofType": null
+          }
+        },
+        {
+          "name": "generateSlug",
+          "type": {
+            "kind": "SCALAR",
+            "name": "Boolean",
+            "ofType": null
+          }
+        },
+        {
+          "name": "slug",
+          "type": {
+            "kind": "SCALAR",
+            "name": "String",
+            "ofType": null
+          }
+        },
+        {
+          "name": "updatedAt",
+          "type": {
+            "kind": "SCALAR",
+            "name": "DateTime",
+            "ofType": null
+          }
+        },
+        {
+          "name": "createdAt",
+          "type": {
+            "kind": "SCALAR",
+            "name": "DateTime",
+            "ofType": null
+          }
+        },
+        {
+          "name": "_status",
+          "type": {
+            "kind": "ENUM",
+            "name": "Page__status",
+            "ofType": null
+          }
+        }
+      ],
+      "name": "Page"
+    }
+  }
+}

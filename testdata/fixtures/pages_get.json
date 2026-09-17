@@ -1,0 +1,22 @@
+{
+  "_status": "draft",
+  "createdAt": "2026-09-16T16:35:28.838Z",
+  "generateSlug": false,
+  "hero": {
+    "links": [],
+    "media": null,
+    "richText": null,
+    "type": "lowImpact"
+  },
+  "id": 16,
+  "layout": [],
+  "meta": {
+    "description": null,
+    "image": null,
+    "title": null
+  },
+  "publishedAt": "2026-09-16T16:35:28.837Z",
+  "slug": "paycli-probe-2",
+  "title": "PayCLI Probe 2",
+  "updatedAt": "2026-09-16T16:35:28.838Z"
+}

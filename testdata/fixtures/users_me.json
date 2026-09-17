@@ -1,0 +1,19 @@
+{
+  "collection": "users",
+  "message": "Account",
+  "strategy": "api-key",
+  "user": {
+    "_strategy": "api-key",
+    "apiKey": "<redacted>",
+    "collection": "users",
+    "createdAt": "2026-09-16T16:28:43.035Z",
+    "crmRole": "member",
+    "email": null,
+    "enableAPIKey": true,
+    "id": 66,
+    "name": "PayCLI Test",
+    "sessions": "<redacted>",
+    "updatedAt": "2026-09-16T16:29:02.605Z",
+    "username": "paycli-test"
+  }
+}

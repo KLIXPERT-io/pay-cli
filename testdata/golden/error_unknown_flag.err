@@ -1,0 +1,1 @@
+pay: invalid_args (exit 5): unknown flag: --nope — hint: Check the flag values against `pay <command> --help`.

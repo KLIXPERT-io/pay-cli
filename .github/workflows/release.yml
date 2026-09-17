@@ -1,0 +1,95 @@
+name: release
+
+# Builds, signs and publishes a release. Triggered by a v* tag, or called by
+# tag-and-release.yml after it created that tag from the VERSION file.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_call:
+    inputs:
+      tag:
+        description: "Tag to release (e.g. v1.2.3). Defaults to the triggering ref."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write      # create the release and upload assets
+      id-token: write      # keyless cosign signing via the OIDC token
+      attestations: write  # build-provenance attestation
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: .go-version
+          cache: true
+
+      # A tag that does not build is a tag that should not have been pushed.
+      # This is cheap insurance against a release job that fails halfway and
+      # leaves a half-published release behind.
+      - name: Smoke build and test
+        env:
+          PAY_NO_UPDATE: "1"
+        run: |
+          export PAY_HOME="$(mktemp -d)"
+          go vet ./...
+          go build ./...
+          go test -count=1 ./...
+          ./scripts/arch-lint.sh
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Install syft (for SBOMs)
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          format: spdx-json
+          # This step only installs syft; goreleaser's sboms block runs it.
+          dependency-snapshot: false
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Attest the artefacts the installers and `pay update-self` actually
+      # download. `pay update-self` falls back to this attestation when cosign
+      # is absent on the user's machine, so it is not redundant with the
+      # cosign signature — it is the other half of the three-state outcome.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4.2.2
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/checksums.txt
+
+      - name: Summary
+        run: |
+          {
+            echo "### pay ${{ inputs.tag || github.ref_name }}"
+            echo
+            echo '```'
+            cat dist/checksums.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,3490 @@
+{
+  "canAccessAdmin": true,
+  "collections": {
+    "categories": {
+      "create": true,
+      "delete": true,
+      "fields": true,
+      "read": true,
+      "update": true
+    },
+    "crm-activities": {
+      "create": true,
+      "fields": {
+        "author": {
+          "create": true,
+          "read": true
+        },
+        "body": {
+          "create": true,
+          "read": true
+        },
+        "contact": {
+          "create": true,
+          "read": true
+        },
+        "createdAt": {
+          "create": true,
+          "read": true
+        },
+        "createdBy": {
+          "create": true,
+          "read": true
+        },
+        "direction": {
+          "create": true,
+          "read": true
+        },
+        "durationMinutes": {
+          "create": true,
+          "read": true
+        },
+        "occurredAt": {
+          "create": true,
+          "read": true
+        },
+        "outcome": {
+          "create": true,
+          "read": true
+        },
+        "owner": {
+          "create": true,
+          "read": true
+        },
+        "source": {
+          "create": true,
+          "fields": {
+            "externalId": {
+              "create": true,
+              "read": true
+            },
+            "importId": {
+              "create": true,
+              "read": true
+            },
+            "system": {
+              "create": true,
+              "read": true
+            },
+            "workflowRunId": {
+              "create": true,
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "task": {
+          "create": true,
+          "read": true
+        },
+        "title": {
+          "create": true,
+          "read": true
+        },
+        "type": {
+          "create": true,
+          "read": true
+        },
+        "updatedAt": {
+          "create": true,
+          "read": true
+        },
+        "updatedBy": {
+          "create": true,
+          "read": true
+        }
+      },
+      "read": true
+    },
+    "crm-attachments": {
+      "fields": {
+        "alt": {
+          "read": true
+        },
+        "createdAt": {
+          "read": true
+        },
+        "createdBy": {
+          "read": true
+        },
+        "filename": {
+          "read": true
+        },
+        "filesize": {
+          "read": true
+        },
+        "height": {
+          "read": true
+        },
+        "mimeType": {
+          "read": true
+        },
+        "originalName": {
+          "read": true
+        },
+        "owner": {
+          "read": true
+        },
+        "source": {
+          "fields": {
+            "externalId": {
+              "read": true
+            },
+            "importId": {
+              "read": true
+            },
+            "system": {
+              "read": true
+            },
+            "workflowRunId": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "thumbnailURL": {
+          "read": true
+        },
+        "updatedAt": {
+          "read": true
+        },
+        "updatedBy": {
+          "read": true
+        },
+        "url": {
+          "read": true
+        },
+        "width": {
+          "read": true
+        }
+      },
+      "read": true
+    },
+    "crm-audit-log": {
+      "fields": {
+        "action": {
+          "read": true
+        },
+        "actor": {
+          "fields": {
+            "label": {
+              "read": true
+            },
+            "type": {
+              "read": true
+            },
+            "user": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "at": {
+          "read": true
+        },
+        "category": {
+          "read": true
+        },
+        "company": {
+          "read": true
+        },
+        "contact": {
+          "read": true
+        },
+        "createdAt": {
+          "read": true
+        },
+        "createdBy": {
+          "read": true
+        },
+        "detail": {
+          "read": true
+        },
+        "durationMs": {
+          "read": true
+        },
+        "error": {
+          "read": true
+        },
+        "outcome": {
+          "read": true
+        },
+        "provider": {
+          "read": true
+        },
+        "run": {
+          "read": true
+        },
+        "severity": {
+          "read": true
+        },
+        "source": {
+          "fields": {
+            "externalId": {
+              "read": true
+            },
+            "importId": {
+              "read": true
+            },
+            "system": {
+              "read": true
+            },
+            "workflowRunId": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "subjectCollection": {
+          "read": true
+        },
+        "subjectId": {
+          "read": true
+        },
+        "subjectLabel": {
+          "read": true
+        },
+        "summary": {
+          "read": true
+        },
+        "updatedAt": {
+          "read": true
+        },
+        "updatedBy": {
+          "read": true
+        }
+      },
+      "read": true
+    },
+    "crm-availability-schedules": {
+      "fields": {
+        "createdAt": {
+          "read": true
+        },
+        "createdBy": {
+          "read": true
+        },
+        "name": {
+          "read": true
+        },
+        "owner": {
+          "read": true
+        },
+        "source": {
+          "fields": {
+            "externalId": {
+              "read": true
+            },
+            "importId": {
+              "read": true
+            },
+            "system": {
+              "read": true
+            },
+            "workflowRunId": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "timezone": {
+          "read": true
+        },
+        "updatedAt": {
+          "read": true
+        },
+        "updatedBy": {
+          "read": true
+        },
+        "windows": {
+          "fields": {
+            "day": {
+              "read": true
+            },
+            "from": {
+              "read": true
+            },
+            "id": {
+              "read": true
+            },
+            "to": {
+              "read": true
+            }
+          },
+          "read": true
+        }
+      },
+      "read": true
+    },
+    "crm-booking-pages": {
+      "fields": {
+        "assignment": {
+          "read": true
+        },
+        "bookingWindowDays": {
+          "read": true
+        },
+        "bookings": {
+          "read": true
+        },
+        "bufferAfter": {
+          "read": true
+        },
+        "bufferBefore": {
+          "read": true
+        },
+        "confirmationBody": {
+          "read": true
+        },
+        "confirmationHeadline": {
+          "read": true
+        },
+        "confirmationTemplate": {
+          "read": true
+        },
+        "createdAt": {
+          "read": true
+        },
+        "createdBy": {
+          "read": true
+        },
+        "createsActivity": {
+          "read": true
+        },
+        "createsContact": {
+          "read": true
+        },
+        "dailyLimit": {
+          "read": true
+        },
+        "deletedAt": {
+          "read": true
+        },
+        "description": {
+          "read": true
+        },
+        "durations": {
+          "read": true
+        },
+        "embedMode": {
+          "read": true
+        },
+        "flows": {
+          "read": true
+        },
+        "headline": {
+          "read": true
+        },
+        "hosts": {
+          "fields": {
+            "id": {
+              "read": true
+            },
+            "jobTitle": {
+              "read": true
+            },
+            "schedule": {
+              "read": true
+            },
+            "user": {
+              "read": true
+            },
+            "weight": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "layout": {
+          "read": true
+        },
+        "location": {
+          "fields": {
+            "kind": {
+              "read": true
+            },
+            "label": {
+              "read": true
+            },
+            "note": {
+              "read": true
+            },
+            "place": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "minimumNotice": {
+          "read": true
+        },
+        "name": {
+          "read": true
+        },
+        "owner": {
+          "read": true
+        },
+        "reminderLeadHours": {
+          "read": true
+        },
+        "reminderTemplate": {
+          "read": true
+        },
+        "slotInterval": {
+          "read": true
+        },
+        "slug": {
+          "read": true
+        },
+        "source": {
+          "fields": {
+            "externalId": {
+              "read": true
+            },
+            "importId": {
+              "read": true
+            },
+            "system": {
+              "read": true
+            },
+            "workflowRunId": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "stats": {
+          "fields": {
+            "canceled": {
+              "read": true
+            },
+            "completed": {
+              "read": true
+            },
+            "countedAt": {
+              "read": true
+            },
+            "newContacts": {
+              "read": true
+            },
+            "noShows": {
+              "read": true
+            },
+            "total": {
+              "read": true
+            },
+            "upcoming": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "status": {
+          "read": true
+        },
+        "steps": {
+          "read": true
+        },
+        "submitLabel": {
+          "read": true
+        },
+        "updatedAt": {
+          "read": true
+        },
+        "updatedBy": {
+          "read": true
+        }
+      },
+      "read": true
+    },
+    "crm-bookings": {
+      "fields": {
+        "answers": {
+          "fields": {
+            "fieldId": {
+              "read": true
+            },
+            "id": {
+              "read": true
+            },
+            "label": {
+              "read": true
+            },
+            "value": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "calendar": {
+          "fields": {
+            "calendarId": {
+              "read": true
+            },
+            "externalEventId": {
+              "read": true
+            },
+            "meetingUrl": {
+              "read": true
+            },
+            "provider": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "cancelReason": {
+          "read": true
+        },
+        "canceledAt": {
+          "read": true
+        },
+        "contact": {
+          "read": true
+        },
+        "createdAt": {
+          "read": true
+        },
+        "createdBy": {
+          "read": true
+        },
+        "durationMinutes": {
+          "read": true
+        },
+        "endsAt": {
+          "read": true
+        },
+        "host": {
+          "read": true
+        },
+        "inviteeEmail": {
+          "read": true
+        },
+        "inviteeName": {
+          "read": true
+        },
+        "inviteeTimezone": {
+          "read": true
+        },
+        "location": {
+          "fields": {
+            "kind": {
+              "read": true
+            },
+            "label": {
+              "read": true
+            },
+            "note": {
+              "read": true
+            },
+            "place": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "owner": {
+          "read": true
+        },
+        "page": {
+          "read": true
+        },
+        "rescheduledFrom": {
+          "read": true
+        },
+        "slotKey": {
+          "read": true
+        },
+        "source": {
+          "fields": {
+            "externalId": {
+              "read": true
+            },
+            "importId": {
+              "read": true
+            },
+            "system": {
+              "read": true
+            },
+            "workflowRunId": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "startsAt": {
+          "read": true
+        },
+        "status": {
+          "read": true
+        },
+        "updatedAt": {
+          "read": true
+        },
+        "updatedBy": {
+          "read": true
+        }
+      },
+      "read": true
+    },
+    "crm-campaign-events": {
+      "fields": {
+        "actor": {
+          "read": true
+        },
+        "campaign": {
+          "read": true
+        },
+        "contact": {
+          "read": true
+        },
+        "createdAt": {
+          "read": true
+        },
+        "createdBy": {
+          "read": true
+        },
+        "deliveryKey": {
+          "read": true
+        },
+        "description": {
+          "read": true
+        },
+        "link": {
+          "read": true
+        },
+        "occurredAt": {
+          "read": true
+        },
+        "owner": {
+          "read": true
+        },
+        "providerEventId": {
+          "read": true
+        },
+        "providerMessageId": {
+          "read": true
+        },
+        "source": {
+          "fields": {
+            "externalId": {
+              "read": true
+            },
+            "importId": {
+              "read": true
+            },
+            "system": {
+              "read": true
+            },
+            "workflowRunId": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "title": {
+          "read": true
+        },
+        "type": {
+          "read": true
+        },
+        "updatedAt": {
+          "read": true
+        },
+        "updatedBy": {
+          "read": true
+        }
+      },
+      "read": true
+    },
+    "crm-campaigns": {
+      "fields": {
+        "approval": {
+          "fields": {
+            "approvedAt": {
+              "read": true
+            },
+            "approvedBy": {
+              "read": true
+            },
+            "required": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "audienceList": {
+          "read": true
+        },
+        "body": {
+          "read": true
+        },
+        "bounces": {
+          "read": true
+        },
+        "clicks": {
+          "read": true
+        },
+        "countedAt": {
+          "read": true
+        },
+        "createdAt": {
+          "read": true
+        },
+        "createdBy": {
+          "read": true
+        },
+        "deletedAt": {
+          "read": true
+        },
+        "delivered": {
+          "read": true
+        },
+        "events": {
+          "read": true
+        },
+        "fromEmail": {
+          "read": true
+        },
+        "fromName": {
+          "read": true
+        },
+        "name": {
+          "read": true
+        },
+        "opens": {
+          "read": true
+        },
+        "owner": {
+          "read": true
+        },
+        "preheader": {
+          "read": true
+        },
+        "provider": {
+          "read": true
+        },
+        "recipients": {
+          "read": true
+        },
+        "run": {
+          "read": true
+        },
+        "scheduledAt": {
+          "read": true
+        },
+        "sendStartedAt": {
+          "read": true
+        },
+        "sentAt": {
+          "read": true
+        },
+        "source": {
+          "fields": {
+            "externalId": {
+              "read": true
+            },
+            "importId": {
+              "read": true
+            },
+            "system": {
+              "read": true
+            },
+            "workflowRunId": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "status": {
+          "read": true
+        },
+        "subject": {
+          "read": true
+        },
+        "template": {
+          "read": true
+        },
+        "unsubscribes": {
+          "read": true
+        },
+        "updatedAt": {
+          "read": true
+        },
+        "updatedBy": {
+          "read": true
+        }
+      },
+      "read": true
+    },
+    "crm-companies": {
+      "create": true,
+      "delete": true,
+      "fields": true,
+      "read": true,
+      "update": true
+    },
+    "crm-contact-signals": {
+      "create": true,
+      "fields": {
+        "actor": {
+          "create": true,
+          "fields": {
+            "label": {
+              "create": true,
+              "read": true
+            },
+            "user": {
+              "create": true,
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "compacted": {
+          "create": true,
+          "read": true
+        },
+        "contact": {
+          "create": true,
+          "read": true
+        },
+        "context": {
+          "create": true,
+          "fields": {
+            "campaign": {
+              "create": true,
+              "read": true
+            },
+            "flow": {
+              "create": true,
+              "read": true
+            },
+            "product": {
+              "create": true,
+              "read": true
+            },
+            "url": {
+              "create": true,
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "createdAt": true,
+        "createdBy": true,
+        "currentKey": {
+          "create": true,
+          "read": true
+        },
+        "dedupeKey": {
+          "create": true,
+          "read": true
+        },
+        "note": true,
+        "occurredAt": {
+          "create": true,
+          "read": true
+        },
+        "occurrences": {
+          "create": true,
+          "read": true
+        },
+        "owner": {
+          "create": true,
+          "read": true
+        },
+        "provenance": {
+          "create": true,
+          "fields": {
+            "externalId": {
+              "create": true,
+              "read": true
+            },
+            "importId": {
+              "create": true,
+              "read": true
+            },
+            "workflowRunId": {
+              "create": true,
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "signal": {
+          "create": true,
+          "read": true
+        },
+        "source": {
+          "create": true,
+          "read": true
+        },
+        "supersedes": {
+          "create": true,
+          "read": true
+        },
+        "updatedAt": true,
+        "updatedBy": true,
+        "value": {
+          "create": true,
+          "read": true
+        },
+        "valueDate": {
+          "create": true,
+          "read": true
+        },
+        "valueNumber": {
+          "create": true,
+          "read": true
+        }
+      },
+      "read": true,
+      "update": true
+    },
+    "crm-contacts": {
+      "create": true,
+      "delete": true,
+      "fields": true,
+      "read": true,
+      "update": true
+    },
+    "crm-conversations": {
+      "create": true,
+      "delete": true,
+      "fields": true,
+      "read": true,
+      "update": true
+    },
+    "crm-deal-line-items": {
+      "create": true,
+      "delete": true,
+      "fields": true,
+      "read": true,
+      "update": true
+    },
+    "crm-drafts": {
+      "create": true,
+      "delete": {
+        "permission": true,
+        "where": {
+          "createdBy": {
+            "equals": 66
+          }
+        }
+      },
+      "fields": true,
+      "read": {
+        "permission": true,
+        "where": {
+          "createdBy": {
+            "equals": 66
+          }
+        }
+      },
+      "update": {
+        "permission": true,
+        "where": {
+          "createdBy": {
+            "equals": 66
+          }
+        }
+      }
+    },
+    "crm-email-layouts": {
+      "fields": {
+        "createdAt": {
+          "read": true
+        },
+        "createdBy": {
+          "read": true
+        },
+        "deletedAt": {
+          "read": true
+        },
+        "description": {
+          "read": true
+        },
+        "design": {
+          "read": true
+        },
+        "isDefault": {
+          "read": true
+        },
+        "name": {
+          "read": true
+        },
+        "owner": {
+          "read": true
+        },
+        "source": {
+          "fields": {
+            "externalId": {
+              "read": true
+            },
+            "importId": {
+              "read": true
+            },
+            "system": {
+              "read": true
+            },
+            "workflowRunId": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "templates": {
+          "read": true
+        },
+        "theme": {
+          "fields": {
+            "accent": {
+              "read": true
+            },
+            "baseFontSize": {
+              "read": true
+            },
+            "border": {
+              "read": true
+            },
+            "borderRadius": {
+              "read": true
+            },
+            "buttonText": {
+              "read": true
+            },
+            "contentPadding": {
+              "fields": {
+                "bottom": {
+                  "read": true
+                },
+                "left": {
+                  "read": true
+                },
+                "right": {
+                  "read": true
+                },
+                "top": {
+                  "read": true
+                }
+              },
+              "read": true
+            },
+            "contentWidth": {
+              "read": true
+            },
+            "fontFamily": {
+              "read": true
+            },
+            "heading": {
+              "read": true
+            },
+            "headingFontFamily": {
+              "read": true
+            },
+            "link": {
+              "read": true
+            },
+            "mutedText": {
+              "read": true
+            },
+            "pageBackground": {
+              "read": true
+            },
+            "primary": {
+              "read": true
+            },
+            "surface": {
+              "read": true
+            },
+            "text": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "updatedAt": {
+          "read": true
+        },
+        "updatedBy": {
+          "read": true
+        }
+      },
+      "read": true
+    },
+    "crm-flow-enrolments": {
+      "fields": {
+        "contact": {
+          "read": true
+        },
+        "createdAt": {
+          "read": true
+        },
+        "createdBy": {
+          "read": true
+        },
+        "currentNode": {
+          "read": true
+        },
+        "enrolmentKey": {
+          "read": true
+        },
+        "enteredAt": {
+          "read": true
+        },
+        "exitReason": {
+          "read": true
+        },
+        "exitedAt": {
+          "read": true
+        },
+        "flow": {
+          "read": true
+        },
+        "graphVersion": {
+          "read": true
+        },
+        "lastNodeAt": {
+          "read": true
+        },
+        "occurrence": {
+          "read": true
+        },
+        "owner": {
+          "read": true
+        },
+        "path": {
+          "read": true
+        },
+        "run": {
+          "read": true
+        },
+        "source": {
+          "fields": {
+            "externalId": {
+              "read": true
+            },
+            "importId": {
+              "read": true
+            },
+            "system": {
+              "read": true
+            },
+            "workflowRunId": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "status": {
+          "read": true
+        },
+        "updatedAt": {
+          "read": true
+        },
+        "updatedBy": {
+          "read": true
+        }
+      },
+      "read": true
+    },
+    "crm-flows": {
+      "fields": {
+        "activeNow": {
+          "read": true
+        },
+        "completed": {
+          "read": true
+        },
+        "countedAt": {
+          "read": true
+        },
+        "createdAt": {
+          "read": true
+        },
+        "createdBy": {
+          "read": true
+        },
+        "deletedAt": {
+          "read": true
+        },
+        "description": {
+          "read": true
+        },
+        "enrolled": {
+          "read": true
+        },
+        "enrolments": {
+          "read": true
+        },
+        "entranceEvent": {
+          "read": true
+        },
+        "entranceList": {
+          "read": true
+        },
+        "entranceMultiple": {
+          "read": true
+        },
+        "entranceSchedule": {
+          "read": true
+        },
+        "entranceTrigger": {
+          "read": true
+        },
+        "goal": {
+          "read": true
+        },
+        "graph": {
+          "read": true
+        },
+        "graphVersion": {
+          "read": true
+        },
+        "linkedFlows": {
+          "read": true
+        },
+        "name": {
+          "read": true
+        },
+        "nodeStats": {
+          "read": true
+        },
+        "nodeStatsAt": {
+          "read": true
+        },
+        "owner": {
+          "read": true
+        },
+        "source": {
+          "fields": {
+            "externalId": {
+              "read": true
+            },
+            "importId": {
+              "read": true
+            },
+            "system": {
+              "read": true
+            },
+            "workflowRunId": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "status": {
+          "read": true
+        },
+        "stepCount": {
+          "read": true
+        },
+        "templatesUsed": {
+          "read": true
+        },
+        "triggerLabel": {
+          "read": true
+        },
+        "updatedAt": {
+          "read": true
+        },
+        "updatedBy": {
+          "read": true
+        }
+      },
+      "read": true
+    },
+    "crm-import-row-errors": {
+      "fields": {
+        "column": {
+          "read": true
+        },
+        "createdAt": {
+          "read": true
+        },
+        "createdBy": {
+          "read": true
+        },
+        "import": {
+          "read": true
+        },
+        "message": {
+          "read": true
+        },
+        "owner": {
+          "read": true
+        },
+        "row": {
+          "read": true
+        },
+        "severity": {
+          "read": true
+        },
+        "source": {
+          "fields": {
+            "externalId": {
+              "read": true
+            },
+            "importId": {
+              "read": true
+            },
+            "system": {
+              "read": true
+            },
+            "workflowRunId": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "updatedAt": {
+          "read": true
+        },
+        "updatedBy": {
+          "read": true
+        },
+        "value": {
+          "read": true
+        }
+      },
+      "read": true
+    },
+    "crm-imports": {
+      "fields": {
+        "applyTags": {
+          "read": true
+        },
+        "countedAt": {
+          "read": true
+        },
+        "createdAt": {
+          "read": true
+        },
+        "createdBy": {
+          "read": true
+        },
+        "createdRows": {
+          "read": true
+        },
+        "delimiter": {
+          "read": true
+        },
+        "duplicateStrategy": {
+          "read": true
+        },
+        "errorRows": {
+          "read": true
+        },
+        "file": {
+          "read": true
+        },
+        "fileName": {
+          "read": true
+        },
+        "fileSize": {
+          "read": true
+        },
+        "finishedAt": {
+          "read": true
+        },
+        "format": {
+          "read": true
+        },
+        "mappings": {
+          "fields": {
+            "id": {
+              "read": true
+            },
+            "sample": {
+              "read": true
+            },
+            "sourceHeader": {
+              "read": true
+            },
+            "targetField": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "owner": {
+          "read": true
+        },
+        "processedRows": {
+          "read": true
+        },
+        "rowErrors": {
+          "read": true
+        },
+        "run": {
+          "read": true
+        },
+        "skippedRows": {
+          "read": true
+        },
+        "source": {
+          "fields": {
+            "externalId": {
+              "read": true
+            },
+            "importId": {
+              "read": true
+            },
+            "system": {
+              "read": true
+            },
+            "workflowRunId": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "startedAt": {
+          "read": true
+        },
+        "status": {
+          "read": true
+        },
+        "targetList": {
+          "read": true
+        },
+        "totalRows": {
+          "read": true
+        },
+        "updatedAt": {
+          "read": true
+        },
+        "updatedBy": {
+          "read": true
+        },
+        "updatedRows": {
+          "read": true
+        }
+      },
+      "read": true
+    },
+    "crm-inboxes": {
+      "fields": {
+        "address": {
+          "read": true
+        },
+        "conversationCount": {
+          "read": true
+        },
+        "createdAt": {
+          "read": true
+        },
+        "createdBy": {
+          "read": true
+        },
+        "description": {
+          "read": true
+        },
+        "key": {
+          "read": true
+        },
+        "lastMessageAt": {
+          "read": true
+        },
+        "name": {
+          "read": true
+        },
+        "owner": {
+          "read": true
+        },
+        "signature": {
+          "read": true
+        },
+        "source": {
+          "fields": {
+            "externalId": {
+              "read": true
+            },
+            "importId": {
+              "read": true
+            },
+            "system": {
+              "read": true
+            },
+            "workflowRunId": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "unreadCount": {
+          "read": true
+        },
+        "updatedAt": {
+          "read": true
+        },
+        "updatedBy": {
+          "read": true
+        }
+      },
+      "read": true
+    },
+    "crm-list-memberships": {
+      "fields": {
+        "addedAt": {
+          "read": true
+        },
+        "contact": {
+          "read": true
+        },
+        "createdAt": {
+          "read": true
+        },
+        "createdBy": {
+          "read": true
+        },
+        "lastMatchedAt": {
+          "read": true
+        },
+        "list": {
+          "read": true
+        },
+        "owner": {
+          "read": true
+        },
+        "source": {
+          "fields": {
+            "externalId": {
+              "read": true
+            },
+            "importId": {
+              "read": true
+            },
+            "system": {
+              "read": true
+            },
+            "workflowRunId": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "updatedAt": {
+          "read": true
+        },
+        "updatedBy": {
+          "read": true
+        }
+      },
+      "read": true
+    },
+    "crm-lists": {
+      "fields": {
+        "campaigns": {
+          "read": true
+        },
+        "countedAt": {
+          "read": true
+        },
+        "createdAt": {
+          "read": true
+        },
+        "createdBy": {
+          "read": true
+        },
+        "deletedAt": {
+          "read": true
+        },
+        "description": {
+          "read": true
+        },
+        "external": {
+          "fields": {
+            "audienceId": {
+              "read": true
+            },
+            "audienceName": {
+              "read": true
+            },
+            "autoEnrich": {
+              "read": true
+            },
+            "lastSyncError": {
+              "read": true
+            },
+            "lastSyncedAt": {
+              "read": true
+            },
+            "provider": {
+              "read": true
+            },
+            "syncSchedule": {
+              "read": true
+            },
+            "tags": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "filterFields": {
+          "read": true
+        },
+        "filterGroups": {
+          "read": true
+        },
+        "folder": {
+          "read": true
+        },
+        "lastRefreshedAt": {
+          "read": true
+        },
+        "memberships": {
+          "read": true
+        },
+        "name": {
+          "read": true
+        },
+        "owner": {
+          "read": true
+        },
+        "previousSize": {
+          "read": true
+        },
+        "refresh": {
+          "fields": {
+            "error": {
+              "read": true
+            },
+            "requestedAt": {
+              "read": true
+            },
+            "run": {
+              "read": true
+            },
+            "state": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "ruleCount": {
+          "read": true
+        },
+        "size": {
+          "read": true
+        },
+        "source": {
+          "fields": {
+            "externalId": {
+              "read": true
+            },
+            "importId": {
+              "read": true
+            },
+            "system": {
+              "read": true
+            },
+            "workflowRunId": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "status": {
+          "read": true
+        },
+        "type": {
+          "read": true
+        },
+        "updatedAt": {
+          "read": true
+        },
+        "updatedBy": {
+          "read": true
+        }
+      },
+      "read": true
+    },
+    "crm-locations": {
+      "fields": {
+        "addressLine1": {
+          "read": true
+        },
+        "addressLine2": {
+          "read": true
+        },
+        "amenities": {
+          "read": true
+        },
+        "city": {
+          "read": true
+        },
+        "closedAt": {
+          "read": true
+        },
+        "code": {
+          "read": true
+        },
+        "coordinates": {
+          "fields": {
+            "latitude": {
+              "read": true
+            },
+            "longitude": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "country": {
+          "read": true
+        },
+        "countryCode": {
+          "read": true
+        },
+        "createdAt": {
+          "read": true
+        },
+        "createdBy": {
+          "read": true
+        },
+        "deletedAt": {
+          "read": true
+        },
+        "email": {
+          "read": true
+        },
+        "floorAreaSqm": {
+          "read": true
+        },
+        "google": {
+          "fields": {
+            "accountId": {
+              "read": true,
+              "update": true
+            },
+            "accountName": {
+              "read": true,
+              "update": true
+            },
+            "category": {
+              "read": true,
+              "update": true
+            },
+            "lastSyncedAt": {
+              "read": true,
+              "update": true
+            },
+            "listingId": {
+              "read": true,
+              "update": true
+            },
+            "mapsUrl": {
+              "read": true,
+              "update": true
+            },
+            "monthlyViews": {
+              "read": true,
+              "update": true
+            },
+            "photoCount": {
+              "read": true,
+              "update": true
+            },
+            "placeId": {
+              "read": true,
+              "update": true
+            },
+            "rating": {
+              "read": true,
+              "update": true
+            },
+            "reviewCount": {
+              "read": true,
+              "update": true
+            },
+            "status": {
+              "read": true,
+              "update": true
+            },
+            "unansweredReviews": {
+              "read": true,
+              "update": true
+            }
+          },
+          "read": true,
+          "update": true
+        },
+        "googleListed": {
+          "read": true
+        },
+        "headcount": {
+          "read": true
+        },
+        "hours": {
+          "fields": {
+            "closes": {
+              "read": true
+            },
+            "day": {
+              "read": true
+            },
+            "id": {
+              "read": true
+            },
+            "opens": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "manager": {
+          "read": true
+        },
+        "name": {
+          "read": true
+        },
+        "notes": {
+          "read": true
+        },
+        "openedAt": {
+          "read": true
+        },
+        "owner": {
+          "read": true
+        },
+        "phone": {
+          "read": true
+        },
+        "postalCode": {
+          "read": true
+        },
+        "source": {
+          "fields": {
+            "externalId": {
+              "read": true
+            },
+            "importId": {
+              "read": true
+            },
+            "system": {
+              "read": true
+            },
+            "workflowRunId": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "state": {
+          "read": true
+        },
+        "status": {
+          "read": true
+        },
+        "timezone": {
+          "read": true
+        },
+        "type": {
+          "read": true
+        },
+        "updatedAt": {
+          "read": true
+        },
+        "updatedBy": {
+          "read": true
+        },
+        "website": {
+          "read": true
+        }
+      },
+      "read": true
+    },
+    "crm-message-events": {
+      "fields": {
+        "createdAt": {
+          "read": true
+        },
+        "createdBy": {
+          "read": true
+        },
+        "email": {
+          "read": true
+        },
+        "inbox": {
+          "read": true
+        },
+        "ip": {
+          "read": true
+        },
+        "machineOpen": {
+          "read": true
+        },
+        "message": {
+          "read": true
+        },
+        "occurredAt": {
+          "read": true
+        },
+        "owner": {
+          "read": true
+        },
+        "providerEventId": {
+          "read": true
+        },
+        "raw": {
+          "read": true
+        },
+        "reason": {
+          "read": true
+        },
+        "source": {
+          "fields": {
+            "externalId": {
+              "read": true
+            },
+            "importId": {
+              "read": true
+            },
+            "system": {
+              "read": true
+            },
+            "workflowRunId": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "type": {
+          "read": true
+        },
+        "updatedAt": {
+          "read": true
+        },
+        "updatedBy": {
+          "read": true
+        },
+        "url": {
+          "read": true
+        },
+        "userAgent": {
+          "read": true
+        }
+      },
+      "read": true
+    },
+    "crm-messages": {
+      "fields": {
+        "attachments": {
+          "fields": {
+            "contentType": {
+              "read": true
+            },
+            "filename": {
+              "read": true
+            },
+            "id": {
+              "read": true
+            },
+            "media": {
+              "read": true
+            },
+            "size": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "bodyTruncated": {
+          "read": true
+        },
+        "bounceReason": {
+          "read": true
+        },
+        "bouncedAt": {
+          "read": true
+        },
+        "cc": {
+          "fields": {
+            "email": {
+              "read": true
+            },
+            "id": {
+              "read": true
+            },
+            "name": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "clickCount": {
+          "read": true
+        },
+        "contact": {
+          "read": true
+        },
+        "conversation": {
+          "read": true
+        },
+        "createdAt": {
+          "read": true
+        },
+        "createdBy": {
+          "read": true
+        },
+        "dedupeKey": {
+          "read": true
+        },
+        "deliveredAt": {
+          "read": true
+        },
+        "direction": {
+          "read": true
+        },
+        "error": {
+          "read": true
+        },
+        "firstClickedAt": {
+          "read": true
+        },
+        "firstOpenedAt": {
+          "read": true
+        },
+        "from": {
+          "fields": {
+            "email": {
+              "read": true
+            },
+            "name": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "headers": {
+          "read": true
+        },
+        "html": {
+          "read": true
+        },
+        "inReplyTo": {
+          "read": true
+        },
+        "inbox": {
+          "read": true
+        },
+        "kind": {
+          "read": true
+        },
+        "lastClickedAt": {
+          "read": true
+        },
+        "lastOpenedAt": {
+          "read": true
+        },
+        "messageId": {
+          "read": true
+        },
+        "occurredAt": {
+          "read": true
+        },
+        "openCount": {
+          "read": true
+        },
+        "owner": {
+          "read": true
+        },
+        "provider": {
+          "read": true
+        },
+        "providerMessageId": {
+          "read": true
+        },
+        "references": {
+          "read": true
+        },
+        "replyTo": {
+          "read": true
+        },
+        "senderIp": {
+          "read": true
+        },
+        "sentBy": {
+          "read": true
+        },
+        "snippet": {
+          "read": true
+        },
+        "source": {
+          "fields": {
+            "externalId": {
+              "read": true
+            },
+            "importId": {
+              "read": true
+            },
+            "system": {
+              "read": true
+            },
+            "workflowRunId": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "spamScore": {
+          "read": true
+        },
+        "status": {
+          "read": true
+        },
+        "subject": {
+          "read": true
+        },
+        "text": {
+          "read": true
+        },
+        "to": {
+          "fields": {
+            "email": {
+              "read": true
+            },
+            "id": {
+              "read": true
+            },
+            "name": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "updatedAt": {
+          "read": true
+        },
+        "updatedBy": {
+          "read": true
+        }
+      },
+      "read": true
+    },
+    "crm-opportunities": {
+      "create": true,
+      "delete": true,
+      "fields": true,
+      "read": true,
+      "update": true
+    },
+    "crm-pipelines": {
+      "fields": {
+        "createdAt": {
+          "read": true
+        },
+        "createdBy": {
+          "read": true
+        },
+        "deletedAt": {
+          "read": true
+        },
+        "description": {
+          "read": true
+        },
+        "name": {
+          "read": true
+        },
+        "opportunities": {
+          "read": true
+        },
+        "owner": {
+          "read": true
+        },
+        "source": {
+          "fields": {
+            "externalId": {
+              "read": true
+            },
+            "importId": {
+              "read": true
+            },
+            "system": {
+              "read": true
+            },
+            "workflowRunId": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "stages": {
+          "fields": {
+            "id": {
+              "read": true
+            },
+            "name": {
+              "read": true
+            },
+            "probability": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "updatedAt": {
+          "read": true
+        },
+        "updatedBy": {
+          "read": true
+        }
+      },
+      "read": true
+    },
+    "crm-products": {
+      "fields": {
+        "billingPeriod": {
+          "read": true
+        },
+        "bundledProducts": {
+          "read": true
+        },
+        "category": {
+          "read": true
+        },
+        "createdAt": {
+          "read": true
+        },
+        "createdBy": {
+          "read": true
+        },
+        "currency": {
+          "read": true
+        },
+        "deletedAt": {
+          "read": true
+        },
+        "description": {
+          "read": true
+        },
+        "discontinuedAt": {
+          "read": true
+        },
+        "highlights": {
+          "fields": {
+            "id": {
+              "read": true
+            },
+            "text": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "includedUnits": {
+          "read": true
+        },
+        "launchedAt": {
+          "read": true
+        },
+        "leadTimeDays": {
+          "read": true
+        },
+        "lineItems": {
+          "read": true
+        },
+        "maxDiscountPercent": {
+          "read": true
+        },
+        "minQuantity": {
+          "read": true
+        },
+        "name": {
+          "read": true
+        },
+        "owner": {
+          "read": true
+        },
+        "performance": {
+          "fields": {
+            "arr": {
+              "read": true
+            },
+            "avgDiscount": {
+              "read": true
+            },
+            "countedAt": {
+              "read": true
+            },
+            "customerCount": {
+              "read": true
+            },
+            "dealCount": {
+              "read": true
+            },
+            "lostCount": {
+              "read": true
+            },
+            "openCount": {
+              "read": true
+            },
+            "openPipeline": {
+              "read": true
+            },
+            "unitsSold": {
+              "read": true
+            },
+            "winRate": {
+              "read": true
+            },
+            "wonCount": {
+              "read": true
+            },
+            "wonRevenue": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "price": {
+          "read": true
+        },
+        "pricingModel": {
+          "read": true
+        },
+        "relatedProducts": {
+          "read": true
+        },
+        "reorderPoint": {
+          "read": true
+        },
+        "setupFee": {
+          "read": true
+        },
+        "sku": {
+          "read": true
+        },
+        "source": {
+          "fields": {
+            "externalId": {
+              "read": true
+            },
+            "importId": {
+              "read": true
+            },
+            "system": {
+              "read": true
+            },
+            "workflowRunId": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "status": {
+          "read": true
+        },
+        "stock": {
+          "read": true
+        },
+        "supplier": {
+          "read": true
+        },
+        "tags": {
+          "read": true
+        },
+        "taxRate": {
+          "read": true
+        },
+        "tiers": {
+          "fields": {
+            "id": {
+              "read": true
+            },
+            "maxQuantity": {
+              "read": true
+            },
+            "minQuantity": {
+              "read": true
+            },
+            "unitPrice": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "trackInventory": {
+          "read": true
+        },
+        "trialDays": {
+          "read": true
+        },
+        "type": {
+          "read": true
+        },
+        "unit": {
+          "read": true
+        },
+        "unitCost": {
+          "read": true
+        },
+        "updatedAt": {
+          "read": true
+        },
+        "updatedBy": {
+          "read": true
+        }
+      },
+      "read": true
+    },
+    "crm-provider-connections": {
+      "fields": {
+        "calendar": {
+          "fields": {
+            "busyReads": {
+              "read": true
+            },
+            "calendars": {
+              "fields": {
+                "calendarId": {
+                  "read": true
+                },
+                "checkConflicts": {
+                  "read": true
+                },
+                "id": {
+                  "read": true
+                },
+                "isTarget": {
+                  "read": true
+                },
+                "name": {
+                  "read": true
+                },
+                "readOnly": {
+                  "read": true
+                }
+              },
+              "read": true
+            },
+            "channelExpiresAt": {
+              "read": true
+            },
+            "eventsCanceled": {
+              "read": true
+            },
+            "eventsCreated": {
+              "read": true
+            },
+            "eventsUpdated": {
+              "read": true
+            },
+            "lastSyncedAt": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "category": {
+          "read": true
+        },
+        "connectedAt": {
+          "read": true
+        },
+        "createdAt": {
+          "read": true
+        },
+        "createdBy": {
+          "read": true
+        },
+        "domains": {
+          "fields": {
+            "dkim": {
+              "read": true
+            },
+            "dmarc": {
+              "read": true
+            },
+            "domain": {
+              "read": true
+            },
+            "id": {
+              "read": true
+            },
+            "spf": {
+              "read": true
+            },
+            "verifiedAt": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "error": {
+          "read": true
+        },
+        "key": {
+          "read": true
+        },
+        "lastCheckedAt": {
+          "read": true
+        },
+        "oauth": {
+          "fields": {
+            "accountEmail": {
+              "read": true
+            },
+            "expiresAt": {
+              "read": true
+            },
+            "grantedAt": {
+              "read": true
+            },
+            "grantedBy": {
+              "read": true
+            },
+            "scopes": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "owner": {
+          "read": true
+        },
+        "secrets": "<redacted>",
+        "settings": {
+          "read": true
+        },
+        "source": {
+          "fields": {
+            "externalId": {
+              "read": true
+            },
+            "importId": {
+              "read": true
+            },
+            "system": {
+              "read": true
+            },
+            "workflowRunId": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "status": {
+          "read": true
+        },
+        "subscribedEvents": {
+          "read": true
+        },
+        "updatedAt": {
+          "read": true
+        },
+        "updatedBy": {
+          "read": true
+        },
+        "usage": {
+          "fields": {
+            "bounced": {
+              "read": true
+            },
+            "complaints": {
+              "read": true
+            },
+            "countedAt": {
+              "read": true
+            },
+            "delivered": {
+              "read": true
+            },
+            "quota": {
+              "read": true
+            },
+            "sent": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "webhookUrl": {
+          "read": true
+        }
+      },
+      "read": true
+    },
+    "crm-saved-views": {
+      "create": true,
+      "delete": {
+        "permission": true,
+        "where": {
+          "owner": {
+            "equals": 66
+          }
+        }
+      },
+      "fields": true,
+      "read": {
+        "permission": true,
+        "where": {
+          "or": [
+            {
+              "shared": {
+                "equals": true
+              }
+            },
+            {
+              "owner": {
+                "equals": 66
+              }
+            }
+          ]
+        }
+      },
+      "update": {
+        "permission": true,
+        "where": {
+          "owner": {
+            "equals": 66
+          }
+        }
+      }
+    },
+    "crm-signal-definitions": {
+      "fields": {
+        "archived": {
+          "read": true
+        },
+        "cardinality": {
+          "read": true
+        },
+        "category": {
+          "read": true
+        },
+        "contactSignals": {
+          "read": true
+        },
+        "createdAt": {
+          "read": true
+        },
+        "createdBy": {
+          "read": true
+        },
+        "description": {
+          "read": true
+        },
+        "key": {
+          "read": true
+        },
+        "name": {
+          "read": true
+        },
+        "owner": {
+          "read": true
+        },
+        "provenance": {
+          "fields": {
+            "externalId": {
+              "read": true
+            },
+            "importId": {
+              "read": true
+            },
+            "workflowRunId": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "rollup": {
+          "fields": {
+            "contacts": {
+              "read": true
+            },
+            "countedAt": {
+              "read": true
+            },
+            "coverage": {
+              "read": true
+            },
+            "firstAt": {
+              "read": true
+            },
+            "lastAt": {
+              "read": true
+            },
+            "perContact": {
+              "read": true
+            },
+            "records": {
+              "read": true
+            },
+            "values": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "slug": {
+          "read": true
+        },
+        "source": {
+          "read": true
+        },
+        "suggestions": {
+          "fields": {
+            "id": {
+              "read": true
+            },
+            "value": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "unit": {
+          "read": true
+        },
+        "updatedAt": {
+          "read": true
+        },
+        "updatedBy": {
+          "read": true
+        },
+        "valueType": {
+          "read": true
+        }
+      },
+      "read": true
+    },
+    "crm-tags": {
+      "create": true,
+      "fields": {
+        "createdAt": {
+          "create": true,
+          "read": true
+        },
+        "createdBy": {
+          "create": true,
+          "read": true
+        },
+        "deletedAt": {
+          "create": true,
+          "read": true
+        },
+        "name": {
+          "create": true,
+          "read": true
+        },
+        "owner": {
+          "create": true,
+          "read": true
+        },
+        "slug": {
+          "create": true,
+          "read": true
+        },
+        "source": {
+          "create": true,
+          "fields": {
+            "externalId": {
+              "create": true,
+              "read": true
+            },
+            "importId": {
+              "create": true,
+              "read": true
+            },
+            "system": {
+              "create": true,
+              "read": true
+            },
+            "workflowRunId": {
+              "create": true,
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "updatedAt": {
+          "create": true,
+          "read": true
+        },
+        "updatedBy": {
+          "create": true,
+          "read": true
+        }
+      },
+      "read": true
+    },
+    "crm-tasks": {
+      "create": true,
+      "delete": true,
+      "fields": true,
+      "read": true,
+      "update": true
+    },
+    "crm-templates": {
+      "fields": {
+        "body": {
+          "read": true
+        },
+        "campaigns": {
+          "read": true
+        },
+        "category": {
+          "read": true
+        },
+        "channel": {
+          "read": true
+        },
+        "countedAt": {
+          "read": true
+        },
+        "createdAt": {
+          "read": true
+        },
+        "createdBy": {
+          "read": true
+        },
+        "deletedAt": {
+          "read": true
+        },
+        "description": {
+          "read": true
+        },
+        "design": {
+          "read": true
+        },
+        "endpoint": {
+          "read": true
+        },
+        "html": {
+          "read": true
+        },
+        "lastUsedAt": {
+          "read": true
+        },
+        "layout": {
+          "read": true
+        },
+        "linkUrl": {
+          "read": true
+        },
+        "mergeTokens": "<redacted>",
+        "method": {
+          "read": true
+        },
+        "name": {
+          "read": true
+        },
+        "owner": {
+          "read": true
+        },
+        "preheader": {
+          "read": true
+        },
+        "source": {
+          "fields": {
+            "externalId": {
+              "read": true
+            },
+            "importId": {
+              "read": true
+            },
+            "system": {
+              "read": true
+            },
+            "workflowRunId": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "status": {
+          "read": true
+        },
+        "subject": {
+          "read": true
+        },
+        "tags": {
+          "read": true
+        },
+        "title": {
+          "read": true
+        },
+        "updatedAt": {
+          "read": true
+        },
+        "updatedBy": {
+          "read": true
+        },
+        "usageCount": {
+          "read": true
+        }
+      },
+      "read": true
+    },
+    "crm-workflow-runs": {
+      "fields": {
+        "contact": {
+          "read": true
+        },
+        "createdAt": {
+          "read": true
+        },
+        "createdBy": {
+          "read": true
+        },
+        "currentNode": {
+          "read": true
+        },
+        "error": {
+          "fields": {
+            "fatal": {
+              "read": true
+            },
+            "message": {
+              "read": true
+            },
+            "step": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "finishedAt": {
+          "read": true
+        },
+        "idempotencyKey": {
+          "read": true
+        },
+        "input": {
+          "read": true
+        },
+        "owner": {
+          "read": true
+        },
+        "parentRun": {
+          "read": true
+        },
+        "progress": {
+          "fields": {
+            "countedAt": {
+              "read": true
+            },
+            "done": {
+              "read": true
+            },
+            "failed": {
+              "read": true
+            },
+            "total": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "runId": {
+          "read": true
+        },
+        "source": {
+          "fields": {
+            "externalId": {
+              "read": true
+            },
+            "importId": {
+              "read": true
+            },
+            "system": {
+              "read": true
+            },
+            "workflowRunId": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "startedAt": {
+          "read": true
+        },
+        "status": {
+          "read": true
+        },
+        "subjectCollection": {
+          "read": true
+        },
+        "subjectId": {
+          "read": true
+        },
+        "tokens": "<redacted>",
+        "updatedAt": {
+          "read": true
+        },
+        "updatedBy": {
+          "read": true
+        },
+        "workflow": {
+          "read": true
+        }
+      },
+      "read": true
+    },
+    "form-submissions": {
+      "create": true,
+      "delete": true,
+      "fields": {
+        "createdAt": {
+          "create": true,
+          "read": true
+        },
+        "form": {
+          "create": true,
+          "read": true
+        },
+        "submissionData": {
+          "create": true,
+          "fields": {
+            "field": {
+              "create": true,
+              "read": true
+            },
+            "id": {
+              "create": true,
+              "read": true
+            },
+            "value": {
+              "create": true,
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "updatedAt": {
+          "create": true,
+          "read": true
+        }
+      },
+      "read": true
+    },
+    "forms": {
+      "create": true,
+      "delete": true,
+      "fields": true,
+      "read": true,
+      "update": true
+    },
+    "media": {
+      "create": true,
+      "delete": true,
+      "fields": true,
+      "read": true,
+      "update": true
+    },
+    "pages": {
+      "create": true,
+      "delete": true,
+      "fields": true,
+      "read": true,
+      "readVersions": true,
+      "update": true
+    },
+    "payload-folders": {
+      "create": true,
+      "delete": true,
+      "fields": true,
+      "read": true,
+      "update": true
+    },
+    "payload-jobs": {
+      "create": true,
+      "delete": true,
+      "fields": true,
+      "read": true,
+      "update": true
+    },
+    "payload-locked-documents": {
+      "create": true,
+      "delete": true,
+      "fields": true,
+      "read": true,
+      "update": true
+    },
+    "payload-migrations": {
+      "create": true,
+      "delete": true,
+      "fields": true,
+      "read": true,
+      "update": true
+    },
+    "payload-preferences": {
+      "create": true,
+      "delete": {
+        "permission": true,
+        "where": {
+          "and": [
+            {
+              "user.value": {
+                "equals": 66
+              }
+            },
+            {
+              "user.relationTo": {
+                "equals": "users"
+              }
+            }
+          ]
+        }
+      },
+      "fields": true,
+      "read": {
+        "permission": true,
+        "where": {
+          "and": [
+            {
+              "user.value": {
+                "equals": 66
+              }
+            },
+            {
+              "user.relationTo": {
+                "equals": "users"
+              }
+            }
+          ]
+        }
+      },
+      "update": true
+    },
+    "posts": {
+      "create": true,
+      "delete": true,
+      "fields": {
+        "_status": true,
+        "authors": true,
+        "categories": true,
+        "content": true,
+        "createdAt": true,
+        "generateSlug": true,
+        "heroImage": true,
+        "meta": true,
+        "populatedAuthors": {
+          "create": true,
+          "fields": {
+            "id": {
+              "create": true,
+              "read": true
+            },
+            "name": {
+              "create": true,
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "publishedAt": true,
+        "relatedPosts": true,
+        "slug": true,
+        "title": true,
+        "updatedAt": true
+      },
+      "read": true,
+      "readVersions": true,
+      "update": true
+    },
+    "redirects": {
+      "create": true,
+      "delete": true,
+      "fields": true,
+      "read": true,
+      "update": true
+    },
+    "search": {
+      "delete": true,
+      "fields": {
+        "categories": {
+          "fields": {
+            "categoryID": {
+              "read": true,
+              "update": true
+            },
+            "id": {
+              "read": true,
+              "update": true
+            },
+            "relationTo": {
+              "read": true,
+              "update": true
+            },
+            "title": {
+              "read": true,
+              "update": true
+            }
+          },
+          "read": true,
+          "update": true
+        },
+        "createdAt": {
+          "read": true,
+          "update": true
+        },
+        "doc": {
+          "read": true,
+          "update": true
+        },
+        "docUrl": {
+          "read": true,
+          "update": true
+        },
+        "meta": {
+          "fields": {
+            "description": {
+              "read": true,
+              "update": true
+            },
+            "image": {
+              "read": true,
+              "update": true
+            },
+            "title": {
+              "read": true,
+              "update": true
+            }
+          },
+          "read": true,
+          "update": true
+        },
+        "priority": {
+          "read": true,
+          "update": true
+        },
+        "slug": {
+          "read": true,
+          "update": true
+        },
+        "title": {
+          "read": true,
+          "update": true
+        },
+        "updatedAt": {
+          "read": true,
+          "update": true
+        }
+      },
+      "read": true,
+      "update": true
+    },
+    "users": {
+      "create": true,
+      "delete": true,
+      "fields": {
+        "apiKey": "<redacted>",
+        "apiKeyIndex": "<redacted>",
+        "createdAt": true,
+        "crmRole": {
+          "read": true
+        },
+        "email": true,
+        "enableAPIKey": true,
+        "hash": "<redacted>",
+        "lockUntil": {
+          "read": true
+        },
+        "loginAttempts": {
+          "read": true
+        },
+        "name": true,
+        "resetPasswordExpiration": "<redacted>",
+        "resetPasswordToken": "<redacted>",
+        "salt": "<redacted>",
+        "sessions": "<redacted>",
+        "updatedAt": true,
+        "username": true
+      },
+      "read": true,
+      "unlock": true,
+      "update": true
+    }
+  },
+  "globals": {
+    "crm-brand": {
+      "fields": {
+        "accentColor": {
+          "read": true
+        },
+        "adDisclosure": {
+          "read": true
+        },
+        "adDisclosureText": {
+          "read": true
+        },
+        "addressLine1": {
+          "read": true
+        },
+        "addressLine2": {
+          "read": true
+        },
+        "backgroundColor": {
+          "read": true
+        },
+        "baseFontSize": {
+          "read": true
+        },
+        "borderRadius": {
+          "read": true
+        },
+        "buttonTextColor": {
+          "read": true
+        },
+        "city": {
+          "read": true
+        },
+        "country": {
+          "read": true
+        },
+        "createdAt": {
+          "read": true
+        },
+        "domain": {
+          "read": true
+        },
+        "fontFamily": {
+          "read": true
+        },
+        "footerNote": {
+          "read": true
+        },
+        "fromEmail": {
+          "read": true
+        },
+        "fromName": {
+          "read": true
+        },
+        "headingFontFamily": {
+          "read": true
+        },
+        "legalName": {
+          "read": true
+        },
+        "linkColor": {
+          "read": true
+        },
+        "logoDarkUrl": {
+          "read": true
+        },
+        "logoUrl": {
+          "read": true
+        },
+        "logoWidth": {
+          "read": true
+        },
+        "mutedTextColor": {
+          "read": true
+        },
+        "name": {
+          "read": true
+        },
+        "phone": {
+          "read": true
+        },
+        "postalCode": {
+          "read": true
+        },
+        "preferenceCenterUrl": {
+          "read": true
+        },
+        "primaryColor": {
+          "read": true
+        },
+        "privacyPolicyUrl": {
+          "read": true
+        },
+        "registrationNumber": {
+          "read": true
+        },
+        "replyToEmail": {
+          "read": true
+        },
+        "secondaryColor": {
+          "read": true
+        },
+        "socialLinks": {
+          "fields": {
+            "id": {
+              "read": true
+            },
+            "label": {
+              "read": true
+            },
+            "url": {
+              "read": true
+            }
+          },
+          "read": true
+        },
+        "state": {
+          "read": true
+        },
+        "supportEmail": {
+          "read": true
+        },
+        "surfaceColor": {
+          "read": true
+        },
+        "tagline": {
+          "read": true
+        },
+        "termsUrl": {
+          "read": true
+        },
+        "textColor": {
+          "read": true
+        },
+        "unsubscribeGraceDays": {
+          "read": true
+        },
+        "unsubscribeUrl": {
+          "read": true
+        },
+        "updatedAt": {
+          "read": true
+        },
+        "updatedBy": {
+          "read": true
+        },
+        "vatId": {
+          "read": true
+        }
+      },
+      "read": true,
+      "readVersions": true
+    },
+    "crm-features": {
+      "fields": {
+        "createdAt": {
+          "read": true
+        },
+        "disabled": {
+          "read": true
+        },
+        "updatedAt": {
+          "read": true
+        },
+        "updatedBy": {
+          "read": true
+        }
+      },
+      "read": true
+    },
+    "footer": {
+      "fields": true,
+      "read": true,
+      "update": true
+    },
+    "header": {
+      "fields": true,
+      "read": true,
+      "update": true
+    },
+    "payload-jobs-stats": {
+      "fields": true,
+      "read": true,
+      "update": true
+    }
+  }
+}

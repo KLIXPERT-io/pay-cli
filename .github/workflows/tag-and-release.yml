@@ -1,0 +1,75 @@
+name: tag-and-release
+
+# One file, one commit, one release: bump VERSION on main and this workflow
+# creates the matching v* tag and calls release.yml.
+#
+# The tag is created by ~15 lines of inline shell rather than by a third-party
+# action. A tagging action needs write access to the repository, which puts it
+# in the supply chain of every release; the logic it replaces is "read a file,
+# check whether the tag exists, create it".
+on:
+  push:
+    branches: [main]
+    paths:
+      - VERSION
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tag-and-release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.autotag.outputs.tag }}
+      created: ${{ steps.autotag.outputs.created }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Tag from the VERSION file
+        id: autotag
+        run: |
+          set -euo pipefail
+
+          version="$(tr -d '[:space:]' < VERSION)"
+          if ! printf '%s' "$version" \
+               | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$'; then
+            echo "::error file=VERSION::VERSION must be a bare semver, got '$version'"
+            exit 1
+          fi
+          tag="v$version"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "::notice::$tag already exists; nothing to do."
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "pay $tag"
+          git push origin "refs/tags/$tag"
+
+          echo "created=true" >> "$GITHUB_OUTPUT"
+          echo "::notice::created $tag"
+
+  release:
+    needs: tag
+    if: needs.tag.outputs.created == 'true'
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write

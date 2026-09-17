@@ -1,0 +1,80 @@
+# golangci-lint v2 configuration. `make lint` runs this plus arch-lint.sh,
+# which enforces the §3.1 rules a linter cannot express (os.Stdout outside
+# app.go, http.Request construction outside transport.go, api_key as a TOML key
+# in an example config, and so on).
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose      # every response body is closed; PayCLI is long-lived under --all
+    - copyloopvar
+    - errorlint      # errors.Is/As instead of == and type assertions (apierr depends on this)
+    - gocritic
+    - gosec
+    - misspell
+    - nilerr
+    - noctx          # every outbound request carries a context (§6 deadlines)
+    - perfsprint
+    - revive
+    - unconvert
+    - usestdlibvars
+    - whitespace
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+    govet:
+      enable:
+        - shadow
+    gosec:
+      excludes:
+        # G104 duplicates errcheck.
+        - G104
+    revive:
+      rules:
+        - name: exported
+          disabled: true # doc comments are reviewed, not linted
+        - name: package-comments
+        - name: indent-error-flow
+        - name: errorf
+        - name: context-as-argument
+        - name: unreachable-code
+    staticcheck:
+      checks:
+        - all
+    misspell:
+      locale: US
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - noctx
+          - perfsprint
+      # internal/cli/app.go is the one file allowed to own the real streams.
+      - path: internal/cli/app\.go
+        linters:
+          - gochecknoglobals
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/KLIXPERT-io/pay-cli
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

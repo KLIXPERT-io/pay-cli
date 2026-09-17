@@ -1,0 +1,178 @@
+# GoReleaser configuration for PayCLI (ARCHITECTURE.md §16.1).
+#
+# Validate locally with `make release-check`; build without publishing with
+# `make snapshot`. Both run in CI on every pull request, so a release config
+# that does not compile fails on the PR rather than on tag day.
+#
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+project_name: pay
+
+before:
+  hooks:
+    - go mod tidy
+    - go mod verify
+
+# Fetch modules through the proxy and verify them against the checksum
+# database, so a release is reproducible from the module graph alone and a
+# tampered upstream cannot slip into a signed artefact.
+gomod:
+  proxy: true
+
+builds:
+  - id: pay
+    main: ./cmd/pay
+    binary: pay
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux, windows]
+    # windows/arm64 is kept: Windows on ARM is a real target now, and
+    # install.ps1 does real architecture detection rather than assuming amd64.
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    # Stamp every artefact with the commit's timestamp rather than the build's,
+    # so two builds of the same commit are byte-identical.
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .Commit }}
+      - -X main.date={{ .CommitDate }}
+
+universal_binaries:
+  - replace: false
+
+archives:
+  - id: default
+    # FROZEN. §15 depends on this exact template: an already-installed binary
+    # constructs this name to find its own update, so changing it after v0.1.0
+    # permanently breaks self-update for every existing install. It is
+    # duplicated in internal/update.archiveAssetName, install.sh and
+    # install.ps1, and scripts/arch-lint.sh asserts all four agree.
+    name_template: "pay_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - INSTALL.md
+      - LICENSE
+
+checksum:
+  name_template: checksums.txt
+
+sboms:
+  - artifacts: archive
+
+# Sign checksums.txt, not each archive: the chain is
+# archive -> checksums.txt -> signature, and a mismatch anywhere along it is
+# the same signal. `pay update-self` verifies both links and reports one of
+# three outcomes (verified / unverifiable / verification_failed).
+signs:
+  - cmd: cosign
+    certificate: "${artifact}.pem"
+    args:
+      - sign-blob
+      - "--output-certificate=${certificate}"
+      - "--output-signature=${signature}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: checksum
+    output: true
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: github
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Others
+      order: 999
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  github:
+    owner: KLIXPERT-io
+    name: pay-cli
+  draft: false
+  prerelease: auto
+  footer: |
+    ## Install
+
+    ```sh
+    curl -fsSL https://raw.githubusercontent.com/KLIXPERT-io/pay-cli/main/install.sh | sh
+    ```
+
+    ```powershell
+    irm https://raw.githubusercontent.com/KLIXPERT-io/pay-cli/main/install.ps1 | iex
+    ```
+
+    Already installed? `pay update-self --apply`.
+
+    Every archive is checksummed in `checksums.txt`, which is signed with
+    cosign (`checksums.txt.sig` + `checksums.txt.pem`) and covered by a GitHub
+    build-provenance attestation. `pay update-self` verifies both and refuses
+    to install a release whose signature or checksum is present and does not
+    match.
+
+# ---------------------------------------------------------------------------
+# NOT ENABLED FOR v0.1.0.
+#
+# v0.1.0 ships binaries plus install.sh / install.ps1 only. The two blocks
+# below are kept, configured and reviewed so that turning them on later is a
+# one-commit change rather than a design exercise — but each needs
+# infrastructure that does not exist yet:
+#
+#   homebrew_casks  needs the KLIXPERT-io/homebrew-tap repository to exist and
+#                   a HOMEBREW_TAP_TOKEN secret with write access to it.
+#                   (`brews:` is fully deprecated as of GoReleaser v2.16;
+#                   `homebrew_casks` is the supported successor.)
+#
+#   nfpms           needs a decision about where .deb/.rpm/.apk are hosted and
+#                   signed. Attaching unsigned distro packages to a GitHub
+#                   release teaches users to install packages nobody verifies,
+#                   which is worse than not shipping them.
+#
+# Do not uncomment either one without the matching infrastructure: goreleaser
+# fails the whole release when a publish target is misconfigured.
+# ---------------------------------------------------------------------------
+#
+# homebrew_casks:
+#   - name: pay
+#     repository:
+#       owner: KLIXPERT-io
+#       name: homebrew-tap
+#       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+#     homepage: https://github.com/KLIXPERT-io/pay-cli
+#     description: Drive any Payload CMS 3.x project from the command line
+#     license: MIT
+#     binary: pay
+#     hooks:
+#       post:
+#         install: |
+#           if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+#             system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/pay"]
+#           end
+#
+# nfpms:
+#   - id: pay
+#     package_name: pay
+#     vendor: KLIXPERT
+#     homepage: https://github.com/KLIXPERT-io/pay-cli
+#     maintainer: KLIXPERT <opensource@klixpert.io>
+#     description: Drive any Payload CMS 3.x project from the command line
+#     license: MIT
+#     formats: [deb, rpm, apk]
+#     bindir: /usr/bin

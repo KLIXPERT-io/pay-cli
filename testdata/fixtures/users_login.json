@@ -1,0 +1,19 @@
+{
+  "exp": 1789596445,
+  "message": "Authentication Passed",
+  "token": "<redacted>",
+  "user": {
+    "_strategy": "local-jwt",
+    "apiKey": "<redacted>",
+    "collection": "users",
+    "createdAt": "2026-09-16T16:28:43.035Z",
+    "crmRole": "member",
+    "email": null,
+    "enableAPIKey": true,
+    "id": 66,
+    "name": "PayCLI Test",
+    "sessions": "<redacted>",
+    "updatedAt": null,
+    "username": "paycli-test"
+  }
+}

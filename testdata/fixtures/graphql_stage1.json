@@ -1,0 +1,822 @@
+{
+  "data": {
+    "acc": {
+      "fields": [
+        {
+          "name": "canAccessAdmin"
+        },
+        {
+          "name": "pages"
+        },
+        {
+          "name": "posts"
+        },
+        {
+          "name": "media"
+        },
+        {
+          "name": "categories"
+        },
+        {
+          "name": "users"
+        },
+        {
+          "name": "redirects"
+        },
+        {
+          "name": "forms"
+        },
+        {
+          "name": "form_submissions"
+        },
+        {
+          "name": "search"
+        },
+        {
+          "name": "crm_contacts"
+        },
+        {
+          "name": "crm_companies"
+        },
+        {
+          "name": "crm_activities"
+        },
+        {
+          "name": "crm_tasks"
+        },
+        {
+          "name": "crm_pipelines"
+        },
+        {
+          "name": "crm_opportunities"
+        },
+        {
+          "name": "crm_products"
+        },
+        {
+          "name": "crm_deal_line_items"
+        },
+        {
+          "name": "crm_tags"
+        },
+        {
+          "name": "crm_signal_definitions"
+        },
+        {
+          "name": "crm_contact_signals"
+        },
+        {
+          "name": "crm_lists"
+        },
+        {
+          "name": "crm_list_memberships"
+        },
+        {
+          "name": "crm_imports"
+        },
+        {
+          "name": "crm_import_row_errors"
+        },
+        {
+          "name": "crm_templates"
+        },
+        {
+          "name": "crm_email_layouts"
+        },
+        {
+          "name": "crm_campaigns"
+        },
+        {
+          "name": "crm_campaign_events"
+        },
+        {
+          "name": "crm_flows"
+        },
+        {
+          "name": "crm_flow_enrolments"
+        },
+        {
+          "name": "crm_inboxes"
+        },
+        {
+          "name": "crm_conversations"
+        },
+        {
+          "name": "crm_messages"
+        },
+        {
+          "name": "crm_message_events"
+        },
+        {
+          "name": "crm_attachments"
+        },
+        {
+          "name": "crm_drafts"
+        },
+        {
+          "name": "crm_booking_pages"
+        },
+        {
+          "name": "crm_availability_schedules"
+        },
+        {
+          "name": "crm_bookings"
+        },
+        {
+          "name": "crm_provider_connections"
+        },
+        {
+          "name": "crm_locations"
+        },
+        {
+          "name": "crm_saved_views"
+        },
+        {
+          "name": "crm_workflow_runs"
+        },
+        {
+          "name": "crm_audit_log"
+        },
+        {
+          "name": "payload_kv"
+        },
+        {
+          "name": "payload_jobs"
+        },
+        {
+          "name": "payload_folders"
+        },
+        {
+          "name": "payload_locked_documents"
+        },
+        {
+          "name": "payload_preferences"
+        },
+        {
+          "name": "header"
+        },
+        {
+          "name": "footer"
+        },
+        {
+          "name": "crm_brand"
+        },
+        {
+          "name": "crm_features"
+        },
+        {
+          "name": "payload_jobs_stats"
+        }
+      ]
+    },
+    "q": {
+      "fields": [
+        {
+          "name": "Page"
+        },
+        {
+          "name": "Pages"
+        },
+        {
+          "name": "countPages"
+        },
+        {
+          "name": "docAccessPage"
+        },
+        {
+          "name": "versionPage"
+        },
+        {
+          "name": "versionsPages"
+        },
+        {
+          "name": "Post"
+        },
+        {
+          "name": "Posts"
+        },
+        {
+          "name": "countPosts"
+        },
+        {
+          "name": "docAccessPost"
+        },
+        {
+          "name": "versionPost"
+        },
+        {
+          "name": "versionsPosts"
+        },
+        {
+          "name": "Media"
+        },
+        {
+          "name": "allMedia"
+        },
+        {
+          "name": "countallMedia"
+        },
+        {
+          "name": "docAccessMedia"
+        },
+        {
+          "name": "Category"
+        },
+        {
+          "name": "Categories"
+        },
+        {
+          "name": "countCategories"
+        },
+        {
+          "name": "docAccessCategory"
+        },
+        {
+          "name": "User"
+        },
+        {
+          "name": "Users"
+        },
+        {
+          "name": "countUsers"
+        },
+        {
+          "name": "docAccessUser"
+        },
+        {
+          "name": "meUser"
+        },
+        {
+          "name": "initializedUser"
+        },
+        {
+          "name": "Redirect"
+        },
+        {
+          "name": "Redirects"
+        },
+        {
+          "name": "countRedirects"
+        },
+        {
+          "name": "docAccessRedirect"
+        },
+        {
+          "name": "Form"
+        },
+        {
+          "name": "Forms"
+        },
+        {
+          "name": "countForms"
+        },
+        {
+          "name": "docAccessForm"
+        },
+        {
+          "name": "FormSubmission"
+        },
+        {
+          "name": "FormSubmissions"
+        },
+        {
+          "name": "countFormSubmissions"
+        },
+        {
+          "name": "docAccessFormSubmission"
+        },
+        {
+          "name": "Search"
+        },
+        {
+          "name": "Searches"
+        },
+        {
+          "name": "countSearches"
+        },
+        {
+          "name": "docAccessSearch"
+        },
+        {
+          "name": "CrmContact"
+        },
+        {
+          "name": "CrmContacts"
+        },
+        {
+          "name": "countCrmContacts"
+        },
+        {
+          "name": "docAccessCrmContact"
+        },
+        {
+          "name": "CrmCompany"
+        },
+        {
+          "name": "CrmCompanies"
+        },
+        {
+          "name": "countCrmCompanies"
+        },
+        {
+          "name": "docAccessCrmCompany"
+        },
+        {
+          "name": "CrmActivity"
+        },
+        {
+          "name": "CrmActivities"
+        },
+        {
+          "name": "countCrmActivities"
+        },
+        {
+          "name": "docAccessCrmActivity"
+        },
+        {
+          "name": "CrmTask"
+        },
+        {
+          "name": "CrmTasks"
+        },
+        {
+          "name": "countCrmTasks"
+        },
+        {
+          "name": "docAccessCrmTask"
+        },
+        {
+          "name": "CrmPipeline"
+        },
+        {
+          "name": "CrmPipelines"
+        },
+        {
+          "name": "countCrmPipelines"
+        },
+        {
+          "name": "docAccessCrmPipeline"
+        },
+        {
+          "name": "CrmOpportunity"
+        },
+        {
+          "name": "CrmOpportunities"
+        },
+        {
+          "name": "countCrmOpportunities"
+        },
+        {
+          "name": "docAccessCrmOpportunity"
+        },
+        {
+          "name": "CrmProduct"
+        },
+        {
+          "name": "CrmProducts"
+        },
+        {
+          "name": "countCrmProducts"
+        },
+        {
+          "name": "docAccessCrmProduct"
+        },
+        {
+          "name": "CrmDealLineItem"
+        },
+        {
+          "name": "CrmDealLineItems"
+        },
+        {
+          "name": "countCrmDealLineItems"
+        },
+        {
+          "name": "docAccessCrmDealLineItem"
+        },
+        {
+          "name": "CrmTag"
+        },
+        {
+          "name": "CrmTags"
+        },
+        {
+          "name": "countCrmTags"
+        },
+        {
+          "name": "docAccessCrmTag"
+        },
+        {
+          "name": "CrmSignalDefinition"
+        },
+        {
+          "name": "CrmSignalDefinitions"
+        },
+        {
+          "name": "countCrmSignalDefinitions"
+        },
+        {
+          "name": "docAccessCrmSignalDefinition"
+        },
+        {
+          "name": "CrmContactSignal"
+        },
+        {
+          "name": "CrmContactSignals"
+        },
+        {
+          "name": "countCrmContactSignals"
+        },
+        {
+          "name": "docAccessCrmContactSignal"
+        },
+        {
+          "name": "CrmList"
+        },
+        {
+          "name": "CrmLists"
+        },
+        {
+          "name": "countCrmLists"
+        },
+        {
+          "name": "docAccessCrmList"
+        },
+        {
+          "name": "CrmListMembership"
+        },
+        {
+          "name": "CrmListMemberships"
+        },
+        {
+          "name": "countCrmListMemberships"
+        },
+        {
+          "name": "docAccessCrmListMembership"
+        },
+        {
+          "name": "CrmImport"
+        },
+        {
+          "name": "CrmImports"
+        },
+        {
+          "name": "countCrmImports"
+        },
+        {
+          "name": "docAccessCrmImport"
+        },
+        {
+          "name": "CrmImportRowError"
+        },
+        {
+          "name": "CrmImportRowErrors"
+        },
+        {
+          "name": "countCrmImportRowErrors"
+        },
+        {
+          "name": "docAccessCrmImportRowError"
+        },
+        {
+          "name": "CrmTemplate"
+        },
+        {
+          "name": "CrmTemplates"
+        },
+        {
+          "name": "countCrmTemplates"
+        },
+        {
+          "name": "docAccessCrmTemplate"
+        },
+        {
+          "name": "CrmEmailLayout"
+        },
+        {
+          "name": "CrmEmailLayouts"
+        },
+        {
+          "name": "countCrmEmailLayouts"
+        },
+        {
+          "name": "docAccessCrmEmailLayout"
+        },
+        {
+          "name": "CrmCampaign"
+        },
+        {
+          "name": "CrmCampaigns"
+        },
+        {
+          "name": "countCrmCampaigns"
+        },
+        {
+          "name": "docAccessCrmCampaign"
+        },
+        {
+          "name": "CrmCampaignEvent"
+        },
+        {
+          "name": "CrmCampaignEvents"
+        },
+        {
+          "name": "countCrmCampaignEvents"
+        },
+        {
+          "name": "docAccessCrmCampaignEvent"
+        },
+        {
+          "name": "CrmFlow"
+        },
+        {
+          "name": "CrmFlows"
+        },
+        {
+          "name": "countCrmFlows"
+        },
+        {
+          "name": "docAccessCrmFlow"
+        },
+        {
+          "name": "CrmFlowEnrolment"
+        },
+        {
+          "name": "CrmFlowEnrolments"
+        },
+        {
+          "name": "countCrmFlowEnrolments"
+        },
+        {
+          "name": "docAccessCrmFlowEnrolment"
+        },
+        {
+          "name": "CrmInbox"
+        },
+        {
+          "name": "CrmInboxes"
+        },
+        {
+          "name": "countCrmInboxes"
+        },
+        {
+          "name": "docAccessCrmInbox"
+        },
+        {
+          "name": "CrmConversation"
+        },
+        {
+          "name": "CrmConversations"
+        },
+        {
+          "name": "countCrmConversations"
+        },
+        {
+          "name": "docAccessCrmConversation"
+        },
+        {
+          "name": "CrmMessage"
+        },
+        {
+          "name": "CrmMessages"
+        },
+        {
+          "name": "countCrmMessages"
+        },
+        {
+          "name": "docAccessCrmMessage"
+        },
+        {
+          "name": "CrmMessageEvent"
+        },
+        {
+          "name": "CrmMessageEvents"
+        },
+        {
+          "name": "countCrmMessageEvents"
+        },
+        {
+          "name": "docAccessCrmMessageEvent"
+        },
+        {
+          "name": "CrmAttachment"
+        },
+        {
+          "name": "CrmAttachments"
+        },
+        {
+          "name": "countCrmAttachments"
+        },
+        {
+          "name": "docAccessCrmAttachment"
+        },
+        {
+          "name": "CrmDraft"
+        },
+        {
+          "name": "CrmDrafts"
+        },
+        {
+          "name": "countCrmDrafts"
+        },
+        {
+          "name": "docAccessCrmDraft"
+        },
+        {
+          "name": "CrmBookingPage"
+        },
+        {
+          "name": "CrmBookingPages"
+        },
+        {
+          "name": "countCrmBookingPages"
+        },
+        {
+          "name": "docAccessCrmBookingPage"
+        },
+        {
+          "name": "CrmAvailabilitySchedule"
+        },
+        {
+          "name": "CrmAvailabilitySchedules"
+        },
+        {
+          "name": "countCrmAvailabilitySchedules"
+        },
+        {
+          "name": "docAccessCrmAvailabilitySchedule"
+        },
+        {
+          "name": "CrmBooking"
+        },
+        {
+          "name": "CrmBookings"
+        },
+        {
+          "name": "countCrmBookings"
+        },
+        {
+          "name": "docAccessCrmBooking"
+        },
+        {
+          "name": "CrmProviderConnection"
+        },
+        {
+          "name": "CrmProviderConnections"
+        },
+        {
+          "name": "countCrmProviderConnections"
+        },
+        {
+          "name": "docAccessCrmProviderConnection"
+        },
+        {
+          "name": "CrmLocation"
+        },
+        {
+          "name": "CrmLocations"
+        },
+        {
+          "name": "countCrmLocations"
+        },
+        {
+          "name": "docAccessCrmLocation"
+        },
+        {
+          "name": "CrmSavedView"
+        },
+        {
+          "name": "CrmSavedViews"
+        },
+        {
+          "name": "countCrmSavedViews"
+        },
+        {
+          "name": "docAccessCrmSavedView"
+        },
+        {
+          "name": "CrmWorkflowRun"
+        },
+        {
+          "name": "CrmWorkflowRuns"
+        },
+        {
+          "name": "countCrmWorkflowRuns"
+        },
+        {
+          "name": "docAccessCrmWorkflowRun"
+        },
+        {
+          "name": "CrmAuditLog"
+        },
+        {
+          "name": "CrmAuditLogs"
+        },
+        {
+          "name": "countCrmAuditLogs"
+        },
+        {
+          "name": "docAccessCrmAuditLog"
+        },
+        {
+          "name": "PayloadKv"
+        },
+        {
+          "name": "PayloadKvs"
+        },
+        {
+          "name": "countPayloadKvs"
+        },
+        {
+          "name": "docAccessPayloadKv"
+        },
+        {
+          "name": "PayloadJob"
+        },
+        {
+          "name": "PayloadJobs"
+        },
+        {
+          "name": "countPayloadJobs"
+        },
+        {
+          "name": "docAccessPayloadJob"
+        },
+        {
+          "name": "PayloadFolder"
+        },
+        {
+          "name": "PayloadFolders"
+        },
+        {
+          "name": "countPayloadFolders"
+        },
+        {
+          "name": "docAccessPayloadFolder"
+        },
+        {
+          "name": "PayloadLockedDocument"
+        },
+        {
+          "name": "PayloadLockedDocuments"
+        },
+        {
+          "name": "countPayloadLockedDocuments"
+        },
+        {
+          "name": "docAccessPayloadLockedDocument"
+        },
+        {
+          "name": "PayloadPreference"
+        },
+        {
+          "name": "PayloadPreferences"
+        },
+        {
+          "name": "countPayloadPreferences"
+        },
+        {
+          "name": "docAccessPayloadPreference"
+        },
+        {
+          "name": "Header"
+        },
+        {
+          "name": "docAccessHeader"
+        },
+        {
+          "name": "Footer"
+        },
+        {
+          "name": "docAccessFooter"
+        },
+        {
+          "name": "CrmBrand"
+        },
+        {
+          "name": "docAccessCrmBrand"
+        },
+        {
+          "name": "versionCrmBrand"
+        },
+        {
+          "name": "versionsCrmBrand"
+        },
+        {
+          "name": "CrmFeature"
+        },
+        {
+          "name": "docAccessCrmFeature"
+        },
+        {
+          "name": "PayloadJobsStat"
+        },
+        {
+          "name": "docAccessPayloadJobsStat"
+        },
+        {
+          "name": "Access"
+        }
+      ]
+    }
+  }
+}
