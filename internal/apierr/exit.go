@@ -52,6 +52,7 @@ var exitByCode = map[Code]int{
 	CodeDocNotFound:     ExitNotFound,
 	CodeRouteNotFound:   ExitNotFound,
 	CodeVersionNotFound: ExitNotFound,
+	CodeSelectorNoMatch: ExitNotFound,
 
 	// 5 — validation / bad input
 	CodeValidationFailed:    ExitValidation,
@@ -71,6 +72,10 @@ var exitByCode = map[Code]int{
 	CodeRequestTooLarge:     ExitValidation,
 	CodeFormatUnsupported:   ExitValidation,
 	CodeInvalidPathExpr:     ExitValidation,
+	CodeSelectorAmbiguous:   ExitValidation,
+	CodeFieldAmbiguous:      ExitValidation,
+	CodeNoInput:             ExitValidation,
+	CodeNoEdits:             ExitValidation,
 
 	// 6 — network / server
 	CodeNetworkUnreachable: ExitNetwork,
@@ -104,6 +109,7 @@ var exitByCode = map[Code]int{
 	CodeDiscoveryFailed:      ExitCapability,
 	CodeGraphQLDisabled:      ExitCapability,
 	CodeSchemaStale:          ExitCapability,
+	CodeBlockTypeUnknown:     ExitCapability,
 
 	// 11 — confirmation required
 	CodeConfirmationRequired: ExitConfirmationRequired,

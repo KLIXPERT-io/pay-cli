@@ -361,6 +361,7 @@ var defaultHints = map[Code]string{
 	CodeDocNotFound:     "No document with that id. `pay find <collection> --limit 5` lists real ids.",
 	CodeRouteNotFound:   "Payload has no route at that path. `pay collections` lists the slugs this project actually serves.",
 	CodeVersionNotFound: "No version with that id. `pay versions <collection> <id>` lists the versions that exist.",
+	CodeSelectorNoMatch: "No row matched. `pay blocks ls` prints every row with a ready-made selector for it; error.did_you_mean lists the blockTypes that are present.",
 
 	CodeValidationFailed:    "Fix every path in error.fields and retry. `pay describe <collection> --required-only` lists all required fields with their types. To store an incomplete document instead, add --draft: Payload skips required-field validation for drafts, and `pay publish` will re-run it later.",
 	CodeQueryPathInvalid:    "That path cannot be queried. `pay describe <collection>` lists queryable paths; relationship subfields need depth-aware paths like `author.name`.",
@@ -378,6 +379,10 @@ var defaultHints = map[Code]string{
 	CodeBulkLimitExceeded:   "The match exceeds the configured bulk limit. Narrow --where, or raise the cap with --max-docs N.",
 	CodeRequestTooLarge:     "The request body or URL is too large. Use --per-doc for bulk writes, or shrink the payload.",
 	CodeFormatUnsupported:   "This command does not support that --output format. The supported ones are named in the message.",
+	CodeSelectorAmbiguous:   "The selector matched several rows. Subscript it (`type:cta[1]`), address the row by `id:` from `pay blocks ls`, or pass --all if every match was intended.",
+	CodeFieldAmbiguous:      "This collection has more than one blocks field, so PayCLI will not guess. Pass --field <path>; the candidates are in error.did_you_mean.",
+	CodeNoInput:             "This command edits a document it reads from stdin. Pipe one in: `pay get <collection> <id> --depth 0 | pay blocks ls`.",
+	CodeNoEdits:             "`pay apply` writes back only the fields a transform touched, and this envelope records none. Put a `pay blocks` stage in the pipe, or use `pay update <collection> <id> --data @-` to write the whole document.",
 	CodeInvalidPathExpr:     "--path supports exactly three forms: `.a.b` (field access), `.a[0]` (index) and `.a[]` (iterate). This is not jq; pipe the envelope to jq for full expressions.",
 
 	CodeNetworkUnreachable: "The host could not be reached. Check base_url in `pay config explain` and that the server is running.",
@@ -407,6 +412,7 @@ var defaultHints = map[Code]string{
 	CodeDiscoveryFailed:      "PayCLI could not learn this project's schema. Run `pay discover --refresh`; `pay doctor` reports which discovery stage failed and why.",
 	CodeGraphQLDisabled:      "This project does not serve GraphQL, so GraphQL-derived facts are unavailable. PayCLI degrades to REST-only discovery; pin the missing facts in the profile if you need them.",
 	CodeSchemaStale:          "The cached schema no longer matches the server. Run `pay discover --refresh`.",
+	CodeBlockTypeUnknown:     "Payload DROPS a block row whose blockType it does not recognise and still answers 201, so PayCLI rejects it here. `pay describe <collection> --field <path> --path .block_types` lists the slugs this field accepts.",
 
 	CodeConfirmationRequired: "Re-run with --yes to confirm, or narrow the blast radius with --where / --max-docs. `--dry-run` shows exactly what would change.",
 }

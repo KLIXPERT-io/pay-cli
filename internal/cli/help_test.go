@@ -51,6 +51,10 @@ var helpOwned = [][]string{
 	// (measured: 2 on a bad GH_TOKEN, 4 with no release published, 5 on
 	// --check --apply, 10 under PAY_NO_UPDATE).
 	{"update-self"},
+	// §9.11's edit pipeline.
+	{"apply"},
+	{"blocks"}, {"blocks", "ls"}, {"blocks", "mv"}, {"blocks", "rm"},
+	{"blocks", "add"}, {"blocks", "cp"}, {"blocks", "set"},
 }
 
 // helpOwnedCoversTheWholeTree is the guard that made `helpOwned` stop being a

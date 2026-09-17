@@ -104,6 +104,48 @@ prints that block type's own fields, and `--blocks-detail` inlines every one of 
 Required-ness inside a block is tri-state and is `null` more often than elsewhere, because
 Payload generates no input type for a block type — see `recipes.md` §13.
 
+`pay blocks add` turns the dropped-blockType case into a **local** failure —
+`block_type_unknown`, exit 10, with `did_you_mean` — whenever the project has been
+discovered. Without a schema it passes the slug through and warns
+`local_validation_skipped`, because refusing a slug PayCLI merely failed to discover would
+be a wrong answer PayCLI produced itself.
+
+---
+
+## 4a. Editing blocks by hand gets the index arithmetic wrong
+
+Payload has no per-row endpoint: the only way to move one block is to replace the whole
+array. So everyone writes the same read-modify-write with jq, and it fails in the same
+four ways. All four are verified.
+
+| Wrong | Right |
+|---|---|
+| `jq` the array, remove the row, insert it at the anchor's old index | **the anchor shifts.** "Move row 0 after row 3" is an insert at index **2** of the remaining three rows, not at 4. `pay blocks mv id:… --after id:…` resolves the anchor before the removal and recomputes after it |
+| Duplicate a row by copying the JSON | **the copy keeps its `id`, so Payload matches it to the original**, overwrites it, and the array *loses* a row. `pay blocks cp` strips every `id` at every depth |
+| `pay get pages 12` then write the array back | above `--depth 0` a relationship comes back as a whole document and is written back as one. Read with `--depth 0`; `pay blocks` warns `populated_relationship` naming `layout[2].media` |
+| `pay update pages 12 --data @-` with the document you read | that PATCHes back `_status`, `createdAt` and every unrelated field — a block reorder republishing the page. `pay apply` sends only the fields the pipeline recorded in `edits.fields` |
+
+```bash
+# wrong: three commands, a temp file, and the four failures above
+pay get pages 12 --path .layout > /tmp/l.json
+jq '...' /tmp/l.json > /tmp/l2.json
+pay update pages 12 --set-json layout="$(cat /tmp/l2.json)" --yes
+
+# right: one pipe, one write, nothing on the wire until `apply`
+pay get pages 12 --depth 0 | pay blocks mv type:cta --after type:mediaBlock | pay apply --yes
+```
+
+Two more traps in the pipe itself:
+
+* **Indexes go stale between stages.** Each stage renumbers the array, so an index read
+  from an earlier `pay blocks ls` addresses a different row two stages later. `ls` prints
+  an `id:` selector per row for exactly this reason.
+* **`--draft` has to match on both ends.** A read *without* `--draft` returns the
+  **published** document, so `pay get … | … | pay apply --draft` saves published content
+  as a new draft and discards the real one. Use it on both ends, or on neither.
+
+Full walkthrough in `recipes.md` §14.
+
 ---
 
 ## 5. Bulk `DELETE` ignores `limit`

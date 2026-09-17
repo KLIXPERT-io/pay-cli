@@ -2013,6 +2013,18 @@ pay versions get     <collection>|--global SLUG <versionId> [--depth]
 pay versions restore <collection>|--global SLUG <versionId> [--draft] [--dry-run] [--yes]
 pay versions diff    <collection> <vA> <vB>          # client-side JSON diff
 
+# §9.11's edit pipeline. Every `pay blocks` verb reads ONE document from stdin, edits it and
+# writes it to stdout; `pay apply` is the only stage that reaches the network.
+pay blocks ls  [--field PATH] [--long]
+pay blocks mv  <selector> (--at N | --before SEL | --after SEL | --first | --last) [--field PATH]
+pay blocks rm  <selector>... [--all] [--field PATH]
+pay blocks add <blockType> [--data JSON|@F] [--set k=v]... [--set-json k=JSON]... [--name NAME]
+               [--at N | --before SEL | --after SEL | --first | --last] [--field PATH]
+pay blocks cp  <selector> [--at N | --before SEL | --after SEL | --first | --last] [--field PATH]
+pay blocks set <selector> [--set k=v]... [--set-json k=JSON]... [--unset KEY]... [--field PATH]
+pay apply [collection] [id] [--field PATH]... [--all-fields] [--depth] [--select]
+          [--draft|--publish|--unpublish] [--locale CODE] [--no-echo-check] [--dry-run] [--yes]
+
 pay raw <GET|POST|PATCH|DELETE> <path> [--query k=v]... [--data JSON] [--file F] [--raw-body]
 pay config get|set|unset|list|paths|explain
 pay skills install [--global] [--dir PATH] [--agent a,b|all] [--force] [--with-project-context]
@@ -2311,6 +2323,79 @@ fails with `feature_unavailable` (exit 10) carrying `publishable_reason` and the
 read-them-from-source instruction, because no amount of retrying will make an unknown `blockType`
 knowable from the API.
 
+### 9.11 The edit pipeline (`pay blocks` + `pay apply`)
+
+Reordering blocks on a page is the single most common content edit and the one Payload's REST API
+models worst: there is no per-row endpoint, so the only way to move one block is to replace the whole
+array. Before §9.11 that meant read to a file, edit with jq, write back with `--set-json` — three
+commands, a temp file, and four failure modes PayCLI can see and jq cannot:
+
+| Failure | Why it happens | What §9.11 does |
+|---|---|---|
+| The moved row lands past its anchor | "move row 0 after row 3" is an insert at index **2** of the remaining three rows, not at 4; the anchor shifts when the row is lifted out | `rows.Move` resolves the anchor **before** the removal and recomputes the destination **after** it; every direction is a table test |
+| A duplicated row overwrites its original | Payload matches a row by `id`, so a copy that kept its ids rewrites the row it came from and the array **loses** an entry | `pay blocks cp` strips every `id` at every depth, unconditionally |
+| A mistyped `blockType` vanishes | Payload **drops** a row whose `blockType` it does not recognise and still answers **201** | `block_type_unknown` (exit 10) against the field's own resolved slugs (§7.10), with `did_you_mean` |
+| A relationship is written back expanded | a read above `--depth 0` replaces `"media": 7` with the whole media document | `populated_relationship` warning naming `field[i].key`, hinting at `--depth 0` |
+
+**9.11.1 The stage contract.** Each stage reads one JSON value on stdin and writes one envelope on
+stdout. It accepts a PayCLI envelope **or** a bare document, which is what makes the family usable
+against a file. Three rules hold at every hand-off:
+
+1. **An upstream failure stays an upstream failure.** A stage whose stdin holds `ok:false` re-emits
+   that error with its original `error.code` and exit status, `command` set to the stage that could
+   not run. Re-classifying it locally would turn a `doc_not_found` from `pay get` into a
+   `bad_request_body` from `pay blocks mv`, sending the caller to fix a selector that was right.
+2. **Upstream warnings are carried forward.** A locale-fallback warning raised by the read is about
+   the document the LAST stage will write.
+3. **The edit is recorded, not the document.** Every stage appends to `envelope.edits`
+   (§10.1), which is the list `pay apply` narrows its write to.
+
+**9.11.2 `edits` is why `apply` is safe.** The obvious implementation of "write the piped document
+back" is to PATCH all of it, and that also rewrites `_status`, `createdAt` and every expanded
+relationship — a one-block reorder silently republishing a page. `apply` instead sends
+`{field: value}` for each path in `edits.fields`, so a pipeline that moved one block writes one key.
+`--all-fields` opts out, drops `id`/`createdAt`/`updatedAt` and **warns**; `--field` narrows further
+and can never widen beyond the piped document. An envelope with no `edits` is `no_edits` (exit 5),
+never a silent fall back to writing everything.
+
+`apply` is `pay update <id>` with the body assembled from a pipe: same L1 risk level, same
+confirmation policy, same audit record, same echo-diff, and literally the same `runUpdateOne`. A
+global target routes to `POST /globals/{slug}` and keeps `globals update`'s **L2** level, because
+going through a pipeline must not make a global cheaper to confirm.
+
+**9.11.3 The selector grammar** is closed, for the same reason `--path` is not jq (conflict 31):
+
+```
+N | -N | first | last | id:VALUE | name:VALUE | type:SLUG | type:SLUG[N]
+```
+
+`--before`/`--after` take a **selector**, not an index, because "after the media block" survives the
+next stage editing the array and "at index 3" does not. A selector matching several rows is
+`selector_ambiguous` (exit 5) with every match listed as a ready-to-paste selector; `rm --all` is the
+only way to mean "every match". A selector matching none is `selector_no_match` (exit **4**, the same
+not-found class a missing document gets) with the rows that DO exist in the hint. `pay blocks ls`
+emits, per row, the shortest selector that addresses it and no other — `id:` whenever the row has
+one, because an index is stale the moment another stage inserts or removes a row.
+
+**9.11.4 Field resolution** is explicit `--field` → the project's schema → the document's own shape.
+The last step picks the one array whose rows **all** carry a `blockType` and warns
+(`blocks_field_inferred`); more than one candidate is `field_ambiguous` (exit 5) with both named,
+never a guess. A collection with no discovered schema still edits, with
+`local_validation_skipped` saying that `blockType` was not checked.
+
+**9.11.5 Every `pay blocks` verb is L0** and uses a lenient runtime: no profile, no credential and no
+cache are required, because none of them is needed to rewrite an array. Discovery is used when it is
+there and is what turns a typo into a local failure. `pay blocks ls` alone ends the pipe — its data is
+a listing, reported as `op_result` so it cannot be mistaken for a document to apply.
+
+**9.11.6 `--data @-` unwraps an envelope.** `pay get … | pay update … --data @-` is the shape every
+caller reaches for first, and it used to POST `{"ok":true,"data":{…},"meta":{…}}` as the request
+body — which Payload accepts with a 2xx and silently drops every key of. The write verbs now detect a
+PayCLI envelope (`ok` **and** `v` **and** `data_kind` **and** `meta` together, four keys no Payload
+document carries) and use its `.data`, with an `envelope_unwrapped` warning; an error envelope fails
+with the upstream's own code. Detection requires all four so a collection with a boolean `ok` column
+is never mistaken for an envelope.
+
 ---
 
 ## 10. Output
@@ -2375,6 +2460,11 @@ Rules:
   `count`. Payload's `{docs:…}` wrapper is unwrapped into `data` + `page`; a global's
   `{result, message}` is normalised to `data` so globals and collections look identical to a caller.
 * `page` is present iff `data_kind == "doc_list"`. `truncated` is one boolean requiring no arithmetic.
+* `edits` is present **only** on §9.11's edit pipeline — the `pay blocks` verbs and `pay apply`. It is
+  `{fields, ops}`: `fields` are the document paths the pipeline changed, in first-touched order and
+  deduplicated, and `ops` is every transform applied, oldest first. `pay apply` builds its PATCH body
+  from `fields` alone, which is what keeps a one-block reorder from also rewriting `_status` and
+  every expanded relationship. A command that talks to Payload never sets it.
 * `next` is present iff there is a useful follow-up. `next.cmd` is a **literally runnable string with
   the current flags and profile already baked in** — the agent copies it rather than reconstructing it.
   `next.reason` ∈ `more_pages` | `retry_failed_subset` | `needs_auth` | `verify_write` |

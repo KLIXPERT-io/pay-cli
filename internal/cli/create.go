@@ -68,6 +68,13 @@ func (w *writeData) build(d *Deps, t *collTarget, shard *discovery.Shard) (map[s
 		if err != nil {
 			return nil, nil, err
 		}
+		obj, warn, err := unwrapEnvelopeBody(raw.src, obj)
+		if err != nil {
+			return nil, nil, err
+		}
+		if warn != nil {
+			warnings = append(warnings, *warn)
+		}
 		deepMerge(body, obj)
 	}
 
@@ -177,6 +184,43 @@ func jsonKindOf(v any) string {
 		return "an array"
 	}
 	return "a scalar"
+}
+
+// unwrapEnvelopeBody lets `--data @-` be handed a whole PayCLI envelope.
+//
+// `pay get pages 12 | pay update pages 12 --data @-` is the shape every caller
+// reaches for first, and before this it sent {"ok":true,"data":{…},"meta":{…}}
+// as the request body. Payload accepts that with a 201 and silently drops every
+// unknown key, so the write appeared to succeed and changed nothing — the exact
+// silent-wrong-answer §0 forbids.
+//
+// The detection is asEnvelope's: `ok`, `v`, `data_kind` and `meta` together,
+// four keys no Payload document carries because PayCLI invented three of them.
+// The unwrap is announced, never silent: the caller asked to send one thing and
+// PayCLI sent another, and that belongs in warnings[].
+func unwrapEnvelopeBody(flag string, obj map[string]any) (map[string]any, *output.Warning, error) {
+	if _, ok := asEnvelope(obj); !ok {
+		return obj, nil, nil
+	}
+	if ok, _ := obj["ok"].(bool); !ok {
+		// An error envelope has no document in it at all. Sending its `error`
+		// object as a request body would be nonsense, so this fails here with
+		// the upstream's own code rather than as a validation failure on the
+		// far side.
+		return nil, nil, upstreamError(obj)
+	}
+	data, ok := obj["data"].(map[string]any)
+	if !ok {
+		return nil, nil, apierr.New(apierr.CodeBadRequestBody,
+			"%s was given a PayCLI envelope whose data is %s, not one document", flag, jsonKindOf(obj["data"])).
+			WithHint("`pay get <collection> <id>` returns one document; `pay find` returns a list")
+	}
+	return data, &output.Warning{
+		Code: WarnEnvelopeUnwrapped,
+		Message: flag + " was given a whole PayCLI envelope; its .data was used as the request body " +
+			"(sending the envelope itself would have written ok/v/data_kind/meta as fields, which Payload drops silently)",
+		Hint: "for a block edit, prefer the pipeline: `pay get … | pay blocks … | pay apply`",
+	}, nil
 }
 
 // deepMerge merges src into dst. Objects merge recursively; arrays and scalars

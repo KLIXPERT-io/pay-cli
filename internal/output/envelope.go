@@ -98,6 +98,7 @@ type Envelope struct {
 	Target   *Target       `json:"target,omitempty"`
 	Data     any           `json:"data,omitempty"`
 	Changed  *Changed      `json:"changed,omitempty"`
+	Edits    *Edits        `json:"edits,omitempty"`
 	Page     *Page         `json:"page,omitempty"`
 	Error    *apierr.Error `json:"error,omitempty"`
 	Next     *Next         `json:"next,omitempty"`
@@ -152,6 +153,58 @@ type Changed struct {
 	Deleted int   `json:"deleted"`
 	Trashed int   `json:"trashed"`
 	IDs     []any `json:"ids"`
+}
+
+// Edits is the provenance a local transform stamps on its envelope, and the
+// only thing that makes `pay get | pay blocks … | pay apply` safe.
+//
+// Without it `apply` would have to send the whole document back, which means
+// PATCHing every field PayCLI happened to read — including the server-owned
+// ones (`createdAt`, `_status`) and any relationship the read expanded into an
+// object. `Fields` narrows the write to the paths the pipeline actually
+// touched, so a pipeline that moved one block writes one key.
+//
+// It is present only on the local-edit commands and on `apply`; a command that
+// talks to Payload never sets it.
+type Edits struct {
+	// Fields are the document's top-level field paths the pipeline changed, in
+	// first-touched order and deduplicated. `apply` builds its PATCH body from
+	// exactly these.
+	Fields []string `json:"fields"`
+	// Ops is every transform applied, oldest first, so the envelope explains
+	// itself after four stages of a pipe.
+	Ops []EditOp `json:"ops"`
+}
+
+// EditOp is one applied transform.
+type EditOp struct {
+	// Command is the Cmd* constant of the stage that produced it.
+	Command string `json:"command"`
+	// Field is the document field it edited.
+	Field string `json:"field"`
+	// Detail is one human-readable sentence: "moved id:a1 (cta) from 0 to 2".
+	Detail string `json:"detail"`
+	// Matched are the source indices the selector resolved to, recorded
+	// because the indices shift under the next stage and this is the only
+	// record of what the caller actually addressed.
+	Matched []int `json:"matched,omitempty"`
+	// Rows is the row count after the op, so a listing is not needed to see
+	// that a remove removed something.
+	Rows int `json:"rows"`
+}
+
+// Touch records a field as edited, keeping Fields in first-touched order and
+// free of duplicates.
+func (e *Edits) Touch(field string) {
+	if e == nil || field == "" {
+		return
+	}
+	for _, f := range e.Fields {
+		if f == field {
+			return
+		}
+	}
+	e.Fields = append(e.Fields, field)
 }
 
 // Next is the follow-up PayCLI recommends. Cmd is literally runnable.
@@ -266,6 +319,13 @@ func NewError(command string, err error) *Envelope {
 // WithTarget sets envelope.target.
 func (e *Envelope) WithTarget(t *Target) *Envelope {
 	e.Target = t
+	return e
+}
+
+// WithEdits sets envelope.edits — the pipeline provenance a local transform
+// carries to the next stage and, finally, to `pay apply`.
+func (e *Envelope) WithEdits(ed *Edits) *Envelope {
+	e.Edits = ed
 	return e
 }
 

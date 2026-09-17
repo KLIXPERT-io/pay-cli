@@ -363,3 +363,252 @@ Notes from that run:
   document (`hero.links.link.label`). The `cta` block itself was stored in full.
 * If `warnings[]` had contained `input_silently_dropped` for `layout`, the `blockType`
   would have been wrong — check it every time.
+
+---
+
+## 14. Editing a document in a pipe (blocks *and* array fields)
+
+§13 builds a blocks field from nothing. This is the other half: changing what is already
+there — the edit content people actually make, over and over. "Move the CTA under the media
+block." "Drop that old banner." "Reorder the nav."
+
+There is no per-row endpoint in Payload: the only way to move one row is to replace the
+whole array. **Do not do that by hand.** `pay get > file`, edit with jq, `--set-json` back
+is three commands and four ways to be silently wrong. Use the pipeline.
+
+Despite the name, `pay blocks` is not blocks-only. It edits **any array of objects** in the
+piped document: a `blocks` field, a plain Payload `array` field, at the top level or at a
+dotted path, on a collection document or on a global. §14.7 covers the array case; the
+differences are small and all about addressing.
+
+### The shape
+
+```bash
+pay get pages 12 --depth 0 | pay blocks mv type:cta --after type:mediaBlock | pay apply --yes
+```
+
+Each `pay blocks` verb reads ONE document from stdin, edits it, and writes the document to
+stdout. Nothing touches the network until `pay apply`. So stages compose, in any order and
+any number, and you can stop at any point to look.
+
+### Look first
+
+```bash
+pay get pages 12 --depth 0 | pay blocks ls
+```
+
+```jsonc
+{"field":"layout","count":3,"accepts":["archive","content","cta","formBlock","mediaBlock"],
+ "rows":[
+   {"index":0,"id":"67f3a1","block_type":"cta","block_name":"Top CTA",
+    "selector":"id:67f3a1","fields":["richText","links"]},
+   {"index":1,"id":"67f3b2","block_type":"content","selector":"id:67f3b2","fields":["columns"]},
+   {"index":2,"id":"67f3c3","block_type":"mediaBlock","selector":"id:67f3c3","fields":["media"]}]}
+```
+
+**Use `.selector`, not `.index`.** It is the shortest string that addresses that row and no
+other, and it is an `id:` whenever the row has one. An index is stale the moment another
+stage in the pipe inserts or removes a row.
+
+`ls` ends a pipe — its `data_kind` is `op_result`, a listing, not a document you can apply.
+Put it at the END of a pipe to preview an edit: `… | pay blocks mv … | pay blocks ls`.
+
+### The selector grammar
+
+Closed — eight forms, no wildcards:
+
+```
+3            index 3 (0-based)
+-1           the last row; -2 the second to last
+first, last  sugar for 0 and -1
+id:67f3a1    the row with that id — the only handle stable across edits
+name:Hero    blockName, matched exactly (never a substring)
+type:cta     EVERY row of that blockType
+type:cta[1]  the second cta row — always exactly one
+```
+
+A selector that matches several rows where the verb needs one is `selector_ambiguous`
+(exit 5), listing every match ready to paste. A selector that matches none is
+`selector_no_match` (exit **4**) with the rows that do exist in the hint.
+
+### The verbs
+
+```bash
+D='pay get pages 12 --depth 0'
+
+# move — --before/--after take a SELECTOR, so they survive the next stage
+$D | pay blocks mv type:cta --after type:mediaBlock | pay apply --yes
+$D | pay blocks mv last --first                     | pay apply --yes
+$D | pay blocks mv id:67f3a1 --at 2                 | pay apply --yes
+
+# remove — several selectors are resolved together, so they cannot shift under each other
+$D | pay blocks rm id:67f3a1                  | pay apply --yes
+$D | pay blocks rm id:67f3a1 id:67f3b2        | pay apply --yes
+$D | pay blocks rm type:content --all         | pay apply --yes   # --all means every match
+
+# add — appended unless a destination says otherwise; blockType is checked locally
+$D | pay blocks add mediaBlock --after type:cta                    | pay apply --yes
+$D | pay blocks add cta --set-json richText="$(cat /tmp/rt.json)" --first | pay apply --yes
+$D | pay blocks add cta --data @/tmp/cta-row.json --last           | pay apply --yes
+
+# duplicate — the copy is stripped of every id, at every depth
+$D | pay blocks cp type:cta[0] --after type:cta[0] | pay apply --yes
+
+# set fields INSIDE one row — the key is a path into the ROW, not into the document
+$D | pay blocks set id:67f3a1 --set blockName='Hero CTA'            | pay apply --yes
+$D | pay blocks set type:mediaBlock --set media=7                   | pay apply --yes
+$D | pay blocks set type:cta[0] --set-json richText="$(cat rt.json)" | pay apply --yes
+$D | pay blocks set last --unset blockName                          | pay apply --yes
+```
+
+Several edits, one write:
+
+```bash
+pay get pages 12 --depth 0 \
+  | pay blocks rm type:content --all \
+  | pay blocks add mediaBlock --first \
+  | pay blocks mv type:cta --last \
+  | pay apply --dry-run          # then --yes
+```
+
+`--dry-run` prints the exact `PATCH` it would send, and `edits.ops` narrates every stage:
+
+```jsonc
+"edits":{"fields":["layout"],
+ "ops":[{"command":"blocks rm","field":"layout","detail":"removed 1 row(s): id:67f3b2 (content)","rows":2},
+        {"command":"blocks add","field":"layout","detail":"added one mediaBlock row at index 0 (first)","rows":3},
+        {"command":"blocks mv","field":"layout","detail":"moved id:67f3a1 (cta) from index 1 to index 2 (last)","rows":3}]}
+```
+
+### Why `pay apply` rather than `pay update --data @-`
+
+`apply` sends **only the fields the pipeline touched** — that is what `edits.fields` is
+for. A document read from Payload also carries `createdAt`, `updatedAt`, `_status` and
+every other field; PATCHing all of it back is how a one-block reorder also republishes the
+page. The collection and id come from the piped envelope's `target`, so you retype nothing.
+
+```jsonc
+// the whole PATCH body for the pipeline above
+{"layout":[ …three rows… ]}
+```
+
+`--all-fields` opts out (and warns) for a document you edited by hand. `--field PATH`
+narrows further. An envelope no transform touched is `no_edits` (exit 5), never a silent
+fall back to writing everything.
+
+`pay update … --data @-` still works and now unwraps a piped envelope instead of posting
+`{"ok":true,"data":…}` as the body — but it sends the **whole** document. Prefer `apply`.
+
+### Four things this stops you getting wrong
+
+All verified against a live Payload 3.x project.
+
+1. **The anchor shifts.** "Move row 0 after row 3" is an insert at index **2** of the
+   remaining three rows, not at 4. Every hand-written reorder gets this wrong once.
+   `mv` resolves the anchor before the removal and recomputes after it.
+2. **A copy that keeps its `id` is not a copy.** Payload matches a row by id, so the
+   "duplicate" overwrites its original and the array **loses** an entry. `cp` and `add`
+   strip every `id` at every depth.
+3. **An unknown `blockType` vanishes with a 201.** Payload drops the row and reports
+   success. `pay blocks add ctaa` fails locally with `block_type_unknown` (exit 10) and
+   `did_you_mean: ["cta"]` — when the project has been discovered. Without a schema it
+   passes through, with a `local_validation_skipped` warning.
+4. **`--depth 0` on the read.** Above it a relationship comes back as a whole document and
+   is written back that way. The pipeline warns `populated_relationship` naming
+   `layout[2].media`; re-read at depth 0 rather than applying.
+
+And one about drafts: a read **without** `--draft` returns the *published* document.
+`pay get … | … | pay apply --draft` would then save published content as a new draft and
+discard the real one. Use `--draft` on both ends, or on neither.
+
+### 14.7 The same pipeline on a plain `array` field
+
+A Payload `array` field is rows of objects with no `blockType`. Everything above works on
+one, with **two differences**, both about addressing.
+
+**1. `--field` is always required.** Auto-detection only ever picks an array whose rows
+*all* carry a `blockType`, because choosing a plain array for you would edit a field you
+never named. Without it you get `field_ambiguous` (exit 5) — note the message says "no
+blocks field could be identified", which is literally true and still the right fix:
+
+```bash
+pay globals get header --depth 0 | pay blocks ls
+# → field_ambiguous (exit 5): no blocks field could be identified in the piped document
+#   hint: name it with --field <path>
+```
+
+**2. `type:` and `name:` selectors do not apply.** They read `blockType` and `blockName`,
+which array rows do not have. Address rows by `id:` or by index; `pay blocks ls` falls back
+to `id:` automatically:
+
+```bash
+pay globals get header --depth 0 | pay blocks ls --field navItems
+```
+
+```jsonc
+{"field":"navItems","count":3,
+ "rows":[{"index":0,"id":"…795e","selector":"id:…795e","fields":["link"]},
+         {"index":1,"id":"…795f","selector":"id:…795f","fields":["link"]},
+         {"index":2,"id":"…7960","selector":"id:…7960","fields":["link"]}]}
+```
+
+There is no `accepts` and no `block_type`: there are no block types here. Otherwise it is
+the same family, and `pay apply` writes the same single field:
+
+```bash
+pay globals get header --depth 0 \
+  | pay blocks mv id:…7960 --first --field navItems \
+  | pay blocks set 0 --set link.label='Plans' --field navItems \
+  | pay apply --dry-run
+```
+
+```
+POST http://localhost:3900/api/globals/header?depth=0
+body keys ['navItems']   labels ['Plans', 'Home', 'Docs']
+  moved id:…7960 from index 2 to index 0 (first)
+  set link.label on id:…7960
+```
+
+Note `--set link.label=Plans`: the key is a **dotted path inside the row**, so a group
+nested in an array row is reachable without `--set-json`. A global is written with `POST
+/api/globals/{slug}` and keeps `globals update`'s L2 risk level — going through a pipeline
+does not make it cheaper to confirm.
+
+`--field` also takes a dotted path, for a blocks or array field nested in a group or tab:
+
+```bash
+pay get pages 12 --depth 0 | pay blocks mv type:cta --last --field hero.items
+# edits.fields → ["hero.items"], and that is the only key `pay apply` sends
+```
+
+### 14.8 Feeding an envelope to the ordinary write verbs
+
+`pay get … | pay update … --data @-` works, and now unwraps the envelope: it used to send
+`{"ok":true,"data":{…},"meta":{…}}` as the request body, which Payload accepts with a 2xx
+and silently drops every key of — the write looked fine and changed nothing.
+
+```bash
+pay get pages 12 --depth 0 | pay update pages 12 --data @- --dry-run
+# body: the document itself; warnings[]: envelope_unwrapped
+```
+
+Detection needs `ok` **and** `v` **and** `data_kind` **and** `meta` together, so a
+collection with a boolean `ok` field is never mistaken for an envelope. An **error**
+envelope fails with the *upstream's* code rather than posting its `error` object.
+
+Prefer `pay apply` anyway: `--data @-` sends the **whole** document (including `_status`
+and `createdAt`), `apply` sends only the fields the pipeline recorded.
+
+### 14.9 Without a project
+
+Every `pay blocks` verb is local. No profile, no credential, no cache:
+
+```bash
+cat page.json | pay blocks mv type:cta --first > page.edited.json
+cat page.json | pay blocks ls --field hero.items
+```
+
+`--field` is needed when the collection has more than one blocks field, when the document
+alone is ambiguous, or on any plain `array` field (§14.7). Otherwise PayCLI picks the one
+blocks field and says so with a `blocks_field_inferred` warning when it had no schema to
+confirm it against.

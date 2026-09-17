@@ -10,8 +10,10 @@ SYNOPSIS
 
   Subcommands:
     access         Show what this credential is permitted to do (GET /api/access).
+    apply          Write a piped, locally edited document back to Payload (PATCH)
     audit          Inspect the local write-audit log
     auth           Manage profiles and credentials (§5).
+    blocks         Edit a blocks field on a document read from stdin (local, no network)
     cache          Inspect and manage the discovery cache
     can            Answer one permission question with an exit code (0 permitted, 8 denied).
     collections    List this project's collections with their ops, features and key fields.

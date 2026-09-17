@@ -588,21 +588,30 @@ func runUpdate(ctx context.Context, cmd *cobra.Command, d *Deps, f *updateFlags,
 	if bulk {
 		return runBulkUpdate(ctx, cmd, d, client, f, t, body, p, warnings)
 	}
-	return runUpdateOne(ctx, d, client, f, t, id, body, p, warnings)
+	return runUpdateOne(ctx, d, client, safety.CmdUpdate, f, t, id, body, p, warnings)
 }
 
-func runUpdateOne(ctx context.Context, d *Deps, client *payload.Client, f *updateFlags,
+// runUpdateOne is the single-document PATCH, shared by `pay update <id>` and
+// `pay apply`.
+//
+// command is a parameter rather than a constant because the two verbs must be
+// distinguishable everywhere the operation is recorded — the envelope, the
+// audit log, the dry-run preview — while being IDENTICAL in every safety
+// decision. `pay apply` is `pay update` with a body assembled from a pipe, and
+// giving it its own copy of this function is how the two would drift apart on
+// confirmation or echo-checking.
+func runUpdateOne(ctx context.Context, d *Deps, client *payload.Client, command string, f *updateFlags,
 	t *collTarget, id string, body map[string]any, p query.Params, warnings []output.Warning) (*output.Envelope, error) {
 	cfg := d.cfg()
 	if e := d.checkID(t, t.Slug, id); e != nil {
 		return nil, e
 	}
-	op := safety.Op{Command: safety.CmdUpdate, Selector: safety.SelectorID}
+	op := safety.Op{Command: command, Selector: safety.SelectorID}
 	w := d.newWriteOp(op, t.Slug, "PATCH", "/"+t.Slug+"/"+id).withIDs([]any{id})
 
 	if cfg.DryRun {
 		q, _ := p.Encode()
-		env, err := emitDryRun(d, w, safety.CmdUpdate, "PATCH",
+		env, err := emitDryRun(d, w, command, "PATCH",
 			client.URLFor(&payload.Request{Method: "PATCH", Path: "/" + t.Slug + "/" + id, Query: q}),
 			body, 1, []any{id}, warnings...)
 		if err != nil {
@@ -627,7 +636,7 @@ func runUpdateOne(ctx context.Context, d *Deps, client *payload.Client, f *updat
 		return nil, err
 	}
 
-	env := output.New(safety.CmdUpdate, output.KindDoc, res.Doc).
+	env := output.New(command, output.KindDoc, res.Doc).
 		WithTarget(t.envTarget(res.Doc.ID())).
 		WithChanged(&output.Changed{Updated: 1, IDs: []any{res.Doc.ID()}}).
 		WithMeta(withLocaleMeta(w.run.meta(), p)).

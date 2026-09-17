@@ -48,6 +48,11 @@ const (
 	CodeDocNotFound     Code = "doc_not_found"
 	CodeRouteNotFound   Code = "route_not_found"
 	CodeVersionNotFound Code = "version_not_found"
+	// CodeSelectorNoMatch is a `pay blocks` selector that addressed no row. It
+	// is a not-found rather than a validation failure because the selector is
+	// well formed and the document simply does not contain that row — the same
+	// distinction doc_not_found draws for a document.
+	CodeSelectorNoMatch Code = "selector_no_match"
 )
 
 // Exit 5 — validation / bad input.
@@ -69,6 +74,19 @@ const (
 	CodeRequestTooLarge     Code = "request_too_large"
 	CodeFormatUnsupported   Code = "format_unsupported"
 	CodeInvalidPathExpr     Code = "invalid_path_expr"
+	// CodeSelectorAmbiguous is a `pay blocks` selector that addressed several
+	// rows where the operation acts on exactly one. It is deliberately not
+	// invalid_args: the selector is well formed and the caller needs to know
+	// WHICH rows it hit, not that they typed it wrongly.
+	CodeSelectorAmbiguous Code = "selector_ambiguous"
+	// CodeFieldAmbiguous is a collection with more than one blocks field and no
+	// --field to say which one.
+	CodeFieldAmbiguous Code = "field_ambiguous"
+	// CodeNoInput is a pipeline stage with nothing on stdin.
+	CodeNoInput Code = "no_input"
+	// CodeNoEdits is `pay apply` on an envelope no transform ever touched, so
+	// there is no field list to narrow the write to.
+	CodeNoEdits Code = "no_edits"
 )
 
 // Exit 6 — network / server.
@@ -112,6 +130,11 @@ const (
 	CodeDiscoveryFailed      Code = "discovery_failed"
 	CodeGraphQLDisabled      Code = "graphql_disabled"
 	CodeSchemaStale          Code = "schema_stale"
+	// CodeBlockTypeUnknown is a blockType this project's field does not accept.
+	// It is exit 10 rather than 5 because the answer is a property of the
+	// project, not of the command line: Payload silently drops a row whose
+	// blockType it does not recognise and still answers 201.
+	CodeBlockTypeUnknown Code = "block_type_unknown"
 )
 
 // Exit 11 — confirmation required.

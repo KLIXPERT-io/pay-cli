@@ -317,6 +317,22 @@ exact ids client-side, and deletes them by id in chunks — on `update` exactly 
 `delete`. Your blast radius is exactly what `--dry-run` printed. `--max-docs N`
 (default 100) is the only cap; `--limit` is page size and is an **error** on a bulk write.
 
+**Editing blocks: read at `--depth 0`, and keep `--draft` on both ends.** The edit pipeline
+(`pay get … | pay blocks … | pay apply`) writes back the field it edited. Two things about
+the **read** decide whether that is correct:
+
+> Above `--depth 0`, a relationship comes back as a whole document rather than an id, and
+> writing it back stores the expansion. `pay blocks` raises `populated_relationship` naming
+> `field[i].key` when it sees one — re-read with `--depth 0` rather than applying.
+>
+> A read **without** `--draft` returns the *published* document. Applying that with
+> `--draft` saves published content as a new draft and throws the real draft away. Use
+> `--draft` on both ends of the pipe, or on neither.
+
+Never hand-roll the read-modify-write: `pay apply` sends only the fields the pipeline
+recorded in `edits.fields`, so a block reorder writes `layout` and nothing else. PATCHing
+the whole document back also rewrites `_status` and `createdAt`.
+
 More in `references/gotchas.md`.
 
 ---
@@ -356,7 +372,7 @@ without it every `delete` is permanent (PayCLI says so on stderr before acting) 
 
 ---
 
-## 6. Eleven recipes
+## 6. Twelve recipes
 
 ```bash
 # 1. What is here at all?
@@ -395,11 +411,27 @@ pay describe pages --block cta --path '.block.fields[].path'
 pay describe pages --block mediaBlock --path .required_fields[]
 # → a full, runnable create is in references/recipes.md §13
 
-# 10. Uploads and downloads
+# 10. EDIT an existing document in a pipe — never read-modify-write by hand
+pay get pages 12 --depth 0 | pay blocks ls               # rows + a selector for each
+pay get pages 12 --depth 0 | pay blocks mv type:cta --after type:mediaBlock | pay apply --yes
+pay get pages 12 --depth 0 | pay blocks rm id:67f3a1 | pay apply --yes
+# stages compose; one write at the end
+pay get pages 12 --depth 0 \
+  | pay blocks rm type:content \
+  | pay blocks add mediaBlock --first \
+  | pay apply --dry-run
+# it is NOT blocks-only: any array of objects, incl. globals and dotted paths.
+# a plain `array` field always needs --field, and has no type:/name: selectors.
+pay globals get header --depth 0 | pay blocks mv id:n3 --first --field navItems | pay apply --yes
+# feeding an envelope to the ordinary write verbs also works (it unwraps .data),
+# but it sends the WHOLE document — prefer `pay apply`.
+pay get pages 12 --depth 0 | pay update pages 12 --data @- --dry-run
+
+# 11. Uploads and downloads
 pay upload media ./hero.png --alt 'Hero image'
 pay download media 4 -o ./hero.png
 
-# 11. Globals and version history
+# 12. Globals and version history
 pay globals get header --depth 1
 pay globals update header --set-json navItems='[]' --yes
 pay versions list pages --id 11 --limit 5

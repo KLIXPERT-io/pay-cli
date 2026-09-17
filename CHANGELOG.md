@@ -34,6 +34,50 @@ improving an `error.message` or `hint` are **not** breaking. Never branch on
 
 ### Added
 
+- **An edit pipeline for blocks: `pay blocks` + `pay apply`.** Reordering or dropping a block used to
+  be read-to-a-file, edit-with-jq, write-back-with-`--set-json`. It is now one pipe:
+
+  ```sh
+  pay get pages 12 --depth 0 | pay blocks mv type:cta --after type:mediaBlock | pay apply --yes
+  ```
+
+  Six local verbs — `ls`, `mv`, `rm`, `add`, `cp`, `set` — each read ONE document from stdin, edit a
+  blocks (or array) field, and write the document to stdout. They compose in any order and any
+  number; `pay apply` is the only stage that reaches the network. All six are L0 and need no profile,
+  credential or cache, so they also work on a JSON file.
+- **`pay apply` writes only the fields the pipeline touched.** Each transform records what it changed
+  in the new `envelope.edits` (`{fields, ops}`), and `apply` builds its PATCH from `edits.fields`
+  alone. PATCHing the whole piped document back would also rewrite `_status`, `createdAt` and every
+  relationship a read above `--depth 0` expanded into a full document — a one-block reorder silently
+  republishing a page. `--all-fields` opts out and warns. Otherwise `apply` *is* `pay update <id>`:
+  same risk level, confirmation, audit record, echo-diff and code path. The collection and id come
+  from the piped envelope's `target`, so nothing is retyped at the end of a pipe.
+- **A closed selector grammar** — `N`, `-N`, `first`, `last`, `id:V`, `name:V`, `type:SLUG`,
+  `type:SLUG[N]` — shared by every verb. `--before`/`--after` take a *selector*, not an index,
+  because "after the media block" survives another stage editing the array and "at index 3" does not.
+  `pay blocks ls` prints, per row, the shortest selector that addresses it and no other (an `id:`
+  whenever the row has one). A selector matching several rows where one was required is
+  `selector_ambiguous` (exit 5) listing every match ready to paste; `rm --all` is the only way to
+  mean "every match". No match is `selector_no_match` (exit 4) with the rows that do exist.
+- **Four Payload footguns are now local failures or warnings**, all verified live: the anchor index
+  shifting once a moved row is lifted out (`mv` resolves the anchor before the removal and recomputes
+  after it); a duplicated row keeping its `id` and therefore *overwriting* its original rather than
+  adding a row (`cp` strips every `id` at every depth); an unknown `blockType`, which Payload **drops
+  while answering 201** (`block_type_unknown`, exit 10, with `did_you_mean` from the field's own
+  slugs); and a relationship expanded by a read above `--depth 0` being written back as an object
+  (`populated_relationship` warning naming `field[i].key`).
+- **`--data @-` now unwraps a piped PayCLI envelope.** `pay get … | pay update … --data @-` used to
+  send `{"ok":true,"data":{…},"meta":{…}}` as the request body, which Payload accepts with a 2xx and
+  silently drops every key of — the write looked successful and changed nothing. It now uses the
+  envelope's `.data` and raises `envelope_unwrapped`; an error envelope fails with the *upstream's*
+  code. Detection needs `ok`, `v`, `data_kind` and `meta` together, so a collection with a boolean
+  `ok` field is never mistaken for an envelope.
+- New error codes: `selector_no_match` (exit 4), `selector_ambiguous`, `field_ambiguous`, `no_input`,
+  `no_edits` (exit 5) and `block_type_unknown` (exit 10). New warning codes:
+  `blocks_field_inferred`, `field_absent`, `populated_relationship`, `envelope_unwrapped`,
+  `local_validation_skipped`, `apply_all_fields`, `upstream_error`.
+- New envelope key `edits`, present only on the edit-pipeline commands.
+
 - **Block field schemas.** `pay describe <entity> --block <slug>` prints what is INSIDE a
   block type — its fields, their payload types, enum options, relationship targets and
   `write_shape` — instead of only the slugs a blocks field accepts. `--blocks-detail`

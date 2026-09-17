@@ -109,12 +109,12 @@
         "meaning": "throttled — rate limited, document locked or server busy (retriable)"
       },
       {
-        "codes_total": 3,
+        "codes_total": 4,
         "exit": 4,
         "meaning": "not found — document, route or version does not exist"
       },
       {
-        "codes_total": 17,
+        "codes_total": 21,
         "exit": 5,
         "meaning": "validation / bad input — the request was never worth sending"
       },
@@ -139,7 +139,7 @@
         "meaning": "configuration — no base_url, unknown profile, secret in plaintext"
       },
       {
-        "codes_total": 7,
+        "codes_total": 8,
         "exit": 10,
         "meaning": "capability — this project does not support the operation"
       },
