@@ -7,11 +7,17 @@ import (
 )
 
 // renameRetries and renameBackoff bound the Windows retry loop below.
-// 10 attempts over ~110ms is far longer than a reader holding a handle for a
-// single Read, and short enough that a genuinely stuck rename still fails fast.
+//
+// This is defence in depth, not the primary fix: PayCLI's own readers use
+// fsatomic.ReadFile, which opens with FILE_SHARE_DELETE so the rename is not
+// denied in the first place. The retry only covers a handle opened by
+// something outside PayCLI — a virus scanner, an editor, Explorer's preview.
+// Deliberately short (5 attempts, ~75ms): the cache holds a file lock across
+// the write, so a long retry here starves other writers and converts an
+// ERROR_ACCESS_DENIED into a lock-acquisition timeout.
 const (
-	renameRetries = 10
-	renameBackoff = 10 * time.Millisecond
+	renameRetries = 5
+	renameBackoff = 5 * time.Millisecond
 )
 
 // renameWithRetry is os.Rename plus a bounded retry on Windows.

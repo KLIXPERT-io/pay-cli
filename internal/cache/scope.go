@@ -156,7 +156,7 @@ func (s *Store) LookupAuthResolution(sc Scope) (AuthResolution, bool, *output.Wa
 		return AuthResolution{}, false, nil
 	}
 	path := s.AuthResolutionPath()
-	data, err := os.ReadFile(path)
+	data, err := fsatomic.ReadFile(path)
 	if err != nil {
 		return AuthResolution{}, false, readWarning(path, err)
 	}
@@ -184,7 +184,7 @@ func (s *Store) PutAuthResolution(sc Scope, slug string, now time.Time) (bool, *
 	}
 	path := s.AuthResolutionPath()
 	all := map[string]AuthResolution{}
-	if data, err := os.ReadFile(path); err == nil {
+	if data, err := fsatomic.ReadFile(path); err == nil {
 		_ = json.Unmarshal(data, &all) // a corrupt file is replaced, not fatal
 	}
 	all[AuthResolutionKey(sc)] = AuthResolution{
