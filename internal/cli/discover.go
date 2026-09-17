@@ -209,7 +209,12 @@ func (rt *Runtime) RunDiscovery(ctx context.Context, opts DiscoverOptions) (*dis
 		// The (slug, interfaceName) pairs are what turn a blocks field's
 		// GraphQL union members into blockTypes the REST API accepts (§7.10).
 		ProjectBlockInterfaces: scan.SlugByInterface,
-		Logger:                 rt.Log,
+		// The blocks' own field declarations carry required-ness, which is
+		// unreachable from GraphQL for a block: Payload publishes no input
+		// type for one, so the NON_NULL trick §7.4 uses for a collection field
+		// has nothing to read.
+		ProjectBlockDecls: blockSourceDecls(scan),
+		Logger:            rt.Log,
 	}
 	if scan.BlockSlugFiles != nil {
 		dopts.ProjectBlockSlugFiles = scan.BlockSlugFiles
@@ -432,6 +437,36 @@ func (rt *Runtime) shardFromState(slug string, kind cache.EntityKind) (*discover
 	}
 	rt.disc.shards[name] = &shard
 	return &shard, true
+}
+
+// blockSourceDecls converts §7.10's on-disk block declarations into the shape
+// internal/discovery consumes, keyed by slug.
+//
+// The conversion exists because internal/discovery must not depend on
+// internal/config: every project fact it needs arrives as a plain value, so the
+// pipeline stays testable without a filesystem.
+func blockSourceDecls(scan *config.ScanResult) map[string]discovery.BlockSourceDecl {
+	if scan == nil || len(scan.BlockDecls) == 0 {
+		return nil
+	}
+	out := make(map[string]discovery.BlockSourceDecl, len(scan.BlockDecls))
+	for _, d := range scan.BlockDecls {
+		if d.Slug == "" {
+			continue
+		}
+		fields := make([]discovery.BlockSourceField, 0, len(d.Fields))
+		for _, f := range d.Fields {
+			fields = append(fields, discovery.BlockSourceField{
+				Name: f.Name, Type: f.Type, Required: f.Required,
+			})
+		}
+		out[d.Slug] = discovery.BlockSourceDecl{
+			File:     scan.SlugFile[d.Slug],
+			Fields:   fields,
+			Complete: d.FieldsComplete,
+		}
+	}
+	return out
 }
 
 func firstNonEmpty(values ...string) string {

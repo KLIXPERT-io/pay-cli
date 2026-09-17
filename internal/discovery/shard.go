@@ -112,6 +112,10 @@ type BlockField struct {
 	// SlugSources gives every slug its own provenance so a confirmed slug is
 	// distinguishable from one inferred from an interfaceName.
 	SlugSources map[string]string `json:"slug_sources"`
+	// SlugInterfaces pairs each slug with the GraphQL union member it came
+	// from, which is how a slug is joined to the block's field schema in
+	// Shard.BlockSchemas.
+	SlugInterfaces map[string]string `json:"slug_interface_names"`
 	// InterfaceNames is the field's GraphQL union possibleTypes, verbatim.
 	// They are NOT blockType slugs and must never be sent to the API.
 	InterfaceNames []string `json:"interface_names"`
@@ -149,6 +153,12 @@ type Shard struct {
 	// including each slug's own provenance and the GraphQL union the slugs
 	// were derived from. It is null when the entity has no blocks field.
 	BlockFields map[string]BlockField `json:"block_fields"`
+	// BlockSchemas is every reachable block type's OWN field schema, keyed by
+	// blockType slug — what is inside a cta, not merely that cta exists. It is
+	// null on a shard written before the key existed and on a REST-only shard
+	// (there is no union to read), which is why every consumer treats null as
+	// "not discovered" and says so rather than as "this block has no fields".
+	BlockSchemas map[string]BlockTypeSchema `json:"block_schemas"`
 	// RequiredPaths is the flattened list of paths whose required is true.
 	RequiredPaths []string `json:"required_paths"`
 }
@@ -163,6 +173,7 @@ func NewShard(generation, slug string) *Shard {
 		Blocks:        nil,
 		BlocksSource:  SourceUnknown,
 		BlockFields:   nil,
+		BlockSchemas:  nil,
 		RequiredPaths: []string{},
 	}
 }
@@ -243,6 +254,37 @@ func (s *Shard) BlockTypesFor(path string) ([]string, bool) {
 	}
 	slugs, ok := s.Blocks[path]
 	return slugs, ok && len(slugs) > 0
+}
+
+// BlockSchemaFor returns one blockType's field schema and whether the shard
+// carries it. The bool is the tri-state: false is "PayCLI did not discover
+// this block's interior", never "the block has no fields".
+func (s *Shard) BlockSchemaFor(slug string) (BlockTypeSchema, bool) {
+	if s == nil {
+		return BlockTypeSchema{}, false
+	}
+	bs, ok := s.BlockSchemas[slug]
+	return bs, ok
+}
+
+// BlockSlugsFor returns every blockType slug reachable from any blocks field
+// of this entity, sorted and deduplicated.
+func (s *Shard) BlockSlugsFor() []string {
+	if s == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	out := []string{}
+	for _, bf := range s.BlockFields {
+		for _, slug := range bf.Slugs {
+			if !seen[slug] {
+				seen[slug] = true
+				out = append(out, slug)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // BlockFieldFor returns the full per-field record for a blocks field.
@@ -352,14 +394,15 @@ func HashShard(s *Shard) string {
 		return ""
 	}
 	payload := struct {
-		Slug          string                `json:"slug"`
-		Fields        []Field               `json:"fields"`
-		JoinFields    []string              `json:"join_fields"`
-		Blocks        map[string][]string   `json:"blocks"`
-		BlocksSource  string                `json:"blocks_source"`
-		BlockFields   map[string]BlockField `json:"block_fields"`
-		RequiredPaths []string              `json:"required_paths"`
-	}{s.Slug, s.Fields, s.JoinFields, s.Blocks, s.BlocksSource, s.BlockFields, s.RequiredPaths}
+		Slug          string                     `json:"slug"`
+		Fields        []Field                    `json:"fields"`
+		JoinFields    []string                   `json:"join_fields"`
+		Blocks        map[string][]string        `json:"blocks"`
+		BlocksSource  string                     `json:"blocks_source"`
+		BlockFields   map[string]BlockField      `json:"block_fields"`
+		BlockSchemas  map[string]BlockTypeSchema `json:"block_schemas"`
+		RequiredPaths []string                   `json:"required_paths"`
+	}{s.Slug, s.Fields, s.JoinFields, s.Blocks, s.BlocksSource, s.BlockFields, s.BlockSchemas, s.RequiredPaths}
 	b, err := json.Marshal(payload)
 	if err != nil {
 		// Field contains only JSON-safe types, so this cannot happen; hashing

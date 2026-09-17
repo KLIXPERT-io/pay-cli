@@ -244,6 +244,25 @@ raises `input_silently_dropped` (absent from the response) or `value_normalized_
 (present but changed, e.g. a `slug` hook rewriting `My Page` → `my-page`). Check
 `warnings[]` on every write.
 
+**Blocks.** A blocks field asks two separate questions and `pay` answers them separately:
+
+```bash
+pay describe pages --field layout --path .block_types   # WHICH blocks may go in it
+pay describe pages --block cta                          # WHAT IS INSIDE one
+```
+
+`.block_types` are the `blockType` slugs the REST API accepts (`cta`, `mediaBlock`), never
+the GraphQL interfaceNames (`CallToActionBlock`) — sending an interfaceName is the silent
+drop above. `--block <slug>` prints that block's own fields: types, relationship targets,
+enum options and required-ness with provenance. `id`, `blockName` and `blockType` are
+Payload plumbing (`plumbing: true`), not content — `blockType` is mandatory on every block
+you write, `blockName` is an optional admin label, `id` is server-generated.
+
+`required` inside a block is `null` more often than elsewhere: Payload publishes **no**
+input type for a block type, so the only proofs are a GraphQL `NON_NULL` and the block's
+own `config.ts`. `.block.required_unknown` names every field nobody could answer for and
+`.block.reason` says why — treat those as "unknown", never as "not required".
+
 **Bulk delete ignores `limit`.** `DELETE /api/{coll}?where=…&limit=1` deletes **every**
 match. `pay` therefore never passes `--where` straight through: it counts, resolves the
 exact ids client-side, and deletes them by id in chunks — on `update` exactly as on
@@ -289,7 +308,7 @@ without it every `delete` is permanent (PayCLI says so on stderr before acting) 
 
 ---
 
-## 6. Ten recipes
+## 6. Eleven recipes
 
 ```bash
 # 1. What is here at all?
@@ -321,11 +340,17 @@ pay delete crm-contacts 224                 # PATCH deletedAt, reports "trashed"
 pay find crm-contacts --trash --where 'id eq 224'
 pay restore crm-contacts 224
 
-# 9. Uploads and downloads
+# 9. Build a blocks field: the slugs, then what goes inside one
+pay describe pages --field layout --path .block_types
+pay describe pages --block cta --path '.block.fields[].path'
+pay describe pages --block mediaBlock --path .required_fields[]
+# → a full, runnable create is in references/recipes.md §13
+
+# 10. Uploads and downloads
 pay upload media ./hero.png --alt 'Hero image'
 pay download media 4 -o ./hero.png
 
-# 10. Globals and version history
+# 11. Globals and version history
 pay globals get header --depth 1
 pay globals update header --set-json navItems='[]' --yes
 pay versions list pages --id 11 --limit 5

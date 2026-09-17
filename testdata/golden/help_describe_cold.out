@@ -4,14 +4,36 @@ Every field entry carries the same 26 keys, using null or the sentinels "n/a" /
 "unknown" where a fact could not be learned, so `jq '.data.fields[] |
 select(.required)'` is total and never needs a presence check.
 
+BLOCKS. A blocks field answers two different questions. WHICH blocks may go in it
+is .blocks[FIELD] (slugs) and is always printed. WHAT IS INSIDE one is
+--block <slug>, which prints that block type's own fields, their types, their
+relationship targets and their required-ness with provenance.
+--blocks-detail inlines every one of them at once and is OFF by default on
+purpose. Measured on the live project: `pay describe pages` is 31 KB, and 70 KB
+with --blocks-detail, while `--field layout` goes from 4.4 KB to 43 KB — ten
+times the output of the most-run discovery command, to answer a question that
+is asked one block at a time. .block_schemas_available names every block whose
+schema is cached; --block <slug> prints the one you are about to write.
+
+Required-ness inside a block is tri-state and is null more often than on a
+collection field. Payload publishes NO input type for a block type, so §7.4's
+NON_NULL trick has nothing to read; what is left is a NON_NULL on the block's
+object type (proof of required) and the block's own config.ts on disk. A
+plugin's blocks live in node_modules, which is never scanned, so their optional
+fields stay "unknown" — never "not required".
+
 SYNOPSIS
   pay describe <collection|global> [--field PATH] [--required-only] [--queryable] [--examples] [--sample]
+  pay describe <collection|global> --block <blockType-slug> [--field PATH]
+  pay describe <collection|global> [--field PATH] --blocks-detail
 
 DISCOVERED IN THIS PROJECT
   profile=default base_url=- discovery_revision=-
   cache is cold — run 'pay discover' to populate
 
 FLAGS
+    --block BLOCK                describe ONE blockType's own field schema: what goes INSIDE a cta, not just that cta exists
+    --blocks-detail              inline EVERY reachable blockType's field schema (off by default: see BLOCKS in `pay help describe`)
     --examples                   add generated, copy-pasteable commands for this entity
     --field FIELD                describe one field path in full (dotted, e.g. hero.links.link.url)
     -h, --help                   help for describe
@@ -53,6 +75,15 @@ EXAMPLES
   # the blockTypes a blocks field accepts
   pay describe pages --field layout
 
+  # what goes INSIDE one block type
+  pay describe pages --block cta
+
+  # just that block's required fields
+  pay describe pages --block mediaBlock --path .required_fields[]
+
+  # every block type of one field, in full
+  pay describe pages --field layout --blocks-detail
+
   # schema plus a real document
   pay describe pages --sample
 
@@ -71,6 +102,10 @@ COMMON MISTAKES
      Instead: Block slugs are not in the API; a null means no source resolved them. .blocks_source[FIELD] says which source did.
   5. Reusing one collection's block types for another field.
      Instead: Every blocks field has its own list: pages.layout and forms.fields share none. Read .blocks[FIELD].
+  6. Writing a block with only the fields --block listed as required.
+     Instead: Required-ness inside a block is often null (Payload publishes no input type for one). .block.required_unknown names every field nobody could answer for; .block.reason says why.
+  7. Treating blockName or id as content.
+     Instead: id, blockName and blockType are Payload plumbing. blockType is mandatory and must be the SLUG; id is server-generated; blockName is an optional admin label. .block.fields[].plumbing marks them.
 
 SEE ALSO
   pay collections

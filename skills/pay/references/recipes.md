@@ -225,3 +225,94 @@ if pay get pages 999 > out.json; then echo ok; else
   esac
 fi
 ```
+
+## 13. Blocks: what goes inside one, then write it
+
+A blocks field answers two different questions. **Which** blocks it accepts is a slug
+list; **what is inside** one is that block type's own field schema.
+
+```bash
+# Which blockTypes does this field accept? (slugs, never interfaceNames)
+pay describe pages --field layout --path .block_types
+# → ["archive","content","cta","formBlock","mediaBlock"]
+
+# What is inside one of them?
+pay describe pages --block cta --path '.block.fields[].path'
+# → ["richText","links","links.link","links.link.type","links.link.newTab",
+#    "links.link.reference","links.link.url","links.link.label",
+#    "links.link.appearance","links.id","id","blockName","blockType"]
+
+# Only the fields that are proved required:
+pay describe pages --block mediaBlock --path .required_fields[]
+# → ["media"]       (an upload; .block.fields[].relation_to says it points at `media`)
+
+# Everything at once for one field, when you really do want all of them:
+pay describe pages --field layout --blocks-detail
+```
+
+Each entry of `.block.fields[]` carries `payload_type`, `json_type`, `has_many`,
+`options` (enum values), `relation_to` + `write_shape` for relationships and uploads, and
+`required` + `required_source`.
+
+**`plumbing: true` marks Payload's own keys.** `blockType` is mandatory on every block you
+write and must be the **slug**; `blockName` is an optional admin-UI label; `id` is
+server-generated — omit it when creating. They are not content fields.
+
+**`required: null` is not `false`.** Payload generates no input type for a block type, so
+the only two proofs of required-ness are a GraphQL `NON_NULL` on the block's object type
+and the block's own `config.ts` on disk. A plugin's blocks live in `node_modules`, which
+is never scanned, so their optional fields stay unknown:
+
+```bash
+pay describe forms --block textarea --path '.block.fields'
+# name          text     required: true   required_source: graphql          (NON_NULL)
+# label,width,
+# defaultValue,
+# required      …        required: null   required_source: unknown
+# id,blockName,blockType                   required_source: payload-protocol (plumbing)
+```
+
+`.block.required_unknown` lists those paths and `.block.reason` says why, and the command
+raises a `block_required_unknown` warning so it cannot be missed.
+
+### A real create, end to end
+
+Everything below was run against a live project (`pages.layout`, `cta`). `richText` is a
+lexical field: send the object, never a string.
+
+```bash
+cat > /tmp/cta.json <<'JSON'
+[{"blockType":"cta","blockName":"Scratch CTA",
+  "richText":{"root":{"type":"root","format":"","indent":0,"version":1,"direction":"ltr",
+    "children":[{"type":"paragraph","format":"","indent":0,"version":1,"direction":"ltr",
+      "textFormat":0,"children":[{"type":"text","detail":0,"format":0,"mode":"normal",
+        "style":"","text":"Ready to ship?","version":1}]}]}},
+  "links":[{"link":{"type":"custom","url":"/docs","label":"Read the docs",
+                    "appearance":"default"}}]}]
+JSON
+
+# 1. Look first. Prints the exact body; changes nothing.
+pay create pages --set title='PayCLI block scratch' --set slug=paycli-block-scratch \
+  --set-json layout="$(cat /tmp/cta.json)" --dry-run
+
+# 2. Do it.
+pay create pages --set title='PayCLI block scratch' --set slug=paycli-block-scratch \
+  --set-json layout="$(cat /tmp/cta.json)" --yes
+
+# 3. Verify the block survived — Payload drops an unknown blockType with a 201.
+pay get pages 35 --select id,title,layout
+
+# 4. Clean up.
+pay delete pages 35 --yes
+```
+
+Notes from that run:
+
+* `--set-json` is required for a blocks field. `--set` refuses it (`write_shape: json`).
+* The response echoed the block back with a server-generated `id` on the block row **and**
+  on each `links` row. Those ids are plumbing; you never send them.
+* `pages` has drafts, so the new document came back `_status: "draft"` with a
+  `created_as_draft` warning naming the required fields still missing elsewhere in the
+  document (`hero.links.link.label`). The `cta` block itself was stored in full.
+* If `warnings[]` had contained `input_silently_dropped` for `layout`, the `blockType`
+  would have been wrong — check it every time.

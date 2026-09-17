@@ -32,6 +32,31 @@ improving an `error.message` or `hint` are **not** breaking. Never branch on
 
 ## [Unreleased]
 
+### Added
+
+- **Block field schemas.** `pay describe <entity> --block <slug>` prints what is INSIDE a
+  block type — its fields, their payload types, enum options, relationship targets and
+  `write_shape` — instead of only the slugs a blocks field accepts. `--blocks-detail`
+  inlines every reachable block type on the collection and `--field` views; it is opt-in
+  because the interiors are several times the size of the rest of the answer.
+  `id`, `blockName` and `blockType` are marked `plumbing: true`: they are Payload's keys,
+  not content, and `blockType` is the one that must be sent.
+- Block schemas are discovered from each union member's GraphQL OBJECT type in the same
+  adaptive `__type` batch as every other leaf — measured on the live project, that is one
+  extra batched request (17 → 18 requests, 7 → 8 GraphQL batches, +15 KB; cold-run time
+  stays inside run-to-run noise: 3.9–5.0 s before, 4.1–5.3 s after, three runs each) — and
+  are persisted in the field shard as `block_schemas`, so they are cache-backed and
+  offline after discovery.
+- Required-ness inside a block is tri-state with provenance: a GraphQL `NON_NULL` proves
+  `required: true`, the block's own `config.ts` supplies the rest for a project's own
+  blocks, and anything neither source answers stays `null` with `required_source:
+  "unknown"`, a named `required_unknown` list, a reason, and a `block_required_unknown`
+  warning. Payload publishes no input type for a block type, so it is never guessed.
+- `shard.block_fields[].slug_interface_names` records which GraphQL union member each
+  blockType slug came from. A shard written before `block_schemas` existed still decodes
+  and still resolves slugs; the block interiors report as not discovered until the next
+  `pay discover --refresh`.
+
 ## [0.1.0] — unreleased
 
 First public release.

@@ -267,3 +267,47 @@ func TestTitleFieldPrefersAText(t *testing.T) {
 		t.Error("an empty shard has no title field")
 	}
 }
+
+// TestMissingTypesAsksForBlockObjectTypes is the cost-shaped regression: a
+// blocks field's union members are OBJECT types carrying the block's own
+// fields, and nothing else in the schema describes what goes inside a block
+// (Payload publishes no input type for one).
+//
+// They must be requested through the SAME batch the other leaves ride, which
+// is what missingTypes returning them proves: fetchTypes issues one aliased
+// request per round, so one more name is one more alias, not one more request.
+func TestMissingTypesAsksForBlockObjectTypes(t *testing.T) {
+	e, s := pageSchema()
+	s.Types["Page_Layout"] = &IntroType{Kind: KindUnion, Name: "Page_Layout",
+		PossibleTypes: namesOf([]string{"CallToActionBlock", "MediaBlock"})}
+
+	entities := map[string]*entity{"pages": e}
+	want := missingTypes(entities, s)
+	for _, name := range []string{"CallToActionBlock", "MediaBlock"} {
+		if !containsString(want, name) {
+			t.Errorf("missingTypes() = %v, want it to ask for the block object type %q", want, name)
+		}
+	}
+	// A block has no mutation input type — mutationCallToActionBlockInput does
+	// not exist — so asking for one would spend an alias per block to learn
+	// nothing.
+	for _, name := range want {
+		if strings.HasPrefix(name, "mutationCallToActionBlock") || strings.HasPrefix(name, "mutationMediaBlock") {
+			t.Errorf("missingTypes() asks for %q, which Payload never generates for a block", name)
+		}
+	}
+
+	// Once the block types resolve, their own nested interiors become the next
+	// round's names — again in one batch, and again without input types.
+	s.Types["CallToActionBlock"] = &IntroType{Kind: KindObject, Name: "CallToActionBlock", Fields: []IntroField{
+		{Name: "links", Type: listOf(nonNull(object("CallToActionBlock_Links")))},
+	}}
+	s.Types["MediaBlock"] = &IntroType{Kind: KindObject, Name: "MediaBlock"}
+	next := missingTypes(entities, s)
+	if !containsString(next, "CallToActionBlock_Links") {
+		t.Errorf("missingTypes() = %v, want the block's nested row type", next)
+	}
+	if containsString(next, "mutationCallToActionBlock_LinksInput") {
+		t.Error("missingTypes() asked for a nested block input type, which does not exist")
+	}
+}

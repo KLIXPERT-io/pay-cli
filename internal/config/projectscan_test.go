@@ -320,7 +320,10 @@ func TestBlockDeclsFromSourcePairsSlugWithInterfaceName(t *testing.T) {
 				t.Fatalf("BlockDeclsFromSource() = %+v, want %+v", got, tc.want)
 			}
 			for i := range tc.want {
-				if got[i] != tc.want[i] {
+				// Compared field by field rather than with ==: BlockDecl now
+				// carries the block's own field declarations, which makes it
+				// uncomparable. The pair is still asserted exactly.
+				if got[i].Slug != tc.want[i].Slug || got[i].InterfaceName != tc.want[i].InterfaceName {
 					t.Fatalf("BlockDeclsFromSource() = %+v, want %+v", got, tc.want)
 				}
 			}
@@ -377,3 +380,147 @@ func TestScanIndexesBlocksByInterfaceName(t *testing.T) {
 		}
 	}
 }
+
+// ctaBlockWithHelper is CallToAction/config.ts as the live project actually
+// writes it: one literal field beside a `linkGroup({…})` helper call that
+// contributes a field the scanner cannot name.
+const ctaBlockWithHelper = `import type { Block } from 'payload'
+import { linkGroup } from '../../fields/linkGroup'
+
+export const CallToAction: Block = {
+  slug: 'cta',
+  interfaceName: 'CallToActionBlock',
+  fields: [
+    { name: 'richText', type: 'richText', label: false },
+    linkGroup({ appearances: ['default', 'outline'], overrides: { maxRows: 2 } }),
+  ],
+}
+`
+
+// TestBlockDeclFieldsCarryRequiredness pins the ONE fact GraphQL cannot supply
+// for a block: Payload publishes no input type for a block type, so
+// `required: true` exists only in the project's own source. Without the field
+// harvest every block field's required-ness is unknowable.
+func TestBlockDeclFieldsCarryRequiredness(t *testing.T) {
+	decls := BlockDeclsFromSource(mediaBlock)
+	if len(decls) != 1 {
+		t.Fatalf("BlockDeclsFromSource() = %+v, want one declaration", decls)
+	}
+	d := decls[0]
+	if !d.FieldsComplete {
+		t.Errorf("FieldsComplete = false; every element of this fields array is a named object literal")
+	}
+	if len(d.Fields) != 1 {
+		t.Fatalf("Fields = %+v, want exactly media", d.Fields)
+	}
+	f := d.Fields[0]
+	if f.Name != "media" || f.Type != "upload" {
+		t.Errorf("Fields[0] = %+v, want name=media type=upload", f)
+	}
+	if f.Required == nil || !*f.Required {
+		t.Errorf("media.Required = %v, want true — it is `required: true` in the config", f.Required)
+	}
+}
+
+// TestBlockDeclFieldsAreIncompleteWhenAHelperContributesFields is the guard
+// against the worst available answer: reporting a block's field list as
+// authoritative when a helper call added fields the scanner never saw would
+// make `links` read as "declared, not required" instead of "never seen".
+func TestBlockDeclFieldsAreIncompleteWhenAHelperContributesFields(t *testing.T) {
+	decls := BlockDeclsFromSource(ctaBlockWithHelper)
+	if len(decls) != 1 || decls[0].Slug != "cta" {
+		t.Fatalf("BlockDeclsFromSource() = %+v", decls)
+	}
+	d := decls[0]
+	if d.FieldsComplete {
+		t.Error("FieldsComplete = true, but linkGroup({…}) contributes a field the scanner cannot name")
+	}
+	if len(d.Fields) != 1 || d.Fields[0].Name != "richText" {
+		t.Fatalf("Fields = %+v, want only the literal richText entry", d.Fields)
+	}
+	if d.Fields[0].Required != nil {
+		t.Errorf("richText.Required = %v, want nil: the config declares no `required:` key", d.Fields[0].Required)
+	}
+	if d.Fields[0].Type != "richText" {
+		t.Errorf("richText.Type = %q, want richText — the only source that tells lexical from json", d.Fields[0].Type)
+	}
+}
+
+// TestBlockDeclFieldParsing covers the shapes a byte scanner must not get
+// wrong, each of which would otherwise become a confident wrong answer.
+func TestBlockDeclFieldParsing(t *testing.T) {
+	tests := []struct {
+		name         string
+		src          string
+		wantFields   []BlockFieldDecl
+		wantComplete bool
+	}{
+		{
+			name:         "a non-literal required is nil, never evaluated",
+			src:          `const B = { slug: 'b', fields: [{ name: 'x', type: 'text', required: isProd }] }`,
+			wantFields:   []BlockFieldDecl{{Name: "x", Type: "text"}},
+			wantComplete: true,
+		},
+		{
+			name:         "required: false is recorded as false, not as absent",
+			src:          `const B = { slug: 'b', fields: [{ name: 'x', type: 'text', required: false }] }`,
+			wantFields:   []BlockFieldDecl{{Name: "x", Type: "text", Required: boolPtrTest(false)}},
+			wantComplete: true,
+		},
+		{
+			name:         "a nested admin object is not a field of the block",
+			src:          `const B = { slug: 'b', fields: [{ name: 'x', type: 'text', admin: { width: '50%' } }] }`,
+			wantFields:   []BlockFieldDecl{{Name: "x", Type: "text"}},
+			wantComplete: true,
+		},
+		{
+			name:         "a spread makes the list incomplete",
+			src:          `const B = { slug: 'b', fields: [...shared, { name: 'x', type: 'text' }] }`,
+			wantFields:   []BlockFieldDecl{{Name: "x", Type: "text"}},
+			wantComplete: false,
+		},
+		{
+			name:         "an unnamed element (a row) makes the list incomplete",
+			src:          `const B = { slug: 'b', fields: [{ type: 'row', fields: [] }] }`,
+			wantFields:   nil,
+			wantComplete: false,
+		},
+		{
+			name:         "a sibling array is not the fields array",
+			src:          `const B = { slug: 'b', labels: [{ name: 'nope' }], fields: [{ name: 'x', type: 'text' }] }`,
+			wantFields:   []BlockFieldDecl{{Name: "x", Type: "text"}},
+			wantComplete: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			decls := BlockDeclsFromSource(tc.src)
+			if len(decls) != 1 {
+				t.Fatalf("BlockDeclsFromSource() = %+v, want one declaration", decls)
+			}
+			got := decls[0]
+			if got.FieldsComplete != tc.wantComplete {
+				t.Errorf("FieldsComplete = %v, want %v", got.FieldsComplete, tc.wantComplete)
+			}
+			if len(got.Fields) != len(tc.wantFields) {
+				t.Fatalf("Fields = %+v, want %+v", got.Fields, tc.wantFields)
+			}
+			for i, w := range tc.wantFields {
+				g := got.Fields[i]
+				if g.Name != w.Name || g.Type != w.Type {
+					t.Fatalf("Fields[%d] = %+v, want %+v", i, g, w)
+				}
+				switch {
+				case w.Required == nil && g.Required != nil:
+					t.Errorf("Fields[%d].Required = %v, want nil", i, *g.Required)
+				case w.Required != nil && g.Required == nil:
+					t.Errorf("Fields[%d].Required = nil, want %v", i, *w.Required)
+				case w.Required != nil && *g.Required != *w.Required:
+					t.Errorf("Fields[%d].Required = %v, want %v", i, *g.Required, *w.Required)
+				}
+			}
+		})
+	}
+}
+
+func boolPtrTest(b bool) *bool { return &b }

@@ -283,6 +283,11 @@ func (rt *Runtime) explainEntity(ctx context.Context, m *discovery.Manifest, slu
 			data["sortable_paths"] = orEmptyStrings(shard.SortablePaths())
 			data["join_fields"] = orEmptyStrings(shard.JoinFields)
 			data["blocks"] = shard.Blocks
+			// The slugs alone say which blocks may go in a field, never what is
+			// inside one. The interiors are named here and printed by
+			// `pay describe <c> --block <slug>`; inlining them would multiply
+			// the size of a command that is already the biggest one PayCLI has.
+			addBlockSchemas(rt, data, shard, shard.BlockSlugsFor(), false, slug)
 			data["examples"] = describeExamples(slug, "collection", shard, m)
 		}
 		return data, nil

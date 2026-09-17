@@ -39,6 +39,37 @@ type BlockDecl struct {
 	// InterfaceName is "" for a block that declares none; Payload then derives
 	// the GraphQL type name from the slug itself.
 	InterfaceName string `json:"interface_name,omitempty"`
+	// Fields are the entries of this block's own `fields:` array literal, in
+	// source order. They exist for ONE fact GraphQL cannot supply: Payload
+	// generates no INPUT_OBJECT for a block type (the blocks mutation argument
+	// is a JSON scalar), so the NON_NULL trick that recovers required-ness for
+	// a collection field has nothing to read. The config on disk is the only
+	// place `required: true` is written down.
+	Fields []BlockFieldDecl `json:"fields,omitempty"`
+	// FieldsComplete is true only when EVERY element of the `fields:` array
+	// was an object literal carrying a `name:` string literal. A helper call
+	// (`linkGroup({…})`), a spread, or a computed field makes it false, and a
+	// false here is what keeps a missing entry reading as "unknown" instead of
+	// "not required" — the exact guess this whole type exists to refuse.
+	FieldsComplete bool `json:"fields_complete,omitempty"`
+}
+
+// BlockFieldDecl is one field read out of a block's `fields:` array.
+//
+// Required is a POINTER: nil is "the object literal had no `required:` key at
+// all", which for Payload means not required, while a non-literal value
+// (`required: isProd`) is also recorded as nil because the scanner refuses to
+// evaluate project code. The caller decides what to do with each, and only a
+// declaration that was fully parsed is allowed to answer false.
+type BlockFieldDecl struct {
+	Name string `json:"name"`
+	// Type is the `type:` literal ('richText', 'upload', 'select', …). It is
+	// the only source that can tell lexical richText from a json field and a
+	// select from a radio, both of which compile to the SAME GraphQL shape.
+	Type string `json:"type,omitempty"`
+	// Required is the literal `required: true` / `required: false`, or nil
+	// when the key was absent or not a boolean literal.
+	Required *bool `json:"required,omitempty"`
 }
 
 // ScanResult is everything §7.10 and §7.11 can learn from the project on disk.
@@ -275,8 +306,39 @@ func BlockDeclsFromSource(src string) []BlockDecl {
 		iface     string
 		hasSlug   bool
 		hasFields bool
+
+		// name/typ/required are read only so that this object can be reported
+		// as one entry of its PARENT's fields array; a block never uses them.
+		name     string
+		typ      string
+		required *bool
+
+		// owner is the block object whose `fields:` array this object is a
+		// direct element of, and nil for every other object (a nested
+		// `admin: {}`, the block itself, an unrelated literal).
+		owner *object
+
+		// pendingFields is set between `fields` and the `[` that follows it,
+		// so that only the fields array — not some other array on the same
+		// object — adopts the elements inside it.
+		pendingFields bool
+		fields        []BlockFieldDecl
+		// fieldsClosed records that the fields array was balanced; a truncated
+		// file leaves it false.
+		fieldsClosed bool
+		// fieldsPartial records an element the scanner could not read as a
+		// named object literal: a helper call, a spread, a conditional. It is
+		// the difference between "this block has no `required:` on foo" and
+		// "PayCLI never saw foo's declaration".
+		fieldsPartial bool
+	}
+	// bracket is one `[` on the stack, remembering whether it opened a block's
+	// fields array and which object owns it.
+	type bracket struct {
+		owner *object
 	}
 	var stack []*object
+	var brackets []bracket
 	var out []BlockDecl
 	seen := map[string]bool{}
 
@@ -285,7 +347,15 @@ func BlockDeclsFromSource(src string) []BlockDecl {
 			return
 		}
 		seen[o.slug] = true
-		out = append(out, BlockDecl{Slug: o.slug, InterfaceName: o.iface})
+		out = append(out, BlockDecl{
+			Slug:          o.slug,
+			InterfaceName: o.iface,
+			Fields:        o.fields,
+			// Complete means every element was read AND the array was
+			// balanced. Both halves matter: a truncated file (§7.10 caps reads
+			// at 512 KB) can end mid-array with everything so far parsed.
+			FieldsComplete: o.fieldsClosed && !o.fieldsPartial,
+		})
 	}
 
 	i := 0
@@ -293,6 +363,21 @@ func BlockDeclsFromSource(src string) []BlockDecl {
 	// pendingKey holds the most recent identifier or quoted key so that the
 	// following ':' can be attributed to it.
 	pendingKey := ""
+
+	// inFieldsArray reports that the very next `{` is an element of some
+	// block's fields array: the innermost bracket must be that array and the
+	// innermost object must be the block that owns it, which is what keeps a
+	// nested `admin: {}` (one object deeper) from being read as a field.
+	inFieldsArray := func() *object {
+		if len(brackets) == 0 || len(stack) == 0 {
+			return nil
+		}
+		b := brackets[len(brackets)-1]
+		if b.owner != nil && b.owner == stack[len(stack)-1] {
+			return b.owner
+		}
+		return nil
+	}
 
 	for i < n {
 		c := src[i]
@@ -316,17 +401,58 @@ func BlockDeclsFromSource(src string) []BlockDecl {
 			if j < n && src[j] == ':' {
 				pendingKey = value
 			}
+		case c == '[':
+			// Only the `[` that directly follows `fields:` adopts elements.
+			var owner *object
+			if len(stack) > 0 && stack[len(stack)-1].pendingFields {
+				owner = stack[len(stack)-1]
+				owner.pendingFields = false
+			}
+			brackets = append(brackets, bracket{owner: owner})
+			pendingKey = ""
+			i++
+		case c == ']':
+			if len(brackets) > 0 {
+				b := brackets[len(brackets)-1]
+				brackets = brackets[:len(brackets)-1]
+				if b.owner != nil {
+					b.owner.fieldsClosed = true
+				}
+			}
+			pendingKey = ""
+			i++
 		case c == '{':
-			stack = append(stack, &object{})
+			stack = append(stack, &object{owner: inFieldsArray()})
 			pendingKey = ""
 			i++
 		case c == '}':
 			if len(stack) > 0 {
-				emit(stack[len(stack)-1])
+				o := stack[len(stack)-1]
 				stack = stack[:len(stack)-1]
+				emit(o)
+				if o.owner != nil {
+					if o.name == "" {
+						// An element with no `name:` is a row, a collapsible,
+						// a UI field or something the scanner does not
+						// understand. Either way its children are not named
+						// here, so the block's field list is incomplete.
+						o.owner.fieldsPartial = true
+					} else {
+						o.owner.fields = append(o.owner.fields,
+							BlockFieldDecl{Name: o.name, Type: o.typ, Required: o.required})
+					}
+				}
 			}
 			pendingKey = ""
 			i++
+		case c == '.' && i+2 < n && src[i+1] == '.' && src[i+2] == '.':
+			// A spread inside a fields array contributes fields the scanner
+			// cannot name.
+			if o := inFieldsArray(); o != nil {
+				o.fieldsPartial = true
+			}
+			pendingKey = ""
+			i += 3
 		case c == ':':
 			key := pendingKey
 			pendingKey = ""
@@ -338,24 +464,45 @@ func BlockDeclsFromSource(src string) []BlockDecl {
 			switch key {
 			case "fields":
 				top.hasFields = true
+				top.pendingFields = true
 			case "slug":
-				j := skipSpace(src, i)
-				if j < n && (src[j] == '\'' || src[j] == '"' || src[j] == '`') {
-					value, next := readString(src, j)
-					if value != "" && !strings.Contains(value, "${") {
-						top.slug = value
-						top.hasSlug = true
-					}
+				if value, next, ok := readKeyString(src, i); ok {
+					top.slug, top.hasSlug, i = value, true, next
+				} else {
 					i = next
 				}
 			case "interfaceName":
-				j := skipSpace(src, i)
-				if j < n && (src[j] == '\'' || src[j] == '"' || src[j] == '`') {
-					value, next := readString(src, j)
-					if value != "" && !strings.Contains(value, "${") {
-						top.iface = value
-					}
+				if value, next, ok := readKeyString(src, i); ok {
+					top.iface, i = value, next
+				} else {
 					i = next
+				}
+			case "name":
+				if value, next, ok := readKeyString(src, i); ok {
+					top.name, i = value, next
+				} else {
+					i = next
+				}
+			case "type":
+				if value, next, ok := readKeyString(src, i); ok {
+					top.typ, i = value, next
+				} else {
+					i = next
+				}
+			case "required":
+				// Literal booleans only. `required: isProd` is deliberately
+				// left nil: evaluating project code is forbidden, and a guess
+				// here is the one thing an agent cannot recover from.
+				j := skipSpace(src, i)
+				switch {
+				case strings.HasPrefix(src[j:], "true") && !isIdentPart(byteAt(src, j+4)):
+					v := true
+					top.required = &v
+					i = j + 4
+				case strings.HasPrefix(src[j:], "false") && !isIdentPart(byteAt(src, j+5)):
+					v := false
+					top.required = &v
+					i = j + 5
 				}
 			}
 		case isIdentStart(c):
@@ -376,6 +523,31 @@ func BlockDeclsFromSource(src string) []BlockDecl {
 		emit(stack[k])
 	}
 	return out
+}
+
+// readKeyString reads the string literal a key's ':' is followed by. It
+// reports false for anything that is not a plain literal — a template with a
+// ${} substitution, an identifier, a call — because the scanner never
+// evaluates project code.
+func readKeyString(src string, i int) (value string, next int, ok bool) {
+	j := skipSpace(src, i)
+	if j >= len(src) || (src[j] != '\'' && src[j] != '"' && src[j] != '`') {
+		return "", i, false
+	}
+	v, end := readString(src, j)
+	if v == "" || strings.Contains(v, "${") {
+		return "", end, false
+	}
+	return v, end, true
+}
+
+// byteAt is src[i] with an out-of-range read reported as a byte that ends an
+// identifier, so a literal at end-of-file is still recognised.
+func byteAt(src string, i int) byte {
+	if i < 0 || i >= len(src) {
+		return 0
+	}
+	return src[i]
 }
 
 // readString returns the contents of the string literal starting at i (which

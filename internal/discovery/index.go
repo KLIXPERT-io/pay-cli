@@ -103,6 +103,13 @@ type Options struct {
 	// every union member then resolves through the interfaceName heuristic and
 	// is labelled as inferred — but it is never guessed at silently.
 	ProjectBlockInterfaces map[string]string
+	// ProjectBlockDecls are the block declarations read off disk, keyed by
+	// slug: each block's own `fields:` entries and whether the whole array was
+	// parseable. This is the ONLY source of a block field's required-ness —
+	// Payload generates no input type for a block type, so §7.4's NON_NULL
+	// trick cannot reach inside one. Absent for every plugin-provided block,
+	// which is why the answer stays tri-state.
+	ProjectBlockDecls map[string]BlockSourceDecl
 	// ProjectAuthSlugs are auth-collection slug literals from the project's
 	// own payload.config.ts, used only to widen Stage -1's candidate set.
 	ProjectAuthSlugs []string
@@ -382,6 +389,7 @@ func (d *Discoverer) Run(ctx context.Context) (*Result, error) {
 		ProjectSource:      d.opt.ProjectBlockSlugs,
 		ProjectSourceFiles: d.opt.ProjectBlockSlugFiles,
 		SlugByInterface:    d.opt.ProjectBlockInterfaces,
+		SourceDecls:        d.opt.ProjectBlockDecls,
 	}
 	idTypes := []string{}
 	sampleIDs := []string{}

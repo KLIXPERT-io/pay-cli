@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -19,6 +20,8 @@ func init() { Register(newDescribeCmd) }
 
 type describeFlags struct {
 	field        string
+	block        string
+	blocksDetail bool
 	requiredOnly bool
 	queryable    bool
 	examples     bool
@@ -76,8 +79,11 @@ func newDescribeCmd(rt *Runtime) *cobra.Command {
 				return env, nil
 			}
 
+			if f.block != "" {
+				return describeOneBlock(rt, slug, targetKind, shard, f.block, f.field, header)
+			}
 			if f.field != "" {
-				return describeOneField(rt, m, slug, targetKind, shard, f.field, header)
+				return describeOneField(rt, slug, targetKind, shard, f.field, header, f.blocksDetail)
 			}
 
 			fields := filterFields(shard.Fields, f)
@@ -94,6 +100,7 @@ func newDescribeCmd(rt *Runtime) *cobra.Command {
 			data["blocks_source"] = blocksSourceByField(shard)
 			data["blocks_source_summary"] = shard.BlocksSource
 			data["block_fields"] = shard.BlockFields
+			addBlockSchemas(rt, data, shard, shard.BlockSlugsFor(), f.blocksDetail, slug)
 			data["queryable_paths"] = orEmptyStrings(shard.QueryablePaths())
 			data["sortable_paths"] = orEmptyStrings(shard.SortablePaths())
 			data["date_fields"] = orEmptyStrings(shard.DateFields())
@@ -115,19 +122,46 @@ func newDescribeCmd(rt *Runtime) *cobra.Command {
 		}),
 	}
 	cmd.Flags().StringVar(&f.field, "field", "", "describe one field path in full (dotted, e.g. hero.links.link.url)")
+	cmd.Flags().StringVar(&f.block, "block", "",
+		"describe ONE blockType's own field schema: what goes INSIDE a cta, not just that cta exists")
+	cmd.Flags().BoolVar(&f.blocksDetail, "blocks-detail", false,
+		"inline EVERY reachable blockType's field schema (off by default: see BLOCKS in `pay help describe`)")
 	cmd.Flags().BoolVar(&f.requiredOnly, "required-only", false, "only fields whose required is known true")
 	cmd.Flags().BoolVar(&f.queryable, "queryable", false, "only fields usable in --where")
 	cmd.Flags().BoolVar(&f.examples, "examples", false, "add generated, copy-pasteable commands for this entity")
 	cmd.Flags().BoolVar(&f.sample, "sample", false, "also fetch one real document (one extra request)")
 	_ = cmd.RegisterFlagCompletionFunc("field", CompleteFieldPaths(rt, FieldSelectable))
+	_ = cmd.RegisterFlagCompletionFunc("block", CompleteBlockSlugs(rt))
 
 	SetHelp(cmd, &Help{
-		Synopsis:    []string{"pay describe <collection|global> [--field PATH] [--required-only] [--queryable] [--examples] [--sample]"},
+		Synopsis: []string{
+			"pay describe <collection|global> [--field PATH] [--required-only] [--queryable] [--examples] [--sample]",
+			"pay describe <collection|global> --block <blockType-slug> [--field PATH]",
+			"pay describe <collection|global> [--field PATH] --blocks-detail",
+		},
 		Collections: true,
 		Globals:     true,
 		Long: "Every field entry carries the same 26 keys, using null or the sentinels \"n/a\" /\n" +
 			"\"unknown\" where a fact could not be learned, so `jq '.data.fields[] |\n" +
-			"select(.required)'` is total and never needs a presence check.",
+			"select(.required)'` is total and never needs a presence check.\n" +
+			"\n" +
+			"BLOCKS. A blocks field answers two different questions. WHICH blocks may go in it\n" +
+			"is .blocks[FIELD] (slugs) and is always printed. WHAT IS INSIDE one is\n" +
+			"--block <slug>, which prints that block type's own fields, their types, their\n" +
+			"relationship targets and their required-ness with provenance.\n" +
+			"--blocks-detail inlines every one of them at once and is OFF by default on\n" +
+			"purpose. Measured on the live project: `pay describe pages` is 31 KB, and 70 KB\n" +
+			"with --blocks-detail, while `--field layout` goes from 4.4 KB to 43 KB — ten\n" +
+			"times the output of the most-run discovery command, to answer a question that\n" +
+			"is asked one block at a time. .block_schemas_available names every block whose\n" +
+			"schema is cached; --block <slug> prints the one you are about to write.\n" +
+			"\n" +
+			"Required-ness inside a block is tri-state and is null more often than on a\n" +
+			"collection field. Payload publishes NO input type for a block type, so §7.4's\n" +
+			"NON_NULL trick has nothing to read; what is left is a NON_NULL on the block's\n" +
+			"object type (proof of required) and the block's own config.ts on disk. A\n" +
+			"plugin's blocks live in node_modules, which is never scanned, so their optional\n" +
+			"fields stay \"unknown\" — never \"not required\".",
 		Args: []ArgSpec{
 			{Name: "entity", Required: true, Type: "enum", ValuesFrom: "discovery.collections", Example: "pages"},
 		},
@@ -139,6 +173,9 @@ func newDescribeCmd(rt *Runtime) *cobra.Command {
 			{Why: "what can I filter on?", Cmd: "pay describe pages --queryable --path .queryable_paths[]"},
 			{Why: "one field in full, including its operators", Cmd: "pay describe pages --field title"},
 			{Why: "the blockTypes a blocks field accepts", Cmd: "pay describe pages --field layout"},
+			{Why: "what goes INSIDE one block type", Cmd: "pay describe pages --block cta"},
+			{Why: "just that block's required fields", Cmd: "pay describe pages --block mediaBlock --path .required_fields[]"},
+			{Why: "every block type of one field, in full", Cmd: "pay describe pages --field layout --blocks-detail"},
 			{Why: "schema plus a real document", Cmd: "pay describe pages --sample"},
 			{Why: "generated commands for this collection", Cmd: "pay describe pages --examples --path .examples[]"},
 		},
@@ -153,6 +190,10 @@ func newDescribeCmd(rt *Runtime) *cobra.Command {
 				Right: "Block slugs are not in the API; a null means no source resolved them. .blocks_source[FIELD] says which source did."},
 			{Wrong: "Reusing one collection's block types for another field.",
 				Right: "Every blocks field has its own list: pages.layout and forms.fields share none. Read .blocks[FIELD]."},
+			{Wrong: "Writing a block with only the fields --block listed as required.",
+				Right: "Required-ness inside a block is often null (Payload publishes no input type for one). .block.required_unknown names every field nobody could answer for; .block.reason says why."},
+			{Wrong: "Treating blockName or id as content.",
+				Right: "id, blockName and blockType are Payload plumbing. blockType is mandatory and must be the SLUG; id is server-generated; blockName is an optional admin label. .block.fields[].plumbing marks them."},
 		},
 		SeeAlso: []string{"pay collections", "pay explain --collection <slug>", "pay find <collection> --select …"},
 	})
@@ -200,8 +241,8 @@ func filterFields(fields []discovery.Field, f *describeFlags) []discovery.Field 
 	return out
 }
 
-func describeOneField(rt *Runtime, m *discovery.Manifest, slug, targetKind string,
-	shard *discovery.Shard, path string, header map[string]any) (*output.Envelope, error) {
+func describeOneField(rt *Runtime, slug, targetKind string,
+	shard *discovery.Shard, path string, header map[string]any, blocksDetail bool) (*output.Envelope, error) {
 	field, ok := shard.Field(path)
 	if !ok {
 		return nil, apierr.New(apierr.CodeUnknownField,
@@ -226,6 +267,7 @@ func describeOneField(rt *Runtime, m *discovery.Manifest, slug, targetKind strin
 		data["block_interface_names"] = orEmptyStrings(bf.InterfaceNames)
 		data["unresolved_interface_names"] = orEmptyStrings(bf.Unresolved)
 		data["blocks_reason"] = bf.Reason
+		addBlockSchemas(rt, data, shard, bf.Slugs, blocksDetail, slug)
 		switch {
 		case len(bf.Slugs) == 0:
 			data["blocks_help"] = discovery.DescribeBlocksHelp(bf.InterfaceNames, rt.Cfg.Profile, path)
@@ -242,6 +284,223 @@ func describeOneField(rt *Runtime, m *discovery.Manifest, slug, targetKind strin
 	env := output.New("describe", output.KindSchema, data)
 	env.WithTarget(&output.Target{Kind: targetKind, Slug: slug})
 	return env, nil
+}
+
+// describeOneBlock answers `pay describe <entity> --block <slug>`: the field
+// schema of ONE block type, which is what an agent needs to construct a block
+// rather than merely name it.
+//
+// Scoped to the entity on the command line because a blockType is only
+// writable where a blocks field accepts it: `cta` is real on pages.layout and
+// meaningless on forms.fields, and answering for the wrong entity would
+// produce a document Payload silently drops (§9.7).
+func describeOneBlock(rt *Runtime, slug, targetKind string, shard *discovery.Shard,
+	block, fieldPath string, header map[string]any) (*output.Envelope, error) {
+	accepted := blockFieldsAccepting(shard, block, fieldPath)
+	known := shard.BlockSlugsFor()
+	if fieldPath != "" {
+		if bf, ok := shard.BlockFieldFor(fieldPath); ok {
+			known = bf.Slugs
+		}
+	}
+	if len(accepted) == 0 {
+		where := slug
+		if fieldPath != "" {
+			where = slug + "." + fieldPath
+		}
+		err := apierr.New(apierr.CodeInvalidOption,
+			"no blocks field of %s accepts blockType %q", where, block).
+			WithDidYouMean(apierr.DidYouMean(block, known)...)
+		if len(known) == 0 {
+			return nil, err.WithHint(
+				"pay describe %s --path .blocks lists the blockTypes this entity accepts; it is empty here, "+
+					"so either %s has no blocks field or its slugs could not be resolved (pay describe %s --field FIELD says which)",
+				slug, slug, slug)
+		}
+		return nil, err.WithHint("pay describe %s --path .blocks lists every blockType this entity accepts", slug)
+	}
+
+	schema, ok := shard.BlockSchemaFor(block)
+	if !ok {
+		// The slug is real but its interior was never discovered: a shard
+		// written before block schemas existed, or a REST-only shard with no
+		// GraphQL union to read. Saying so beats answering "no fields".
+		return nil, apierr.New(apierr.CodeFeatureUnavailable,
+			"blockType %q is accepted by %s but PayCLI has no field schema for it", block, strings.Join(accepted, ", ")).
+			WithHint("a block's fields are read from its GraphQL object type, so there is none when GraphQL " +
+				"is unreachable, when the slug was pinned in the profile and no union member resolves to it, " +
+				"or when the cache predates block_schemas; `pay discover --refresh` fixes the last of those")
+	}
+
+	data := map[string]any{
+		"kind":            targetKind,
+		"entity":          header,
+		"block":           schema,
+		"block_fields":    accepted,
+		"content_fields":  blockFieldPaths(schema.ContentFields()),
+		"required_fields": schema.RequiredFields(),
+		"plumbing_note":   discovery.BlockPlumbingNote,
+		"examples":        blockExamples(slug, accepted[0], schema),
+	}
+	if len(schema.RequiredUnknown) > 0 {
+		rt.Warnf(warnBlockRequiredUnknown, "%s", schema.Reason)
+	}
+	env := output.New("describe", output.KindSchema, data)
+	env.WithTarget(&output.Target{Kind: targetKind, Slug: slug})
+	return env, nil
+}
+
+// warnBlockRequiredUnknown is emitted when a block has at least one field
+// whose required-ness neither GraphQL nor project source could establish. It
+// is a warning rather than a silent gap because "not listed as required" and
+// "not required" are the two readings an agent must not confuse.
+const warnBlockRequiredUnknown = "block_required_unknown"
+
+// blockFieldsAccepting lists the blocks field paths of this entity that accept
+// a blockType, optionally narrowed to one field.
+func blockFieldsAccepting(shard *discovery.Shard, block, fieldPath string) []string {
+	out := []string{}
+	for path, bf := range shard.BlockFields {
+		if fieldPath != "" && path != fieldPath {
+			continue
+		}
+		for _, s := range bf.Slugs {
+			if s == block {
+				out = append(out, path)
+				break
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func blockFieldPaths(fields []discovery.BlockFieldSchema) []string {
+	out := make([]string, 0, len(fields))
+	for _, f := range fields {
+		out = append(out, f.Path)
+	}
+	return out
+}
+
+// addBlockSchemas publishes the block interiors under a single pair of keys:
+// block_schemas (the real thing, only with --blocks-detail) and
+// block_schemas_hint (how to get it otherwise).
+//
+// Default-off is a size decision, argued in the flag's own help: pages.layout
+// resolves 5 block types and forms.fields 9, each with ~13 field entries, so
+// inlining them by default would multiply the output of the single most-used
+// discovery command for information that is needed one block at a time.
+func addBlockSchemas(rt *Runtime, data map[string]any, shard *discovery.Shard,
+	slugs []string, detail bool, entity string) {
+	if len(slugs) == 0 {
+		return
+	}
+	available := []string{}
+	missing := []string{}
+	for _, s := range slugs {
+		if _, ok := shard.BlockSchemaFor(s); ok {
+			available = append(available, s)
+		} else {
+			missing = append(missing, s)
+		}
+	}
+	data["block_schemas_available"] = available
+	if len(missing) > 0 {
+		// Never silently short: a slug with no schema is reported by name.
+		data["block_schemas_missing"] = missing
+		rt.Warnf(discovery.LimFieldsUnavailable,
+			"no field schema is cached for blockType %s; run `pay discover --refresh`", strings.Join(missing, ", "))
+	}
+	if !detail {
+		data["block_schemas"] = nil
+		data["block_schemas_hint"] = fmt.Sprintf(
+			"%d block type(s) have a cached field schema. They are omitted by default because they are large: "+
+				"add --blocks-detail for all of them, or `pay describe %s --block %s` for one.",
+			len(available), entity, firstOr(available, "<slug>"))
+		return
+	}
+	out := make(map[string]discovery.BlockTypeSchema, len(available))
+	for _, s := range available {
+		bs, _ := shard.BlockSchemaFor(s)
+		out[s] = bs
+	}
+	data["block_schemas"] = out
+}
+
+func firstOr(ss []string, fallback string) string {
+	if len(ss) == 0 {
+		return fallback
+	}
+	return ss[0]
+}
+
+// blockExamples generates runnable commands for ONE block type, built from
+// this block's real fields: its blockType slug, every field proved required,
+// and a typed placeholder for each.
+//
+// Placeholders are angle-bracketed so that a value that must be replaced can
+// never be mistaken for one that works, and every generated write carries
+// --dry-run: §10.2's echo-diff is what tells an agent whether Payload kept the
+// block, and a dry run is where to find that out first.
+func blockExamples(entity, fieldPath string, schema discovery.BlockTypeSchema) []string {
+	body := blockSkeleton(schema)
+	return []string{
+		fmt.Sprintf("pay describe %s --block %s --path .block.fields[]", entity, schema.Slug),
+		fmt.Sprintf("pay create %s --set-json %s='[%s]' --dry-run", entity, fieldPath, body),
+		fmt.Sprintf("pay update %s <id> --set-json %s='[%s]' --dry-run", entity, fieldPath, body),
+	}
+}
+
+// blockSkeleton renders the minimum JSON object for one block: blockType plus
+// every top-level field proved required. Fields whose required-ness is unknown
+// are deliberately left out — including them would make a guess look like a
+// requirement — and the block's reason says where the gap is.
+func blockSkeleton(schema discovery.BlockTypeSchema) string {
+	parts := []string{fmt.Sprintf("%q:%q", "blockType", schema.Slug)}
+	for _, f := range schema.Fields {
+		if f.Plumbing || f.Parent != nil || f.Required == nil || !*f.Required {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%q:%s", f.Name, blockPlaceholder(f)))
+	}
+	return "{" + strings.Join(parts, ",") + "}"
+}
+
+// blockPlaceholder is a JSON literal of the right SHAPE for a field, so that
+// only the value has to be replaced and never the structure.
+func blockPlaceholder(f discovery.BlockFieldSchema) string {
+	if len(f.Options) > 0 {
+		return fmt.Sprintf("%q", f.Options[0])
+	}
+	switch f.PayloadType {
+	case discovery.TypeNumber:
+		return "0"
+	case discovery.TypeCheckbox:
+		return "true"
+	case discovery.TypeDate:
+		return `"<ISO-8601>"`
+	case discovery.TypeRichText, discovery.TypeJSON:
+		return `{"<lexical root>":"pay describe ` + f.Name + ` --sample shows a real value"}`
+	case discovery.TypeArray, discovery.TypeBlocks:
+		return "[]"
+	case discovery.TypeGroup:
+		return "{}"
+	case discovery.TypeRelationship, discovery.TypeUpload:
+		target := "id"
+		if len(f.RelationTo) > 0 {
+			target = f.RelationTo[0] + " id"
+		}
+		if f.Polymorphic {
+			return fmt.Sprintf(`{"relationTo":%q,"value":"<%s>"}`, firstOr(f.RelationTo, "<collection>"), target)
+		}
+		if f.HasMany {
+			return fmt.Sprintf(`["<%s>"]`, target)
+		}
+		return fmt.Sprintf(`"<%s>"`, target)
+	default:
+		return `"<text>"`
+	}
 }
 
 // fieldWhereExamples turns a field's operator list into runnable --where terms.

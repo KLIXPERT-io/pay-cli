@@ -37,6 +37,12 @@ type BlockSources struct {
 	// path. On a fresh project this yields nothing — verified that all 12 live
 	// pages have layout: [].
 	Observed map[string][]string
+	// SourceDecls are the block declarations §7.10's scan read off disk,
+	// keyed by slug. They carry the one fact GraphQL cannot supply for a block
+	// — `required: true` — because Payload publishes no input type for a block
+	// type. A slug absent from this map is a block PayCLI has no source for,
+	// which is the normal case for every plugin-provided block.
+	SourceDecls map[string]BlockSourceDecl
 }
 
 // BlockResolution is the answer for ONE blocks field. Every answer is
@@ -55,6 +61,12 @@ type BlockResolution struct {
 	// tell a slug confirmed from project source apart from one inferred from
 	// an interfaceName.
 	SlugSources map[string]string
+	// SlugInterfaces pairs each slug with the GraphQL union member it was
+	// resolved from. It is what makes a block's own field schema reachable:
+	// the fields are published under the interfaceName (CallToActionBlock)
+	// while everything writable is keyed by the slug (cta), and without the
+	// pair the two halves cannot be joined.
+	SlugInterfaces map[string]string
 	// Interfaces is the field's GraphQL union possibleTypes, verbatim. They
 	// are reported, never returned as slugs: feeding an interfaceName back to
 	// the API is exactly the silent-wrong-answer this type exists to prevent.
@@ -101,7 +113,14 @@ func ResolveBlocks(fieldPath string, interfaces []string, src BlockSources) Bloc
 			Slugs:       slugs,
 			Source:      SourceConfigured,
 			SlugSources: uniformSources(slugs, SourceConfigured),
-			Interfaces:  ifaces,
+			// A pin outranks every other source for the SLUG, but the block's
+			// field schema is published under a GraphQL union member, so the
+			// two still have to be joined. Only an unambiguous join is made:
+			// an interfaceName that resolves to exactly this pinned slug. A
+			// pin the union cannot be matched to simply has no schema, which
+			// is reported rather than attached to a plausible-looking member.
+			SlugInterfaces: joinPinnedSlugs(slugs, ifaces, src),
+			Interfaces:     ifaces,
 		}
 	}
 
@@ -127,6 +146,38 @@ func ResolveBlocks(fieldPath string, interfaces []string, src BlockSources) Bloc
 	}
 }
 
+// joinPinnedSlugs pairs a profile-pinned slug with the union member that
+// resolves to it, so that a pinned field can still reach the block's own field
+// schema. It never invents a pairing: a slug no member resolves to is absent
+// from the result, and `pay describe --block` then says the interior was not
+// discovered instead of showing another block's fields.
+func joinPinnedSlugs(slugs, ifaces []string, src BlockSources) map[string]string {
+	if len(slugs) == 0 || len(ifaces) == 0 {
+		return nil
+	}
+	pinned := make(map[string]bool, len(slugs))
+	for _, s := range slugs {
+		pinned[s] = true
+	}
+	out := map[string]string{}
+	for _, iface := range ifaces {
+		slug := src.SlugByInterface[iface]
+		if slug == "" {
+			slug = SlugFromInterfaceName(iface)
+		}
+		if slug == "" || !pinned[slug] {
+			continue
+		}
+		if _, taken := out[slug]; !taken {
+			out[slug] = iface
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // resolveFromUnion turns a field's possibleTypes into slugs, one member at a
 // time, recording where each slug came from.
 func resolveFromUnion(fieldPath string, ifaces []string, src BlockSources) BlockResolution {
@@ -135,7 +186,7 @@ func resolveFromUnion(fieldPath string, ifaces []string, src BlockSources) Block
 		observed[s] = true
 	}
 
-	res := BlockResolution{Interfaces: ifaces, SlugSources: map[string]string{}}
+	res := BlockResolution{Interfaces: ifaces, SlugSources: map[string]string{}, SlugInterfaces: map[string]string{}}
 	inferred := []string{}
 	for _, iface := range ifaces {
 		slug, source := src.SlugByInterface[iface], SourceProjectSource
@@ -156,6 +207,7 @@ func resolveFromUnion(fieldPath string, ifaces []string, src BlockSources) Block
 		}
 		if _, dup := res.SlugSources[slug]; !dup {
 			res.Slugs = append(res.Slugs, slug)
+			res.SlugInterfaces[slug] = iface
 		}
 		if source == SourceUnionInferred {
 			inferred = append(inferred, slug)
@@ -337,11 +389,16 @@ func ResolveShardBlocks(shard *Shard, schema *Schema, src BlockSources) {
 			Slugs:          res.Slugs,
 			Source:         res.Source,
 			SlugSources:    res.SlugSources,
+			SlugInterfaces: res.SlugInterfaces,
 			InterfaceNames: res.Interfaces,
 			Unresolved:     res.Unresolved,
 			Reason:         res.Reason,
 		})
 	}
+	// Each resolved slug's own field schema, so an agent can construct a block
+	// and not merely name it. It is built here, next to the slugs, because the
+	// two are read from the same union and must not be able to disagree.
+	shard.BlockSchemas = BlockSchemasForShard(shard, schema, src)
 }
 
 // UnionMembers returns the possibleTypes of a field's GraphQL type when that

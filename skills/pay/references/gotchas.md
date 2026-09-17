@@ -83,10 +83,26 @@ and a success message. A whole `layout` array can disappear while the response s
 
 Read `warnings[]` on every write. `--no-echo-check` disables the comparison.
 
-Block `blockType` slugs are not discoverable over the API at all: GraphQL exposes the
-block *types* but `blockType` is a bare `String`. They live in the project source
-(`src/blocks/*/config.ts`). `pay describe <coll> --field layout` says so explicitly rather
-than guessing.
+Block `blockType` slugs are **not** a plain API read: GraphQL publishes a blocks field's
+union as interfaceNames (`CallToActionBlock`) while the REST API only accepts the slug
+(`cta`), and the pairing lives in the project source (`src/blocks/*/config.ts`). `pay`
+resolves them **per field** — `pages.layout` and `forms.fields` share nothing — and labels
+every slug with where it came from:
+
+```bash
+pay describe pages --field layout --path .block_types        # the writable slugs
+pay describe pages --field layout --path .block_type_sources # project-source | inferred-from-interface-name | …
+```
+
+An `inferred-from-interface-name` slug was derived from the GraphQL type name because no
+project source declared it (every plugin block, since `node_modules` is never scanned). It
+is usable, not confirmed. When nothing can resolve a field's slugs, `pay` says so in plain
+words and prints how to pin them, rather than guessing.
+
+**What is inside a block** is a separate question: `pay describe <coll> --block <slug>`
+prints that block type's own fields, and `--blocks-detail` inlines every one of them.
+Required-ness inside a block is tri-state and is `null` more often than elsewhere, because
+Payload generates no input type for a block type — see `recipes.md` §13.
 
 ---
 

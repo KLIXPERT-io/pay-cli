@@ -1297,6 +1297,7 @@ miss, not a parse error.
   "join_fields": ["activities","bookings","memberships","enrolments"],
   "blocks": null,
   "blocks_source": "unknown",
+  "block_schemas": null,
   "required_paths": ["firstName", "email"]
 }
 ```
@@ -1417,6 +1418,63 @@ then pin them: pay config set profiles.local.blocks.layout cta,content,mediaBloc
 by a unit test over the hint strings: every `hint` that contains a `pay …` command is executed against
 the fixture manifest in the test suite and must produce a non-empty answer for the situation that
 emitted it.
+
+### 7.10a Block field schemas — what is INSIDE a block
+
+§7.10 answers *which* blocks a field accepts. It does not answer what one contains, and a
+slug alone is not enough to construct a block: an agent that knows `cta` exists still cannot
+write one.
+
+**The shape is readable from the block's own GraphQL OBJECT type** — the union member, not an
+input type. Verified live:
+
+```
+__type(name:"CallToActionBlock").fields -> richText: JSON, links: [CallToActionBlock_Links!],
+                                           id: String, blockName: String, blockType: String
+__type(name:"MediaBlock").fields        -> media: Media, id, blockName, blockType
+__type(name:"Textarea").fields          -> name: String!, label, width: Float, defaultValue,
+                                           required: Boolean, id, blockName, blockType
+```
+
+Every union member reachable from a blocks field is therefore added to §7.4's leaf set and
+resolved **in the same adaptive batch as every other leaf** — one more alias each, never one
+more request each — together with its nested group/array row types, bounded at three levels.
+A block's `mutation{Type}Input` is deliberately NOT requested: Payload does not generate one.
+Measured on the live project: 17 → 18 requests, 7 → 8 GraphQL batches, 683 KB → 698 KB.
+
+**Required-ness is the one fact GraphQL cannot fully answer.** Payload generates no
+INPUT_OBJECT for a block type (the blocks mutation argument is the `JSON` scalar), so §7.4's
+`mutation{Singular}Input` NON_NULL trick has nothing to read — every INPUT_OBJECT in the live
+schema was enumerated and there is no `CallToActionBlock` / `Textarea` input. Two partial
+sources remain and each is labelled:
+
+1. **`NON_NULL` on the block object type** ⇒ `required: true`, `required_source: "graphql"`.
+   Payload emits it only for `required: true` (verified: `Textarea.name` is `String!`). Its
+   **absence proves nothing**: a draft-enabled collection force-nullables every field beneath
+   it, which is why `MediaBlock.media` is `required: true` in
+   `src/blocks/MediaBlock/config.ts` and still nullable in the schema.
+2. **The block's own `config.ts`**, harvested by §7.10's scan, which also records whether the
+   whole `fields:` array was parseable. Only a **complete** declaration may answer `false` for
+   a field it does not list; `CallToAction`'s array contains `linkGroup({…})`, a helper call
+   the scanner never expands, so `links` stays unknown rather than becoming "not required".
+
+Anything neither source answers is `required: null`, `required_source: "unknown"`, listed in
+`required_unknown[]`, explained by `reason`, and surfaced as a `block_required_unknown`
+warning. It is never defaulted to `false`.
+
+`id`, `blockName` and `blockType` carry `plumbing: true` and
+`required_source: "payload-protocol"`: they are Payload's wire format rather than this
+project's content, and `blockType` is the only one that is mandatory to send.
+
+The result is persisted per entity as `block_schemas`, **keyed by slug** (§7.8.2), with
+`block_fields[].slug_interface_names` recording which union member each slug came from. A
+shard written before the key existed decodes unchanged and reports the interiors as not
+discovered — `null` there means "not discovered", never "this block has no fields".
+
+`pay describe <c> --block <slug>` prints one block's schema; `--blocks-detail` inlines every
+one of them and is **opt-in**, because measured on the live project it takes
+`pay describe pages` from 31 KB to 70 KB and `pay describe pages --field layout` from 4.4 KB
+to 43 KB.
 
 ### 7.11 `payload_version` and `db_adapter`
 

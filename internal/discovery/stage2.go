@@ -240,6 +240,18 @@ func collectMissing(obj *IntroType, ownerSingular string, schema *Schema, need m
 				need[leaf] = true
 			}
 		}
+		// A blocks field's union members are OBJECT types carrying the block's
+		// own fields, and they are the only place that schema exists: Payload
+		// publishes no input type for a block, so nothing else in the schema
+		// describes what goes inside one. They ride the SAME adaptive batch as
+		// every other leaf — one more alias each, not one more request each.
+		for _, iface := range k.BlockInterfaces {
+			if iface == "" {
+				continue
+			}
+			need[iface] = true
+			collectBlockMissing(schema.Type(iface), iface, schema, need, 0)
+		}
 		if k.Children != "" {
 			// The nested group's own mutation input type is what carries
 			// required-ness one level down, exactly as mutation{Singular}Input
@@ -252,6 +264,38 @@ func collectMissing(obj *IntroType, ownerSingular string, schema *Schema, need m
 			}
 			collectMissing(child, ownerSingular, schema, need, depth+1)
 		}
+	}
+}
+
+// collectBlockMissing walks a block type's own fields for the leaves its
+// schema needs: the enums behind its selects, the relationship wrappers behind
+// its polymorphic fields, and its nested group/array row types.
+//
+// It deliberately does NOT ask for a mutation input type at any level, unlike
+// collectMissing. A block has none — mutationCallToActionBlock_LinksInput does
+// not exist — so requesting one would spend an alias per nested type to learn
+// nothing.
+func collectBlockMissing(obj *IntroType, blockType string, schema *Schema, need map[string]bool, depth int) {
+	if obj == nil || depth >= maxBlockNestDepth {
+		return
+	}
+	for i := range obj.Fields {
+		f := &obj.Fields[i]
+		k := InferKind(f.Type, blockType, f.Name, schema)
+		for _, leaf := range k.Leaves {
+			if leaf != "" {
+				need[leaf] = true
+			}
+		}
+		if k.Children == "" {
+			continue
+		}
+		child, known := schema.Types[k.Children]
+		if !known {
+			need[k.Children] = true
+			continue
+		}
+		collectBlockMissing(child, blockType, schema, need, depth+1)
 	}
 }
 
