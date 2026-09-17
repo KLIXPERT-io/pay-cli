@@ -244,7 +244,7 @@ func BlockSlugsFromSource(src string) []string {
 			}
 		case c == '/' && i+1 < n && src[i+1] == '*':
 			i += 2
-			for i+1 < n && !(src[i] == '*' && src[i+1] == '/') {
+			for i+1 < n && (src[i] != '*' || src[i+1] != '/') {
 				i++
 			}
 			i += 2
@@ -353,7 +353,7 @@ func skipSpace(src string, i int) int {
 			}
 			if i+1 < len(src) && src[i+1] == '*' {
 				i += 2
-				for i+1 < len(src) && !(src[i] == '*' && src[i+1] == '/') {
+				for i+1 < len(src) && (src[i] != '*' || src[i+1] != '/') {
 					i++
 				}
 				i += 2

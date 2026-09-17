@@ -603,7 +603,9 @@ func (rt *Runtime) commandTable(full bool) []map[string]any {
 		rows = walkTop(root)
 	}
 	sort.SliceStable(rows, func(i, j int) bool {
-		return rows[i]["command"].(string) < rows[j]["command"].(string)
+		a, _ := rows[i]["command"].(string)
+		b, _ := rows[j]["command"].(string)
+		return a < b
 	})
 	return rows
 }

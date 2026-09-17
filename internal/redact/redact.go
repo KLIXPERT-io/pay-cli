@@ -17,6 +17,7 @@ package redact
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"regexp"
@@ -263,7 +264,7 @@ func (s Scrubber) scanJSON(b []byte) ([]span, []string, error) {
 	}
 	// Reject trailing garbage so "{}<html>" is treated as non-JSON.
 	if _, err := dec.Token(); err != io.EOF {
-		return nil, nil, fmt.Errorf("redact: trailing data after JSON value")
+		return nil, nil, errors.New("redact: trailing data after JSON value")
 	}
 	return spans, paths, nil
 }
@@ -291,7 +292,7 @@ func (s Scrubber) walk(dec *json.Decoder, b []byte, path string, spans *[]span, 
 				}
 				key, ok := keyTok.(string)
 				if !ok {
-					return fmt.Errorf("redact: non-string object key")
+					return errors.New("redact: non-string object key")
 				}
 				afterKey := dec.InputOffset()
 				p := join(path, key)

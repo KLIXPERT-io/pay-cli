@@ -220,7 +220,9 @@ func (c *Client) Init(ctx context.Context, slug string, opts ...Option) (*InitRe
 	}
 	var body map[string]any
 	if json.Unmarshal(resp.Body, &body) != nil {
-		return out, nil
+		// An unparseable body means "this is not an auth collection", which is
+		// the answer the caller wants, not an error to propagate.
+		return out, nil //nolint:nilerr // a negative probe result is not a command failure
 	}
 	if v, ok := body["initialized"].(bool); ok {
 		out.IsAuthCollection = true

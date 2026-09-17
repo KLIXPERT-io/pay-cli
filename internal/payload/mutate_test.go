@@ -318,7 +318,7 @@ func TestBulkPinsTheFirstFailingChunk(t *testing.T) {
 	s := newStub(t, func(w http.ResponseWriter, r *http.Request, attempt int) {
 		w.Header().Set("Content-Type", "application/json")
 		if attempt == 1 {
-			w.WriteHeader(400)
+			w.WriteHeader(http.StatusBadRequest)
 			_, _ = io.WriteString(w, `{"docs":[{"id":1}],"errors":[{"id":42,"message":"The following field is invalid: Title"}]}`)
 			return
 		}

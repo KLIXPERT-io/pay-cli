@@ -433,7 +433,7 @@ func describeValue(v any) string {
 	case bool:
 		return fmt.Sprintf("the boolean %v", t)
 	case json.Number:
-		return fmt.Sprintf("the number %s", t.String())
+		return "the number " + t.String()
 	case nil:
 		return "null"
 	}

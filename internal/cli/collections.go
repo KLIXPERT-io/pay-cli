@@ -217,7 +217,7 @@ func filterCollections(m *discovery.Manifest, f collectionsFilter) []collectionR
 		if c.Internal && !f.includeInterna && f.kind != "internal" {
 			continue
 		}
-		if f.writable && !(c.Permissions.Create || c.Permissions.Update) {
+		if f.writable && (!c.Permissions.Create && !c.Permissions.Update) {
 			continue
 		}
 		if f.capability != "" && !hasCapability(c, f.capability) {

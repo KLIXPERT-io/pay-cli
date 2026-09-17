@@ -21,7 +21,10 @@ func SpawnDetached(exe string, args, env []string) error {
 	if exe == "" {
 		return apierr.New(apierr.CodeInternal, "cannot spawn the update child: the binary path is unknown.")
 	}
-	cmd := exec.Command(exe, args...)
+	// exec.Command, not CommandContext: the whole point is that the child
+	// OUTLIVES this process and its context (§15.1). A context-bound child
+	// would be killed the instant the parent command finished.
+	cmd := exec.Command(exe, args...) //nolint:noctx // intentional: the child must outlive us
 	cmd.Env = env
 	// Detached means detached: the child must not hold this process's stdio
 	// open, or a shell pipeline would block waiting for it.

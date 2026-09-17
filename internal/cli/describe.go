@@ -255,7 +255,7 @@ func fieldWhereExamples(slug string, f discovery.Field) []string {
 func describeExamples(slug, kind string, shard *discovery.Shard, m *discovery.Manifest) []string {
 	if kind == "global" {
 		return []string{
-			fmt.Sprintf("pay globals get %s", slug),
+			"pay globals get " + slug,
 			fmt.Sprintf("pay globals get %s --select %s", slug, strings.Join(firstPaths(shard, 3), ",")),
 			fmt.Sprintf("pay globals update %s --set %s=VALUE --dry-run", slug, firstWritable(shard)),
 		}

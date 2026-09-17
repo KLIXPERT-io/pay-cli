@@ -241,7 +241,6 @@ func LocalesValidatable(source string) bool {
 // cannot, because `locale` is accepted and ignored when localisation is off.
 func (d *Discoverer) resolveLocalization(ctx context.Context, rows map[string]*row,
 	schema *Schema, entities map[string]*entity, m *Manifest) Localization {
-
 	loc := Localization{
 		Locales:       []string{},
 		LocalesSource: SourceUnknown,

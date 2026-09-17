@@ -538,7 +538,6 @@ func (d *Discoverer) probeNeedFor(r *row, schema *Schema) probeNeed {
 // buildCollection assembles one index entry and its field shard.
 func (d *Discoverer) buildCollection(ctx context.Context, m *Manifest, r *row, schema *Schema,
 	probe probeResult, blocks BlockSources, loc Localization) (*Collection, *Shard) {
-
 	e := r.entity
 	singular := ""
 	if e != nil {
@@ -712,10 +711,11 @@ func (d *Discoverer) buildGlobal(m *Manifest, r *row, schema *Schema, blocks Blo
 	g.FieldsSHA256 = shard.SHA256
 	g.FieldsShard = cache.ShardName(r.slug, cache.KindGlobal)
 
-	if g.Reachability == ReachabilityAccessDenied {
+	switch g.Reachability {
+	case ReachabilityAccessDenied:
 		m.AddUnreachable(r.slug, kindGlobal, ReasonAccessDenied,
 			"present in the GraphQL schema, absent from /api/access")
-	} else if g.Reachability == ReachabilityGraphQLDisabled {
+	case ReachabilityGraphQLDisabled:
 		m.AddUnreachable(r.slug, kindGlobal, ReasonGraphQLDisabled,
 			"present in /api/access, absent from the GraphQL schema")
 	}
@@ -874,7 +874,6 @@ func permBool(v any) bool {
 // fillManifest writes the project-level sections.
 func (d *Discoverer) fillManifest(m *Manifest, view *accessView, identity *payload.Identity,
 	authSource string, mode modeOutcome, project projectProbes, loc Localization, now time.Time) {
-
 	m.Meta = ManifestMeta{
 		Scope:          d.opt.ScopeKey,
 		Profiles:       nonNilStrings(d.opt.Profiles),

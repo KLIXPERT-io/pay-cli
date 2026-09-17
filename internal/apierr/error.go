@@ -337,6 +337,8 @@ func From(err error) *Error {
 // defaultHints keeps the "every failure names its remedy" rule enforceable:
 // every code has a starting hint, and callers sharpen it with WithHint when
 // they know the profile, slug or field involved.
+//
+//nolint:gosec // G101: these are hint STRINGS keyed by error code, not credentials.
 var defaultHints = map[Code]string{
 	CodeInternal:                 "This is a bug in PayCLI. Re-run with --log-level debug and open an issue with the request_id from meta.",
 	CodeUnknown:                  "PayCLI could not classify this response. error.raw holds the server's body verbatim (after redaction); `pay doctor` checks the endpoint.",

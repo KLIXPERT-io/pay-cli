@@ -114,11 +114,11 @@ func TestDebugLoggingRedactsCredentialsInTheURL(t *testing.T) {
 func TestDebugLoggingCountsRetries(t *testing.T) {
 	s := newStub(t, func(w http.ResponseWriter, _ *http.Request, attempt int) {
 		if attempt < 3 {
-			w.WriteHeader(503)
+			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(200)
+		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, `{}`)
 	})
 	c, buf := debugClient(t, s, logging.Options{})

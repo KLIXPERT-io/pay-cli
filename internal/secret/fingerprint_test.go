@@ -1,9 +1,10 @@
 package secret
 
 import (
-	"github.com/KLIXPERT-io/pay-cli/internal/redact"
 	"strings"
 	"testing"
+
+	"github.com/KLIXPERT-io/pay-cli/internal/redact"
 )
 
 // TestFingerprintIsTheSpecFormula pins §4.4's formula with a value computed

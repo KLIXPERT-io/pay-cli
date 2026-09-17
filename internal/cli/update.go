@@ -167,7 +167,6 @@ const serverErrorMessage = "Something went wrong."
 // real and must never be re-run.
 func bulkEnvelope(command, verbPast string, t *collTarget, res *payload.BulkResult,
 	attempted []any, notAttempted []any, retryCmd string) *output.Envelope {
-
 	succeeded := res.Docs
 	if succeeded == nil {
 		succeeded = []payload.Doc{}
@@ -594,7 +593,6 @@ func runUpdate(ctx context.Context, cmd *cobra.Command, d *Deps, f *updateFlags,
 
 func runUpdateOne(ctx context.Context, d *Deps, client *payload.Client, f *updateFlags,
 	t *collTarget, id string, body map[string]any, p query.Params, warnings []output.Warning) (*output.Envelope, error) {
-
 	cfg := d.cfg()
 	if e := d.checkID(t, t.Slug, id); e != nil {
 		return nil, e
@@ -654,7 +652,6 @@ func runUpdateOne(ctx context.Context, d *Deps, client *payload.Client, f *updat
 
 func runBulkUpdate(ctx context.Context, cmd *cobra.Command, d *Deps, client *payload.Client,
 	f *updateFlags, t *collTarget, body map[string]any, p query.Params, warnings []output.Warning) (*output.Envelope, error) {
-
 	cfg := d.cfg()
 	built, err := f.filter.build(nil, d, t)
 	if err != nil {
@@ -779,7 +776,6 @@ func runBulkUpdate(ctx context.Context, cmd *cobra.Command, d *Deps, client *pay
 // poisons its innocent batch-mates with an opaque "Something went wrong."
 func perDocUpdate(ctx context.Context, client *payload.Client, t *collTarget, ids []any,
 	body map[string]any, p query.Params, failFast bool, opts ...payload.Option) (*payload.BulkResult, []any, error) {
-
 	out := &payload.BulkResult{}
 	for i, id := range ids {
 		if ctx.Err() != nil {

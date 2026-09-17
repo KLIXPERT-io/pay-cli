@@ -62,7 +62,8 @@ func LoadState(path string) (State, error) {
 	}
 	var s State
 	if err := json.Unmarshal(b, &s); err != nil {
-		return State{Version: StateVersion}, nil
+		// A corrupt state file must never break `pay`: start from a fresh one.
+		return State{Version: StateVersion}, nil //nolint:nilerr // corrupt state degrades to default
 	}
 	if s.Version == 0 {
 		s.Version = StateVersion

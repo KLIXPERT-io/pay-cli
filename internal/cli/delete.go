@@ -235,7 +235,6 @@ func runDelete(ctx context.Context, cmd *cobra.Command, d *Deps, f *deleteFlags,
 
 func runDeleteOne(ctx context.Context, d *Deps, client *payload.Client, f *deleteFlags,
 	t *collTarget, id string, p query.Params, softDelete, trashEnabled bool) (*output.Envelope, error) {
-
 	cfg := d.cfg()
 	if e := d.checkID(t, t.Slug, id); e != nil {
 		return nil, e
@@ -314,7 +313,6 @@ func runDeleteOne(ctx context.Context, d *Deps, client *payload.Client, f *delet
 
 func runBulkDelete(ctx context.Context, cmd *cobra.Command, d *Deps, client *payload.Client,
 	f *deleteFlags, t *collTarget, p query.Params, softDelete, trashEnabled bool) (*output.Envelope, error) {
-
 	cfg := d.cfg()
 	built, err := f.filter.build(nil, d, t)
 	if err != nil {
@@ -478,7 +476,6 @@ func unsafePassthroughWarning(n int) output.Warning {
 func runUnsafeDelete(ctx context.Context, d *Deps, client *payload.Client, w *writeOp,
 	t *collTarget, where query.Where, p query.Params, scope query.Params, n int,
 	classify payload.Option) (*output.Envelope, error) {
-
 	cfg := d.cfg()
 	warn := unsafePassthroughWarning(n)
 	if cfg.DryRun {

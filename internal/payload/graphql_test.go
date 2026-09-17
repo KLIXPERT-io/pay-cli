@@ -112,7 +112,7 @@ func TestReadOnlyGraphQLIsRetriedAndMutationIsNot(t *testing.T) {
 	s := newStub(t, func(w http.ResponseWriter, _ *http.Request, n int) {
 		w.Header().Set("Content-Type", "application/json")
 		if n%2 == 1 {
-			w.WriteHeader(503)
+			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = io.WriteString(w, `{}`)
 			return
 		}

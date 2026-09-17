@@ -36,7 +36,7 @@ func TestGenerationsAreUnique(t *testing.T) {
 func TestGenerationsSortByMintTime(t *testing.T) {
 	a := NewGeneration(testNow)
 	b := NewGeneration(testNow.Add(time.Second))
-	if !(a < b) {
+	if a >= b {
 		t.Fatalf("%q should sort before %q", a, b)
 	}
 }

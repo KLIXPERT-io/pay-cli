@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -18,6 +17,7 @@ import (
 	"github.com/KLIXPERT-io/pay-cli/internal/cache"
 	"github.com/KLIXPERT-io/pay-cli/internal/config"
 	"github.com/KLIXPERT-io/pay-cli/internal/discovery"
+	"github.com/KLIXPERT-io/pay-cli/internal/fetch"
 	"github.com/KLIXPERT-io/pay-cli/internal/logging"
 	"github.com/KLIXPERT-io/pay-cli/internal/output"
 	"github.com/KLIXPERT-io/pay-cli/internal/payload"
@@ -99,27 +99,26 @@ func fatalDiscoveryError(err error) bool {
 	return false
 }
 
-// remoteFetcher builds the §13 URL downloader over the injected transport. It
-// deliberately uses http.Client.Get rather than constructing an http.Request:
-// §3.1 reserves request construction for internal/payload/transport.go, and
-// this fetch does not go to the Payload server at all.
+// remoteFetcher builds the §13 URL downloader over the injected transport.
+// The fetch itself lives in internal/fetch so that it can construct a
+// context-carrying request without widening §3.1's http.Request rule over the
+// whole command layer, and so that the Payload credential can never be
+// attached to a third-party host.
 func remoteFetcher(rt *Runtime) func(context.Context, string) (io.ReadCloser, string, int64, error) {
 	return func(ctx context.Context, rawurl string) (io.ReadCloser, string, int64, error) {
-		client := &http.Client{Transport: rt.App.HTTP, Timeout: 2 * time.Minute}
+		timeout := 2 * time.Minute
 		if rt.Cfg != nil && rt.Cfg.Timeout > 0 {
-			client.Timeout = rt.Cfg.Timeout * 4
+			timeout = rt.Cfg.Timeout * 4
 		}
-		resp, err := client.Get(rawurl)
+		res, err := fetch.Get(ctx, rt.App.HTTP, rawurl, timeout)
 		if err != nil {
+			if res != nil && res.StatusCode != 0 {
+				return nil, "", 0, apierr.New(apierr.CodeNetworkUnreachable,
+					"%s answered HTTP %d", redact.URL(rawurl), res.StatusCode)
+			}
 			return nil, "", 0, err
 		}
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			resp.Body.Close()
-			return nil, "", 0, apierr.New(apierr.CodeNetworkUnreachable,
-				"%s answered HTTP %d", redact.URL(rawurl), resp.StatusCode)
-		}
-		_ = ctx
-		return resp.Body, resp.Header.Get("Content-Type"), resp.ContentLength, nil
+		return res.Body, res.ContentType, res.Length, nil
 	}
 }
 
@@ -1018,14 +1017,15 @@ func dateFieldDefaultedWarning(t *collTarget, field string, published bool, sinc
 	}
 	var why string
 	alt := "publishedAt"
-	if field == "publishedAt" {
-		why = fmt.Sprintf("%s has a publishedAt field and the query is published-scoped", t.Slug)
+	switch {
+	case field == "publishedAt":
+		why = t.Slug + " has a publishedAt field and the query is published-scoped"
 		alt = "updatedAt"
-	} else if published {
-		why = fmt.Sprintf("%s has no publishedAt date field", t.Slug)
+	case published:
+		why = t.Slug + " has no publishedAt date field"
 		alt = "createdAt"
-	} else {
-		why = fmt.Sprintf("%s: the query is not published-scoped", t.Slug)
+	default:
+		why = t.Slug + ": the query is not published-scoped"
 	}
 	return output.Warning{
 		Code:    warnDateFieldDefaulted,

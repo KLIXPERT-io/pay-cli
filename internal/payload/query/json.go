@@ -73,7 +73,11 @@ func group(key string, terms []Where) Where {
 	case 0:
 		return nil
 	case 1:
-		return Where(kept[0].(map[string]any))
+		one, ok := kept[0].(map[string]any)
+		if !ok {
+			return Where{key: kept}
+		}
+		return Where(one)
 	default:
 		return Where{key: kept}
 	}

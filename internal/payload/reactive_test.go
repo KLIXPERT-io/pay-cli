@@ -100,7 +100,7 @@ func TestReactiveRetriesAReadOnce(t *testing.T) {
 	s := newStub(t, func(w http.ResponseWriter, _ *http.Request, n int) {
 		w.Header().Set("Content-Type", "application/json")
 		if n == 1 {
-			w.WriteHeader(400)
+			w.WriteHeader(http.StatusBadRequest)
 			_, _ = io.WriteString(w, `{"errors":[{"name":"QueryError","data":[{"path":"newField"}]}]}`)
 			return
 		}

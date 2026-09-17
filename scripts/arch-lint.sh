@@ -122,7 +122,8 @@ rule "http.Request construction is confined to internal/payload/transport.go"
 mapfile -t request_scope < <(go_files \
   | grep -v '^\./internal/payload/transport\.go$' \
   | grep -v '_test\.go$' \
-  | grep -v '^\./internal/update/')   # the self-updater talks to GitHub, not to Payload
+  | grep -v '^\./internal/update/' \
+  | grep -v '^\./internal/fetch/')   # neither the self-updater nor the URL fetcher talks to Payload
 scan '(^|[^[:alnum:]_.])http\.(NewRequest|NewRequestWithContext)\(|&http\.Request\{' "${request_scope[@]}"
 
 # ---------------------------------------------------------------------------

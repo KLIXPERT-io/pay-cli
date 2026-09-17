@@ -215,7 +215,7 @@ func TestRetryAfterIsHonoured(t *testing.T) {
 		if n == 1 {
 			w.Header().Set(HeaderRetryAfter, "9")
 			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(429)
+			w.WriteHeader(http.StatusTooManyRequests)
 			_, _ = io.WriteString(w, `{"errors":[{"message":"slow down"}]}`)
 			return
 		}
