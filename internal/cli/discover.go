@@ -206,7 +206,10 @@ func (rt *Runtime) RunDiscovery(ctx context.Context, opts DiscoverOptions) (*dis
 		DBAdapter:            firstNonEmpty(rt.Cfg.DBAdapter, scan.DBAdapter),
 		DBAdapterSource:      dbAdapterSource(rt.Cfg, scan),
 		ProjectBlockSlugs:    scan.BlockSlugs,
-		Logger:               rt.Log,
+		// The (slug, interfaceName) pairs are what turn a blocks field's
+		// GraphQL union members into blockTypes the REST API accepts (§7.10).
+		ProjectBlockInterfaces: scan.SlugByInterface,
+		Logger:                 rt.Log,
 	}
 	if scan.BlockSlugFiles != nil {
 		dopts.ProjectBlockSlugFiles = scan.BlockSlugFiles

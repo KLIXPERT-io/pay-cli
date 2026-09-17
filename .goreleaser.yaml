@@ -54,6 +54,13 @@ archives:
     format_overrides:
       - goos: windows
         formats: [zip]
+    # An explicit list, not GoReleaser's default glob set. It matters most for
+    # skills/: that tree is the agent skill's single source of truth (§14) and
+    # it is already compiled into the binary by //go:embed, so shipping the
+    # Markdown alongside `pay` would put a second, silently divergable copy in
+    # every archive. `pay skills install` writes it from the binary, and
+    # `npx skills add https://github.com/KLIXPERT-io/pay-cli/skills --skill pay`
+    # reads it from the repository — neither route wants it in the tarball.
     files:
       - README.md
       - INSTALL.md

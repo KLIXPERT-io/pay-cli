@@ -95,6 +95,14 @@ type Options struct {
 	// filesystem, and ProjectBlockSlugFiles the absolute files they came from.
 	ProjectBlockSlugs     []string
 	ProjectBlockSlugFiles []string
+	// ProjectBlockInterfaces maps an `interfaceName:` literal found on the
+	// local filesystem to the `slug:` declared beside it in the same object
+	// (CallToActionBlock -> cta). It is the other half of §7.10: a blocks
+	// field's GraphQL union publishes interfaceNames, and only this map turns
+	// one into a blockType the REST API will accept. Empty is survivable —
+	// every union member then resolves through the interfaceName heuristic and
+	// is labelled as inferred — but it is never guessed at silently.
+	ProjectBlockInterfaces map[string]string
 	// ProjectAuthSlugs are auth-collection slug literals from the project's
 	// own payload.config.ts, used only to widen Stage -1's candidate set.
 	ProjectAuthSlugs []string
@@ -373,6 +381,7 @@ func (d *Discoverer) Run(ctx context.Context) (*Result, error) {
 		Configured:         d.opt.ConfiguredBlocks,
 		ProjectSource:      d.opt.ProjectBlockSlugs,
 		ProjectSourceFiles: d.opt.ProjectBlockSlugFiles,
+		SlugByInterface:    d.opt.ProjectBlockInterfaces,
 	}
 	idTypes := []string{}
 	sampleIDs := []string{}
@@ -585,6 +594,9 @@ func (d *Discoverer) buildCollection(ctx context.Context, m *Manifest, r *row, s
 	} else {
 		docs := d.sampleDocs(ctx, r.slug, sampleLimit, false)
 		if len(docs) > 0 {
+			// Without GraphQL there is no union to enumerate, so the sampled
+			// documents are the only per-field evidence there is.
+			blocks.Observed = ObservedBlockTypes(docs)
 			shard = buildShardFromDocs(m.Generation, r.slug, docs, blocks)
 			fieldsSource = SourceObserved
 		} else {
@@ -596,6 +608,13 @@ func (d *Discoverer) buildCollection(ctx context.Context, m *Manifest, r *row, s
 			}
 		}
 	}
+	// §7.10: every blocks field is resolved from ITS OWN GraphQL union, never
+	// from a project-wide bag of slugs. This runs after the shard exists so
+	// that the per-field answer, its provenance and the shard hash are written
+	// in one place for both the GraphQL and the REST-only path.
+	ResolveShardBlocks(shard, schema, blocks)
+	shard.Finalize()
+
 	c.FieldsCount = len(shard.Fields)
 	c.FieldsSHA256 = shard.SHA256
 	c.FieldsShard = cache.ShardName(r.slug, cache.KindCollection)
@@ -621,21 +640,30 @@ func (d *Discoverer) buildCollection(ctx context.Context, m *Manifest, r *row, s
 	}
 
 	// §7.10: a required blocks field whose slugs are unresolvable makes the
-	// collection unpublishable, and the reason says so in plain words.
+	// collection unpublishable, and the reason says so in plain words. The
+	// verdict is per field: one blocks field resolving says nothing about the
+	// next one, which is exactly what a single entity-wide answer got wrong.
 	for _, f := range shard.Fields {
 		if f.PayloadType != TypeBlocks {
 			continue
 		}
-		if shard.Blocks == nil || len(shard.Blocks[f.Path]) == 0 {
+		bf, _ := shard.BlockFieldFor(f.Path)
+		switch {
+		case len(bf.Slugs) == 0:
 			code := LimBlockSlugsUnknownNoSource
-			if len(blocks.ProjectSource) > 0 || len(blocks.Configured) > 0 {
+			if len(blocks.ProjectSource) > 0 || len(blocks.Configured) > 0 || len(bf.InterfaceNames) > 0 {
 				code = LimBlockSlugsUnknown
 			}
-			m.AddLimitation(code, r.slug, f.Path, "")
+			m.AddLimitation(code, r.slug, f.Path, bf.Reason)
 			if f.Required != nil && *f.Required {
 				c.Publishable = false
 				c.PublishableReason = strPtr(UnresolvedBlocksReason(f.Path))
 			}
+		case len(bf.Unresolved) > 0 || bf.Source == SourceUnionInferred || bf.Source == SourceMixed:
+			// Partly answered is not the same as answered. The field still has
+			// a usable list, so the collection stays publishable, but the gap
+			// is stated rather than papered over.
+			m.AddLimitation(LimBlockSlugsUnknown, r.slug, f.Path, bf.Reason)
 		}
 	}
 	for _, f := range shard.Fields {
@@ -700,6 +728,8 @@ func (d *Discoverer) buildGlobal(m *Manifest, r *row, schema *Schema, blocks Blo
 	var shard *Shard
 	if obj != nil {
 		shard = buildShard(e, schema, buildShardOptions{Generation: m.Generation, Blocks: blocks})
+		ResolveShardBlocks(shard, schema, blocks)
+		shard.Finalize()
 		g.FieldsSource = SourceGraphQL
 	} else {
 		shard = NewShard(m.Generation, r.slug)

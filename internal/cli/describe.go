@@ -87,7 +87,13 @@ func newDescribeCmd(rt *Runtime) *cobra.Command {
 			data["required_paths"] = orEmptyStrings(shard.RequiredPaths)
 			data["join_fields"] = orEmptyStrings(shard.JoinFields)
 			data["blocks"] = shard.Blocks
-			data["blocks_source"] = shard.BlocksSource
+			// blocks_source is keyed by FIELD PATH: two blocks fields on one
+			// entity are resolved independently and routinely disagree, so a
+			// single string here would be a confident answer about a field it
+			// was never measured on (§7.10).
+			data["blocks_source"] = blocksSourceByField(shard)
+			data["blocks_source_summary"] = shard.BlocksSource
+			data["block_fields"] = shard.BlockFields
 			data["queryable_paths"] = orEmptyStrings(shard.QueryablePaths())
 			data["sortable_paths"] = orEmptyStrings(shard.SortablePaths())
 			data["date_fields"] = orEmptyStrings(shard.DateFields())
@@ -144,7 +150,9 @@ func newDescribeCmd(rt *Runtime) *cobra.Command {
 			{Wrong: "Assuming `sortable: true` was measured.",
 				Right: "Sortability is heuristic unless sortable_confidence says otherwise; Payload silently ignores an unsortable field."},
 			{Wrong: "Expecting `blocks` to be filled on every project.",
-				Right: "Block slugs are not in the API; a null means no source resolved them. .blocks_source says which source did."},
+				Right: "Block slugs are not in the API; a null means no source resolved them. .blocks_source[FIELD] says which source did."},
+			{Wrong: "Reusing one collection's block types for another field.",
+				Right: "Every blocks field has its own list: pages.layout and forms.fields share none. Read .blocks[FIELD]."},
 		},
 		SeeAlso: []string{"pay collections", "pay explain --collection <slug>", "pay find <collection> --select …"},
 	})
@@ -207,11 +215,25 @@ func describeOneField(rt *Runtime, m *discovery.Manifest, slug, targetKind strin
 		"field":  field,
 	}
 	if field.PayloadType == discovery.TypeBlocks {
-		data["block_types"] = shard.Blocks[path]
-		data["blocks_source"] = shard.BlocksSource
-		if len(shard.Blocks[path]) == 0 {
-			data["blocks_help"] = discovery.DescribeBlocksHelp(nil, rt.Cfg.Profile, path)
+		// Everything below is THIS field's answer. shard.BlocksSource is an
+		// entity-wide summary and is deliberately not used here: `forms.fields`
+		// and `pages.layout` accept completely different block types, so an
+		// answer that is not per-field is a wrong answer.
+		bf, _ := shard.BlockFieldFor(path)
+		data["block_types"] = bf.Slugs
+		data["blocks_source"] = orUnknown(bf.Source)
+		data["block_type_sources"] = bf.SlugSources
+		data["block_interface_names"] = orEmptyStrings(bf.InterfaceNames)
+		data["unresolved_interface_names"] = orEmptyStrings(bf.Unresolved)
+		data["blocks_reason"] = bf.Reason
+		switch {
+		case len(bf.Slugs) == 0:
+			data["blocks_help"] = discovery.DescribeBlocksHelp(bf.InterfaceNames, rt.Cfg.Profile, path)
 			rt.Warnf(discovery.LimBlockSlugsUnknown, "%s", discovery.UnresolvedBlocksReason(path))
+		case bf.Reason != "":
+			// A partly-inferred list is usable but not confirmed; saying so is
+			// the difference between a hint and a silent wrong answer.
+			rt.Warnf(discovery.LimBlockSlugsUnknown, "%s", bf.Reason)
 		}
 	}
 	if len(field.Operators) > 0 {
@@ -346,4 +368,29 @@ func (rt *Runtime) sampleDocument(ctx context.Context, slug, kind string) (any, 
 	}
 	masked, _ := redact.Value(map[string]any(res.Docs[0]))
 	return masked, nil
+}
+
+// blocksSourceByField projects the shard's per-field block provenance into the
+// map `pay describe <entity>` publishes as blocks_source.
+//
+// It is nil when the entity has no blocks field, matching .blocks: nil means
+// "no blocks field here", never "resolved to nothing".
+func blocksSourceByField(shard *discovery.Shard) map[string]string {
+	if shard == nil || len(shard.BlockFields) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(shard.BlockFields))
+	for path, bf := range shard.BlockFields {
+		out[path] = orUnknown(bf.Source)
+	}
+	return out
+}
+
+// orUnknown keeps a provenance key from ever being the empty string, which is
+// not one of §7.8.3's documented values.
+func orUnknown(source string) string {
+	if source == "" {
+		return discovery.SourceUnknown
+	}
+	return source
 }

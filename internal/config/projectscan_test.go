@@ -263,3 +263,117 @@ func itoa(i int) string {
 	}
 	return string(buf[pos:])
 }
+
+// TestBlockDeclsFromSourcePairsSlugWithInterfaceName is the regression test
+// for §7.10's per-field resolution: GraphQL publishes a blocks field's union
+// as interfaceNames (CallToActionBlock) and the REST API only accepts slugs
+// (cta), so harvesting bare slugs leaves no way back from one to the other.
+func TestBlockDeclsFromSourcePairsSlugWithInterfaceName(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []BlockDecl
+	}{
+		{
+			name: "interfaceName before fields",
+			src:  ctaBlock,
+			want: []BlockDecl{{Slug: "cta", InterfaceName: "CallToActionBlock"}},
+		},
+		{
+			name: "interfaceName after fields, as Banner/config.ts writes it",
+			src:  `export const Banner = { slug: 'banner', fields: [{ name: 'style' }], interfaceName: 'BannerBlock' }`,
+			want: []BlockDecl{{Slug: "banner", InterfaceName: "BannerBlock"}},
+		},
+		{
+			name: "no interfaceName leaves the pair half empty rather than guessing",
+			src:  `export const Content = { slug: 'content', fields: [] }`,
+			want: []BlockDecl{{Slug: "content"}},
+		},
+		{
+			name: "an interfaceName one object down does not attach to the parent",
+			src: `export const Outer = { slug: 'outer', fields: [
+                    { name: 'l', type: 'blocks', blocks: [ { slug: 'inner', interfaceName: 'InnerBlock', fields: [] } ] } ] }`,
+			want: []BlockDecl{{Slug: "inner", InterfaceName: "InnerBlock"}, {Slug: "outer"}},
+		},
+		{
+			name: "an interfaceName inside a comment or string is ignored",
+			src: "// interfaceName: 'Commented',\nconst s = \"interfaceName: 'Stringy'\";" +
+				"export const B = { slug: 'real', interfaceName: 'RealBlock', fields: [] }",
+			want: []BlockDecl{{Slug: "real", InterfaceName: "RealBlock"}},
+		},
+		{
+			name: "an interpolated interfaceName is not a literal",
+			src:  "export const B = { slug: 'b', interfaceName: `${N}Block`, fields: [] }",
+			want: []BlockDecl{{Slug: "b"}},
+		},
+		{
+			name: "an object without fields is not a block at all",
+			src:  `export const Pages = { slug: 'pages', interfaceName: 'Page', admin: {} }`,
+			want: nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := BlockDeclsFromSource(tc.src)
+			if len(got) != len(tc.want) {
+				t.Fatalf("BlockDeclsFromSource() = %+v, want %+v", got, tc.want)
+			}
+			for i := range tc.want {
+				if got[i] != tc.want[i] {
+					t.Fatalf("BlockDeclsFromSource() = %+v, want %+v", got, tc.want)
+				}
+			}
+		})
+	}
+}
+
+// TestBlockSlugsFromSourceStillReturnsOnlySlugs pins that the pair harvest did
+// not change the slug half's contract.
+func TestBlockSlugsFromSourceStillReturnsOnlySlugs(t *testing.T) {
+	got := BlockSlugsFromSource(ctaBlock + mediaBlock)
+	want := []string{"cta", "mediaBlock"}
+	if len(got) != len(want) {
+		t.Fatalf("BlockSlugsFromSource() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("BlockSlugsFromSource() = %v, want %v", got, want)
+		}
+	}
+}
+
+// TestScanIndexesBlocksByInterfaceName covers the scan-level half: without
+// SlugByInterface a blocks field's union cannot be turned into blockTypes.
+func TestScanIndexesBlocksByInterfaceName(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		".git/HEAD":                         "ref: refs/heads/main\n",
+		"package.json":                      `{"name":"d","dependencies":{"payload":"3.86.0"}}`,
+		"src/payload.config.ts":             "export default buildConfig({})",
+		"src/blocks/CallToAction/config.ts": ctaBlock,
+		"src/blocks/MediaBlock/config.ts":   mediaBlock,
+		"src/blocks/Content/config.ts":      `export const Content = { slug: 'content', fields: [] }`,
+	})
+
+	got := Scan(FindProject(filepath.Join(root, "src")))
+
+	if got.SlugByInterface["CallToActionBlock"] != "cta" {
+		t.Errorf("CallToActionBlock -> %q, want cta", got.SlugByInterface["CallToActionBlock"])
+	}
+	if got.SlugByInterface["MediaBlock"] != "mediaBlock" {
+		t.Errorf("MediaBlock -> %q, want mediaBlock", got.SlugByInterface["MediaBlock"])
+	}
+	// A block that declares no interfaceName has nothing to key it by and must
+	// not be invented into the map under its slug.
+	if _, ok := got.SlugByInterface["Content"]; ok {
+		t.Error("a block without an interfaceName was given one")
+	}
+	if len(got.BlockDecls) != 3 {
+		t.Fatalf("block_decls = %+v, want one per block", got.BlockDecls)
+	}
+	for _, d := range got.BlockDecls {
+		if d.Slug == "" {
+			t.Errorf("a declaration with no slug was recorded: %+v", d)
+		}
+	}
+}

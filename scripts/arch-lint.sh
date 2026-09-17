@@ -212,8 +212,8 @@ scan '(^|[^[:alnum:]_.])os\.WriteFile\(' "${write_scope[@]}"
 #
 # It never writes to a Payload project's source files. Every change it makes to
 # a project goes through the REST API. The one thing it may write inside a
-# project directory is the agent skill (internal/skills), which is documentation
-# about PayCLI, not project source.
+# project directory is the agent skill (skills/pay, installed by
+# internal/skills), which is documentation about PayCLI, not project source.
 #
 # Violating this turns a CLI that an agent can be trusted to run into one that
 # can silently rewrite payload.config.ts.
@@ -277,6 +277,44 @@ if [ -f VERSION ]; then
 else
   fail "VERSION is missing"
 fi
+
+# ---------------------------------------------------------------------------
+# Rule 13 — §14 / §1 conflict 18: the agent skill lives at the repository root
+# and exists exactly once.
+#
+# The root location is what makes
+#   npx skills add https://github.com/KLIXPERT-io/pay-cli/skills --skill pay
+# resolve, and the single copy is what the old embedded-only decision was
+# protecting: two trees drift, and the skill's whole value is that it describes
+# the binary accurately. skills/embed.go owns the one //go:embed of that tree —
+# a second one anywhere means a second copy.
+# ---------------------------------------------------------------------------
+rule "the agent skill lives at skills/pay/ and there is exactly one copy of it (§14)"
+[ -f skills/pay/SKILL.md ] || fail "skills/pay/SKILL.md is missing: the skill must live at the repository root"
+[ -f skills/embed.go ] || fail "skills/embed.go is missing: the root skills/ directory must own the //go:embed"
+# Hidden directories are pruned, and that is not cosmetic: `pay skills install`
+# run inside this checkout writes .claude/skills/pay/SKILL.md, which is an
+# install of the skill, not a second source copy of it. .gitignore excludes
+# those directories for the same reason.
+# -mindepth 1 keeps the prune from matching '.' itself (its basename is "." and
+# therefore matches '.*', which would prune the entire tree and find nothing).
+mapfile -t skill_files < <(find . -mindepth 1 \
+  \( -type d \( -name '.*' -o -name 'node_modules' -o -name 'dist' -o -name 'vendor' \) -prune \) -o \
+  -type f -name 'SKILL.md' -print \
+  | LC_ALL=C sort)
+if [ "${#skill_files[@]}" -ne 1 ] || [ "${skill_files[0]}" != "./skills/pay/SKILL.md" ]; then
+  for f in "${skill_files[@]}"; do
+    [ "$f" = "./skills/pay/SKILL.md" ] && continue
+    fail "a second copy of the skill: $f — the only copy may be ./skills/pay/SKILL.md"
+  done
+fi
+mapfile -t skill_embeds < <(grep -rln '^//go:embed .*\bpay\b' --include='*.go' . 2>/dev/null \
+  | grep -v '^\./\.git/' | LC_ALL=C sort)
+for f in "${skill_embeds[@]:-}"; do
+  [ -n "$f" ] || continue
+  [ "$f" = "./skills/embed.go" ] && continue
+  fail "$f embeds the skill tree; only ./skills/embed.go may (a second embed is a second copy)"
+done
 
 # ---------------------------------------------------------------------------
 

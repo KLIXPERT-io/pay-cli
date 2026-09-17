@@ -1224,7 +1224,7 @@ func runCreate(ctx context.Context, d *Deps, f *createFlags, slug string) (*outp
 		q, _ := p.Encode()
 		env, err := emitDryRun(d, w, safety.CmdCreate, "POST", client.URLFor(&payload.Request{
 			Method: "POST", Path: "/" + t.Slug, Query: q,
-		}), body, 1, nil)
+		}), body, 1, nil, warnings...)
 		if err != nil {
 			return nil, err
 		}
@@ -1284,7 +1284,18 @@ func statusOf(res *payload.WriteResult) int {
 }
 
 // emitDryRun builds §12.2's op_result envelope.
-func emitDryRun(d *Deps, w *writeOp, command, method, url string, body map[string]any, total int, ids []any) (*output.Envelope, error) {
+//
+// warnings are the ones the caller already produced BEFORE deciding to send —
+// §9.7's unknown-blockType warning above all, which exists precisely because
+// Payload answers 201 and silently discards the block. Every write verb built
+// those warnings and then dropped them on the one path whose entire job is to
+// show an agent what the write will do, so
+// `pay create pages --set-json 'layout=[{"blockType":"nonsense"}]' --dry-run`
+// printed nothing while the identical command without --dry-run warned.
+// Taking them here makes it impossible for a dry run to be quieter than the
+// write it previews.
+func emitDryRun(d *Deps, w *writeOp, command, method, url string, body map[string]any, total int, ids []any,
+	warnings ...output.Warning) (*output.Envelope, error) {
 	// A negative blast radius is a bug in the caller, not a preview:
 	// NewDryRun would quietly turn it into len(ids), i.e. would_affect: 0 for
 	// an unbounded write. Refuse rather than print a reassuring zero.
@@ -1312,5 +1323,8 @@ func emitDryRun(d *Deps, w *writeOp, command, method, url string, body map[strin
 	if warn := w.post(true, 0, total, 0, "", ""); warn != nil {
 		env.AddWarning(*warn)
 	}
+	// appendNewWarnings, not a bare append: a caller that already attached one
+	// of these itself must not make the preview say it twice.
+	env.Warnings = appendNewWarnings(env.Warnings, warnings...)
 	return env, nil
 }

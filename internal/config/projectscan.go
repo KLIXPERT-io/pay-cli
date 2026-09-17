@@ -26,6 +26,21 @@ var skipDirs = map[string]bool{
 	"playwright-report": true, "test-results": true, ".vercel": true, ".yarn": true,
 }
 
+// BlockDecl is one block definition found in project source: the blockType
+// slug the REST API accepts, together with the interfaceName Payload turns
+// into that block's GraphQL union member.
+//
+// Verified in /home/flo/payload-dummy: src/blocks/CallToAction/config.ts
+// declares slug: 'cta' beside interfaceName: 'CallToActionBlock', and
+// __type(name:"Page_Layout").possibleTypes names CallToActionBlock. Without
+// the pair there is no way back from the union to the slug.
+type BlockDecl struct {
+	Slug string `json:"slug"`
+	// InterfaceName is "" for a block that declares none; Payload then derives
+	// the GraphQL type name from the slug itself.
+	InterfaceName string `json:"interface_name,omitempty"`
+}
+
 // ScanResult is everything §7.10 and §7.11 can learn from the project on disk.
 // Every fact carries its provenance; nothing here is ever guessed.
 type ScanResult struct {
@@ -47,6 +62,16 @@ type ScanResult struct {
 	BlocksSource   string            `json:"blocks_source"`
 	BlockSlugFiles []string          `json:"block_slug_files,omitempty"`
 	SlugFile       map[string]string `json:"-"`
+
+	// BlockDecls are the (slug, interfaceName) pairs §7.10 harvests, in scan
+	// order. The pair is the load-bearing fact: GraphQL publishes a blocks
+	// field's union as interfaceNames (CallToActionBlock) while the REST API
+	// only ever accepts the slug (cta), so neither half alone can turn the
+	// per-field union into something writable.
+	BlockDecls []BlockDecl `json:"block_decls,omitempty"`
+	// SlugByInterface is BlockDecls indexed by interfaceName. Blocks that
+	// declare no interfaceName are absent: there is nothing to key them by.
+	SlugByInterface map[string]string `json:"-"`
 
 	FilesScanned int   `json:"files_scanned"`
 	BytesScanned int64 `json:"bytes_scanned"`
@@ -102,12 +127,24 @@ func Scan(p *Project) *ScanResult {
 		}
 		out.FilesScanned++
 		out.BytesScanned += int64(len(data))
-		for _, slug := range BlockSlugsFromSource(string(data)) {
-			if _, seen := out.SlugFile[slug]; seen {
+		for _, decl := range BlockDeclsFromSource(string(data)) {
+			if _, seen := out.SlugFile[decl.Slug]; seen {
 				continue
 			}
-			out.SlugFile[slug] = file
-			out.BlockSlugs = append(out.BlockSlugs, slug)
+			out.SlugFile[decl.Slug] = file
+			out.BlockSlugs = append(out.BlockSlugs, decl.Slug)
+			out.BlockDecls = append(out.BlockDecls, decl)
+			if decl.InterfaceName != "" {
+				if out.SlugByInterface == nil {
+					out.SlugByInterface = map[string]string{}
+				}
+				// First declaration wins, matching SlugFile: a second block
+				// claiming an interfaceName already taken is a project bug and
+				// overwriting would make the answer depend on walk order.
+				if _, taken := out.SlugByInterface[decl.InterfaceName]; !taken {
+					out.SlugByInterface[decl.InterfaceName] = decl.Slug
+				}
+			}
 		}
 	}
 
@@ -200,8 +237,29 @@ func isBlockCandidate(path, root string) bool {
 	return false
 }
 
-// BlockSlugsFromSource extracts `slug: '…'` literals that sit in an object
-// literal which also has a `fields:` key (§7.10).
+// BlockSlugsFromSource extracts the `slug: '…'` half of BlockDeclsFromSource,
+// in the same order and with the same duplicate handling.
+func BlockSlugsFromSource(src string) []string {
+	decls := BlockDeclsFromSource(src)
+	if len(decls) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(decls))
+	for _, d := range decls {
+		out = append(out, d.Slug)
+	}
+	return out
+}
+
+// BlockDeclsFromSource extracts the `slug: '…'` and `interfaceName: '…'`
+// literals of every object literal that also has a `fields:` key (§7.10).
+//
+// The two are harvested TOGETHER, from the same object literal, because the
+// pair is the only bridge between what GraphQL publishes for a blocks field
+// (possibleTypes: CallToActionBlock) and what the REST API accepts for it
+// (blockType: cta). A bare slug list cannot say which field a block belongs
+// to, which is exactly how one global bag ended up attached to every blocks
+// field.
 //
 // This is a byte scanner, not a TypeScript parser: PayCLI must never import or
 // evaluate project code. It understands strings, template literals and both
@@ -210,15 +268,16 @@ func isBlockCandidate(path, root string) bool {
 // block definition is picked up while an unrelated `slug:` on a collection
 // export without `fields:` is not.
 //
-// Order is source order; duplicates are removed.
-func BlockSlugsFromSource(src string) []string {
+// Order is source order; duplicate slugs are removed.
+func BlockDeclsFromSource(src string) []BlockDecl {
 	type object struct {
 		slug      string
+		iface     string
 		hasSlug   bool
 		hasFields bool
 	}
 	var stack []*object
-	var out []string
+	var out []BlockDecl
 	seen := map[string]bool{}
 
 	emit := func(o *object) {
@@ -226,7 +285,7 @@ func BlockSlugsFromSource(src string) []string {
 			return
 		}
 		seen[o.slug] = true
-		out = append(out, o.slug)
+		out = append(out, BlockDecl{Slug: o.slug, InterfaceName: o.iface})
 	}
 
 	i := 0
@@ -286,6 +345,15 @@ func BlockSlugsFromSource(src string) []string {
 					if value != "" && !strings.Contains(value, "${") {
 						top.slug = value
 						top.hasSlug = true
+					}
+					i = next
+				}
+			case "interfaceName":
+				j := skipSpace(src, i)
+				if j < n && (src[j] == '\'' || src[j] == '"' || src[j] == '`') {
+					value, next := readString(src, j)
+					if value != "" && !strings.Contains(value, "${") {
+						top.iface = value
 					}
 					i = next
 				}

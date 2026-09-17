@@ -68,7 +68,9 @@ COMMON MISTAKES
   3. Assuming `sortable: true` was measured.
      Instead: Sortability is heuristic unless sortable_confidence says otherwise; Payload silently ignores an unsortable field.
   4. Expecting `blocks` to be filled on every project.
-     Instead: Block slugs are not in the API; a null means no source resolved them. .blocks_source says which source did.
+     Instead: Block slugs are not in the API; a null means no source resolved them. .blocks_source[FIELD] says which source did.
+  5. Reusing one collection's block types for another field.
+     Instead: Every blocks field has its own list: pages.layout and forms.fields share none. Read .blocks[FIELD].
 
 SEE ALSO
   pay collections

@@ -604,7 +604,7 @@ func runUpdateOne(ctx context.Context, d *Deps, client *payload.Client, f *updat
 		q, _ := p.Encode()
 		env, err := emitDryRun(d, w, safety.CmdUpdate, "PATCH",
 			client.URLFor(&payload.Request{Method: "PATCH", Path: "/" + t.Slug + "/" + id, Query: q}),
-			body, 1, []any{id})
+			body, 1, []any{id}, warnings...)
 		if err != nil {
 			return nil, err
 		}
@@ -697,14 +697,17 @@ func runBulkUpdate(ctx context.Context, cmd *cobra.Command, d *Deps, client *pay
 
 	if cfg.DryRun {
 		q, _ := scope.Encode()
+		// gap is already in warnings; emitDryRun dedupes, so the preview
+		// carries the blockType and write-shape warnings too instead of the
+		// resolve gap alone.
 		env, err := emitDryRun(d, w.withIDs(ids), safety.CmdUpdate, "PATCH",
 			client.URLFor(&payload.Request{Method: "PATCH", Path: "/" + t.Slug, Query: q}),
-			body, len(ids), ids)
+			body, len(ids), ids, warnings...)
 		if err != nil {
 			return nil, err
 		}
 		if gap != nil {
-			env.AddWarning(*gap)
+			env.Warnings = appendNewWarnings(env.Warnings, *gap)
 		}
 		env.Meta.Locale = localeMetaOf(p)
 		return env, nil

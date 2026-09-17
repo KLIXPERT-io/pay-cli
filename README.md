@@ -198,13 +198,31 @@ pay config explain    # every resolved setting and exactly which layer set it
 ## Use with coding agents
 
 PayCLI ships an agent skill — the envelope, the exit-code table, the query DSL and the
-handful of Payload behaviours that produce confidently wrong answers when guessed.
+handful of Payload behaviours that produce confidently wrong answers when guessed. It
+lives in this repository at [`skills/pay/`](skills/pay/), and there are two ways to
+install it.
+
+**1. From the binary (offline, recommended).** The skill is compiled into `pay`, so this
+needs no network and no Node:
 
 ```sh
 pay skills install
 ```
 
-That copies the skill into every agent skills directory that already exists under your
+**2. With the [`skills`](https://github.com/anthropics/skills) CLI**, if you would rather
+not install PayCLI first, or you want the skill in a tool PayCLI does not know about:
+
+```sh
+npx skills add https://github.com/KLIXPERT-io/pay-cli/skills --skill pay
+```
+
+Both routes copy the *same* files — `skills/pay/` is a Go package that owns the
+`go:embed`, so the tree inside the binary is the tree in the repository, and there is only
+ever one copy to keep up to date. Only route 1 can also write `references/PROJECT.md` for
+the project you are standing in, and only route 1 records `.pay-skill.json` so
+`pay skills status` can tell you when your copy has gone stale.
+
+`pay skills install` copies the skill into every agent skills directory that already exists under your
 project root — `.claude/skills/pay/`, `.codex/`, `.cursor/`, `.gemini/`, `.antigravity/`,
 `.opencode/`, `.windsurf/`, `.continue/`, `.crush/`, `.kiro/`, `.qwen/`, `.qoder/` — and
 never creates one for an agent you do not use.

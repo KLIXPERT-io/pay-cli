@@ -118,7 +118,11 @@
       },
       {
         "wrong": "Expecting `blocks` to be filled on every project.",
-        "right": "Block slugs are not in the API; a null means no source resolved them. .blocks_source says which source did."
+        "right": "Block slugs are not in the API; a null means no source resolved them. .blocks_source[FIELD] says which source did."
+      },
+      {
+        "wrong": "Reusing one collection's block types for another field.",
+        "right": "Every blocks field has its own list: pages.layout and forms.fields share none. Read .blocks[FIELD]."
       }
     ],
     "see_also": [

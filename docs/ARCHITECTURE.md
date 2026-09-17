@@ -50,7 +50,7 @@ disagreement is resolved here. Where a recommendation was discarded, the reason 
 | 15 | Output format auto-switching to `table` on a TTY (gsc, commands, gopkg) | **Never.** `json` always, unless `--output` / `PAY_OUTPUT` / `defaults.output` says otherwise; `PAY_HUMAN=1` opts into TTY switching | Agent harnesses frequently allocate a PTY, so TTY-dependent output makes the same command emit different bytes in different harnesses. |
 | 16 | Secret storage: OS keychain with silent file fallback (gsc) vs file-first with opt-in keychain (gopkg) | **File-first** (`credentials.json`, 0600); keychain only when explicitly requested | Re-verified on this machine: `go-keyring` fails even with a live D-Bus session bus (`org.freedesktop.secrets was not provided by any .service files`), and a silent fallback means the secret lands in a different place depending on invisible environment state. |
 | 17 | Config dir on macOS: `os.UserConfigDir()` (gsc) vs `~/.config/pay` everywhere (gopkg) | **`~/.config/pay` on both Linux and macOS** | gsc's split between `DataDir()` and `Path()` puts config and cache in different trees on macOS; one guessable path is worth more to an agent than platform idiom. |
-| 18 | Skills: shell out to `npx skills add` (agentux considered it) vs native Go + `go:embed` | **Native, embedded, offline**; a top-level `skills/` directory is **not** created | `go:embed` cannot reach a parent directory, so a second copy would drift from the binary it documents, and the whole point is that the skill describes the installed binary. |
+| 18 | Skills: shell out to `npx skills add` (agentux considered it) vs native Go + `go:embed` | **Native, embedded, offline** — and, by **product-owner override**, the skill lives at the repository root in `skills/pay/`, not nested under `internal/` | The original decision refused a root `skills/` because `go:embed` cannot reach a *parent* directory, so a root copy would have meant a *second* copy that drifts. That reasoning is about the **copy**, not the location, and it is answered by making `skills/` itself a Go package (`skills/embed.go`, `//go:embed all:pay`): the embed reaches a *child*, `internal/skills` imports it, and there is still exactly one tree. What the move buys is the `skills` convention — `npx skills add https://github.com/KLIXPERT-io/pay-cli/skills --skill pay` resolves against a root `skills/` and nothing else — so non-Go agents get the skill without a PayCLI install. `skills/embed_test.go` enforces the invariant the old rule enforced by construction: the embed root **is** the on-disk directory, byte for byte, and the repository contains exactly one `SKILL.md`. |
 | 19 | Generated `SKILL.md` per project | **No.** Static `SKILL.md` + generated `references/PROJECT.md` with a staleness banner | A generated SKILL.md is undiffable in git and invites an agent to trust a stale snapshot as gospel. |
 | 20 | Auto-update default | **Off.** `pay update check` is cheap; applying requires opt-in or an explicit command | An agent invokes `pay` hundreds of times per task, and a binary that mutates itself mid-task can change the (discovery-driven) command surface between two calls. |
 | 21 | agentux's "auto-append `draft=true` to reads that follow a write in the same process" | **Rejected** | Hidden cross-command state makes identical commands return different data, which is exactly the nondeterminism this spec exists to eliminate. |
@@ -240,6 +240,11 @@ pay-cli/
 │   │                             # globals_header.json, versions_list.json, locale_all.json,
 │   │                             # manifest.json, manifest_id_unknown.json, fields_pages.json
 │   └── golden/                   # <case>.out / .err / .exit for CLI-level tests
+├── skills/                       # the agent skill — ROOT level, one copy, §14
+│   ├── embed.go                  # package skills: //go:embed all:pay, exports FS()
+│   ├── embed_test.go             # asserts the embedded tree IS this directory
+│   └── pay/                      SKILL.md
+│                                 references/{query-syntax,errors,recipes,gotchas}.md
 └── internal/
     ├── buildinfo/      buildinfo.go  buildinfo_test.go
     ├── apierr/         code.go  error.go  exit.go  payload.go  diagnose.go  *_test.go
@@ -265,8 +270,7 @@ pay-cli/
     ├── audit/          audit.go  rotate.go  audit_test.go
     ├── safety/         risk.go  confirm.go  dryrun.go  blastradius.go  *_test.go
     ├── skills/         embed.go  install.go  manifest.go  project.go  *_test.go
-    │   └── assets/pay/ SKILL.md
-    │                   references/{query-syntax,errors,recipes,gotchas}.md
+    │                   # installer only: the bytes come from the root skills package
     ├── update/         update.go  state.go  detach.go  managed.go  verify.go
     │                   lock_unix.go  lock_windows.go  platform_unix.go  platform_windows.go  *_test.go
     ├── payloadtest/    server.go  fixture.go  golden.go  clock.go      # imported only by _test.go
@@ -2793,20 +2797,43 @@ returns 500, not 404, for a missing file) and resolves `--size thumbnail` via
 
 ## 14. Skills
 
-The canonical source lives **only** at `internal/skills/assets/pay/`, compiled in with
-`//go:embed all:assets`. No top-level `skills/` directory is created — `go:embed` cannot reach a
-parent directory, so a second copy would inevitably drift from the binary it documents, and
-`pay skills print` makes it redundant anyway.
+The canonical source lives **only** at the repository root, under `skills/pay/`. That directory is
+*itself* a Go package — `skills/embed.go`, `package skills`, `//go:embed all:pay` — which is what
+makes "root-level" and "exactly one copy" compatible: `go:embed` cannot reach a *parent* directory,
+but it reaches a *child* freely, so the package that embeds the tree lives in the tree's own
+directory. `internal/skills` imports it (`root "github.com/KLIXPERT-io/pay-cli/skills"`) and owns
+installation, manifests and `references/PROJECT.md`; it embeds nothing itself.
+
+The bytes compiled into `pay` are therefore read from the files a reader of the repository sees.
+There is no sync step, no generated mirror, and nothing to drift — see §1 conflict 18, whose original
+embedded-only decision this supersedes without giving up its guarantee.
 
 ```
-internal/skills/assets/pay/
-├── SKILL.md                      static, hand-written, git-reviewed
-└── references/
-    ├── query-syntax.md
-    ├── errors.md                 the taxonomy, exit-code table, and the six body shapes
-    ├── recipes.md                paginate, bulk safely, upload, versions, drafts
-    └── gotchas.md
+skills/                           ROOT level (not under internal/)
+├── embed.go                      package skills — //go:embed all:pay, exports FS()
+├── embed_test.go                 asserts embed root == this directory, and that the
+│                                 repository contains exactly one SKILL.md
+└── pay/                          <- `--skill pay`
+    ├── SKILL.md                  static, hand-written, git-reviewed
+    └── references/
+        ├── query-syntax.md
+        ├── errors.md             the taxonomy, exit-code table, and the six body shapes
+        ├── recipes.md            paginate, bulk safely, upload, versions, drafts
+        └── gotchas.md
 ```
+
+The layout is the `skills` convention (github.com/anthropics/skills), the same one
+`KLIXPERT-io/gsc-cli` ships as `skills/gsc-cli/SKILL.md`, so there are two install routes and they
+read the *same* files:
+
+```sh
+pay skills install                                                            # offline, from the binary
+npx skills add https://github.com/KLIXPERT-io/pay-cli/skills --skill pay       # from the repository
+```
+
+`pay skills install` remains the primary route and is fully offline: it needs no network, no Node
+and no `git`, it writes `.pay-skill.json` so reinstalls can tell an upgrade from a user edit, and it
+is the only route that can also generate `references/PROJECT.md` for the project at hand.
 
 `SKILL.md` frontmatter:
 
