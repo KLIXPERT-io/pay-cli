@@ -288,6 +288,8 @@ func (rt *Runtime) explainEntity(ctx context.Context, m *discovery.Manifest, slu
 			// `pay describe <c> --block <slug>`; inlining them would multiply
 			// the size of a command that is already the biggest one PayCLI has.
 			addBlockSchemas(rt, data, shard, shard.BlockSlugsFor(), false, slug)
+			// The project's own per-field instructions, where it wrote any.
+			addFieldDocs(data, shard)
 			data["examples"] = describeExamples(slug, "collection", shard, m)
 		}
 		return data, nil

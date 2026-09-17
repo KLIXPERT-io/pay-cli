@@ -524,3 +524,260 @@ func TestBlockDeclFieldParsing(t *testing.T) {
 }
 
 func boolPtrTest(b bool) *bool { return &b }
+
+// ---------------------------------------------------------------------------
+// §7.10 human documentation: labels, descriptions and per-field instructions.
+//
+// A block slug tells an agent that `cta` exists. It does not say what a cta is
+// FOR, which is the one thing needed to choose between cta, content and
+// mediaBlock. Payload publishes neither a block's labels nor any description
+// over REST or GraphQL, and defines NO description field for a block at all,
+// so the project's own source is the only place the answer can come from.
+// ---------------------------------------------------------------------------
+
+// TestBlockDeclHarvestsLabelsAndDescription is the shape every block in
+// /home/flo/payload-dummy now has.
+func TestBlockDeclHarvestsLabelsAndDescription(t *testing.T) {
+	src := `
+export const CallToAction: Block = {
+  slug: 'cta',
+  custom: {
+    description:
+      'A prompt with rich text and one or more buttons, used to push the reader to a next step.',
+  },
+  interfaceName: 'CallToActionBlock',
+  fields: [
+    { name: 'richText', type: 'richText', label: false },
+  ],
+  labels: {
+    plural: 'Calls to Action',
+    singular: 'Call to Action',
+  },
+}`
+	decls := BlockDeclsFromSource(src)
+	if len(decls) != 1 {
+		t.Fatalf("decls = %+v, want exactly one block", decls)
+	}
+	d := decls[0]
+	if d.Slug != "cta" || d.InterfaceName != "CallToActionBlock" {
+		t.Fatalf("decl = %+v, want the slug/interfaceName pair intact", d)
+	}
+	if d.LabelSingular != "Call to Action" || d.LabelPlural != "Calls to Action" {
+		t.Errorf("labels = %q/%q, want the block's own singular and plural", d.LabelSingular, d.LabelPlural)
+	}
+	if !strings.HasPrefix(d.Description, "A prompt with rich text") {
+		t.Errorf("description = %q, want the custom.description text", d.Description)
+	}
+	// The key is as load-bearing as the text: Payload defines no description
+	// for a block, so an answer that does not say where the words came from
+	// implies a standard field that does not exist.
+	if d.DescriptionKey != "custom.description" {
+		t.Errorf("description_key = %q, want custom.description", d.DescriptionKey)
+	}
+}
+
+// TestBlockDescriptionAcceptsCustomNeighbours: `custom` is free-form, so every
+// project spells this differently. The obvious neighbours are all accepted and
+// each reports the key it actually came from.
+func TestBlockDescriptionAcceptsCustomNeighbours(t *testing.T) {
+	cases := []struct{ key, want string }{
+		{"description", "custom.description"},
+		{"docs", "custom.docs"},
+		{"summary", "custom.summary"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.key, func(t *testing.T) {
+			src := "export const B = { slug: 'b', custom: { " + tc.key +
+				": 'what this block is for' }, fields: [{ name: 'x', type: 'text' }] }"
+			decls := BlockDeclsFromSource(src)
+			if len(decls) != 1 {
+				t.Fatalf("decls = %+v", decls)
+			}
+			if decls[0].Description != "what this block is for" {
+				t.Errorf("description = %q", decls[0].Description)
+			}
+			if decls[0].DescriptionKey != tc.want {
+				t.Errorf("description_key = %q, want %q", decls[0].DescriptionKey, tc.want)
+			}
+		})
+	}
+}
+
+// TestBlockDescriptionPrefersTheCanonicalKey: a project that wrote two of them
+// gets a deterministic answer that does not depend on source order.
+func TestBlockDescriptionPrefersTheCanonicalKey(t *testing.T) {
+	for _, src := range []string{
+		"export const B = { slug: 'b', custom: { summary: 'S', description: 'D' }, fields: [] }",
+		"export const B = { slug: 'b', custom: { description: 'D', summary: 'S' }, fields: [] }",
+	} {
+		decls := BlockDeclsFromSource(src)
+		if len(decls) != 1 || decls[0].Description != "D" || decls[0].DescriptionKey != "custom.description" {
+			t.Errorf("%s -> %+v, want custom.description to win in either order", src, decls)
+		}
+	}
+}
+
+// TestBlockFieldAdminDescription: unlike a Block, a FIELD does support
+// admin.description, and it is exactly the per-field instruction an agent
+// needs while filling that field in.
+func TestBlockFieldAdminDescription(t *testing.T) {
+	src := `
+export const MediaBlock: Block = {
+  slug: 'mediaBlock',
+  labels: { plural: 'Media', singular: 'Media' },
+  custom: { description: 'A single image or video from the media library.' },
+  interfaceName: 'MediaBlock',
+  fields: [
+    {
+      name: 'media',
+      admin: {
+        description: 'The image or video to display. Pass a media document id.',
+      },
+      type: 'upload',
+      relationTo: 'media',
+      required: true,
+    },
+    { name: 'caption', type: 'text' },
+  ],
+}`
+	decls := BlockDeclsFromSource(src)
+	if len(decls) != 1 || len(decls[0].Fields) != 2 {
+		t.Fatalf("decls = %+v", decls)
+	}
+	media := decls[0].Fields[0]
+	if media.Description != "The image or video to display. Pass a media document id." {
+		t.Errorf("media.description = %q", media.Description)
+	}
+	if media.DescriptionKey != "admin.description" {
+		t.Errorf("media.description_key = %q, want admin.description", media.DescriptionKey)
+	}
+	// The field's own `admin` block must not leak onto the block, and an
+	// undocumented sibling must stay undocumented.
+	if decls[0].DescriptionKey != "custom.description" {
+		t.Errorf("block description_key = %q, want the block's own custom.description", decls[0].DescriptionKey)
+	}
+	if decls[0].Fields[1].Description != "" {
+		t.Errorf("caption.description = %q, want empty: nobody wrote one", decls[0].Fields[1].Description)
+	}
+	// Harvesting documentation must not disturb the facts that were already
+	// there.
+	if media.Required == nil || !*media.Required || !decls[0].FieldsComplete {
+		t.Errorf("decl = %+v, want media required and the fields array complete", decls[0])
+	}
+}
+
+// TestDescriptionIsNotHarvestedFromUnrelatedObjects: a `description:` that is
+// not under `admin:`/`custom:` belongs to somebody else. Attributing it to the
+// block would publish an arbitrary string as the project's documentation.
+func TestDescriptionIsNotHarvestedFromUnrelatedObjects(t *testing.T) {
+	src := `
+export const B = {
+  slug: 'b',
+  graphQL: { description: 'a GraphQL schema description, not ours' },
+  meta: { labels: { singular: 'Nope' } },
+  fields: [{ name: 'x', type: 'text', validate: { description: 'nope' } }],
+}`
+	decls := BlockDeclsFromSource(src)
+	if len(decls) != 1 {
+		t.Fatalf("decls = %+v", decls)
+	}
+	if decls[0].Description != "" || decls[0].DescriptionKey != "" {
+		t.Errorf("description = %q (%q), want nothing: neither key is admin/custom",
+			decls[0].Description, decls[0].DescriptionKey)
+	}
+	// `labels` nested inside an unrelated object is that object's, not the
+	// block's — the role is only adopted by the literal assigned to the key.
+	if decls[0].LabelSingular != "" {
+		t.Errorf("label_singular = %q, want nothing", decls[0].LabelSingular)
+	}
+	if decls[0].Fields[0].Description != "" {
+		t.Errorf("field description = %q, want nothing", decls[0].Fields[0].Description)
+	}
+}
+
+// TestBlockDocsAbsentStayEmpty: a block with neither labels nor a description
+// reports nothing rather than a title-cased guess at its slug.
+func TestBlockDocsAbsentStayEmpty(t *testing.T) {
+	decls := BlockDeclsFromSource("export const B = { slug: 'mediaBlock', fields: [] }")
+	if len(decls) != 1 {
+		t.Fatalf("decls = %+v", decls)
+	}
+	if decls[0].LabelSingular != "" || decls[0].LabelPlural != "" || decls[0].Description != "" {
+		t.Errorf("decl = %+v, want every documentation field empty", decls[0])
+	}
+}
+
+// TestScanHarvestsCollectionFieldDocs: `admin.description` documents a
+// collection's fields with exactly the same mechanism it documents a block's,
+// so a collection's config is scanned for it — and its SLUG is never allowed
+// into the block vocabulary, because a CollectionConfig and a Block are the
+// same object literal to a byte scanner.
+func TestScanHarvestsCollectionFieldDocs(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		"package.json":          `{"dependencies":{"payload":"3.86.0"}}`,
+		"src/payload.config.ts": "export default buildConfig({})",
+		"src/collections/Things.ts": `
+export const Things: CollectionConfig = {
+  slug: 'things',
+  fields: [
+    { name: 'title', type: 'text', required: true,
+      admin: { description: 'Shown in listings. Keep it under 60 characters.' } },
+    { name: 'body', type: 'richText' },
+  ],
+}`,
+		"src/blocks/Cta/config.ts": "export const Cta = { slug: 'cta', fields: [{ name: 'x', type: 'text' }] }",
+	})
+	got := Scan(FindProject(root))
+
+	docs, scanned := got.FieldDocs["things"]
+	if !scanned {
+		t.Fatalf("FieldDocs = %+v, want an entry for things", got.FieldDocs)
+	}
+	if docs["title"].Description != "Shown in listings. Keep it under 60 characters." {
+		t.Errorf("title doc = %+v", docs["title"])
+	}
+	if docs["title"].Key != "admin.description" {
+		t.Errorf("title key = %q, want admin.description", docs["title"].Key)
+	}
+	if _, documented := docs["body"]; documented {
+		t.Errorf("body is documented (%+v) but nobody wrote one", docs["body"])
+	}
+	if got.FieldDocFiles["things"] == "" {
+		t.Error("FieldDocFiles has no file for things: an answer must be able to name its source")
+	}
+	// The collection slug must NOT become a blockType. `pay create pages
+	// --set-json layout=[{"blockType":"things"}]` would be silently dropped by
+	// Payload, and offering it is how that happens.
+	for _, slug := range got.BlockSlugs {
+		if slug == "things" {
+			t.Fatalf("BlockSlugs = %v: a collection slug leaked into the block vocabulary", got.BlockSlugs)
+		}
+	}
+	if len(got.BlockSlugs) != 1 || got.BlockSlugs[0] != "cta" {
+		t.Errorf("BlockSlugs = %v, want exactly [cta]", got.BlockSlugs)
+	}
+}
+
+// TestScanRecordsEntitiesThatDocumentNothing is the tri-state: an entity whose
+// config was READ and documents nothing must be distinguishable from one whose
+// config PayCLI never saw (a plugin's collection, in node_modules).
+func TestScanRecordsEntitiesThatDocumentNothing(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		"package.json":          `{"dependencies":{"payload":"3.86.0"}}`,
+		"src/payload.config.ts": "export default buildConfig({})",
+		"src/collections/Plain.ts": "export const Plain = " +
+			"{ slug: 'plain', fields: [{ name: 'title', type: 'text' }] }",
+	})
+	got := Scan(FindProject(root))
+
+	docs, scanned := got.FieldDocs["plain"]
+	if !scanned {
+		t.Fatalf("FieldDocs = %+v, want plain present with an empty map", got.FieldDocs)
+	}
+	if len(docs) != 0 {
+		t.Errorf("docs = %+v, want empty", docs)
+	}
+	if _, scanned := got.FieldDocs["forms"]; scanned {
+		t.Error("a collection with no config on disk must be absent, not empty")
+	}
+}

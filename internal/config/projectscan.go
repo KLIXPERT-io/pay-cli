@@ -52,6 +52,29 @@ type BlockDecl struct {
 	// false here is what keeps a missing entry reading as "unknown" instead of
 	// "not required" — the exact guess this whole type exists to refuse.
 	FieldsComplete bool `json:"fields_complete,omitempty"`
+
+	// LabelSingular and LabelPlural are the block's own `labels:` literals
+	// ({ singular: 'Call to Action', plural: 'Calls to Action' }). They are
+	// the human name of the block and, like every other fact here, exist only
+	// when the project's authors wrote them; "" is "not declared", never a
+	// title-cased guess at the slug.
+	LabelSingular string `json:"label_singular,omitempty"`
+	LabelPlural   string `json:"label_plural,omitempty"`
+
+	// Description is the one-sentence statement of what this block is FOR.
+	//
+	// Payload blocks have NO standard field for it — verified: a Block's
+	// `admin` accepts only components/custom/disableBlockName/group/images/jsx
+	// and `tsc --noEmit` rejects `admin: { description }` on a Block — so the
+	// text lives in `custom`, Payload's sanctioned arbitrary-metadata escape
+	// hatch, under whatever key the project chose. DescriptionKey records
+	// which one it was so the output is honest about where the words came from
+	// instead of implying a standard field exists.
+	Description string `json:"description,omitempty"`
+	// DescriptionKey is the literal config path the text was read from:
+	// "custom.description", "custom.docs", "custom.summary" or
+	// "admin.description". Empty exactly when Description is empty.
+	DescriptionKey string `json:"description_key,omitempty"`
 }
 
 // BlockFieldDecl is one field read out of a block's `fields:` array.
@@ -70,6 +93,17 @@ type BlockFieldDecl struct {
 	// Required is the literal `required: true` / `required: false`, or nil
 	// when the key was absent or not a boolean literal.
 	Required *bool `json:"required,omitempty"`
+
+	// Description is the field's own human instruction, read from
+	// `admin: { description: '…' }` — which, unlike a Block's admin, Payload
+	// DOES support on a field and is exactly where a per-field "pass a media
+	// document id" belongs. `custom.description` is accepted as well, for the
+	// same reason it is on a block.
+	Description string `json:"description,omitempty"`
+	// DescriptionKey is the literal config path the text was read from
+	// ("admin.description", "custom.description", …), empty when Description
+	// is empty.
+	DescriptionKey string `json:"description_key,omitempty"`
 }
 
 // ScanResult is everything §7.10 and §7.11 can learn from the project on disk.
@@ -104,9 +138,36 @@ type ScanResult struct {
 	// declare no interfaceName are absent: there is nothing to key them by.
 	SlugByInterface map[string]string `json:"-"`
 
+	// FieldDocs are the per-field `admin: { description: '…' }` instructions
+	// declared by the project's COLLECTIONS and GLOBALS, keyed by entity slug
+	// and then by field name.
+	//
+	// They cover a collection's TOP-LEVEL `fields:` array only. A field nested
+	// inside a group, an array or a tab is not reached — the scanner adopts
+	// only the direct elements of the array it can attribute — and is reported
+	// as undocumented rather than being given a path this scanner would have
+	// had to guess.
+	//
+	// An entity whose config was read but documents nothing is present with an
+	// EMPTY map. The key's presence is the fact "PayCLI read this entity's
+	// config"; its absence is "there is none on disk", which is what a
+	// plugin-provided collection looks like.
+	FieldDocs map[string]map[string]FieldDoc `json:"field_docs,omitempty"`
+	// FieldDocFiles are the absolute paths FieldDocs were read from, keyed by
+	// entity slug, so the answer can always name its own source file.
+	FieldDocFiles map[string]string `json:"field_doc_files,omitempty"`
+
 	FilesScanned int   `json:"files_scanned"`
 	BytesScanned int64 `json:"bytes_scanned"`
 	Truncated    bool  `json:"truncated,omitempty"`
+}
+
+// FieldDoc is one field's human documentation as the project wrote it: the
+// text and the config key it came from, never one without the other.
+type FieldDoc struct {
+	Description string `json:"description"`
+	// Key is the literal config path — "admin.description" in the normal case.
+	Key string `json:"key"`
 }
 
 // Scan reads what the local filesystem knows about the project: the Payload
@@ -143,7 +204,8 @@ func Scan(p *Project) *ScanResult {
 		}
 	}
 
-	for _, file := range blockCandidates(p) {
+	for _, cand := range scanCandidates(p) {
+		file := cand.path
 		if out.FilesScanned >= MaxScanFiles || out.BytesScanned >= MaxScanBytes {
 			out.Truncated = true
 			break
@@ -159,6 +221,13 @@ func Scan(p *Project) *ScanResult {
 		out.FilesScanned++
 		out.BytesScanned += int64(len(data))
 		for _, decl := range BlockDeclsFromSource(string(data)) {
+			if cand.kind == candidateCollection {
+				// A collection's own config. Its slug is a COLLECTION slug and
+				// must never enter the block vocabulary; the only thing taken
+				// from it is per-field documentation.
+				out.addFieldDocs(decl, file)
+				continue
+			}
 			if _, seen := out.SlugFile[decl.Slug]; seen {
 				continue
 			}
@@ -194,27 +263,90 @@ func Scan(p *Project) *ScanResult {
 	return out
 }
 
-// blockCandidates lists the files §7.10 allows: **/blocks/**/*.ts,
-// **/*.block.ts and payload.config.ts. The order is the walk order, which is
-// lexical, so the result is deterministic.
-func blockCandidates(p *Project) []string {
+// addFieldDocs files one entity declaration's documented fields under its slug.
+//
+// An entity whose config declares NO description is still recorded, with an
+// empty map. That is the whole tri-state: the presence of the key means "this
+// entity's config was read off disk", so an empty map says "read it, nobody
+// documented anything" while an absent key says "never saw a config" — which
+// is what a plugin-provided collection in node_modules looks like. Collapsing
+// the two would turn a project's deliberate silence into a PayCLI failure.
+func (r *ScanResult) addFieldDocs(decl BlockDecl, file string) {
+	if decl.Slug == "" {
+		return
+	}
+	docs := map[string]FieldDoc{}
+	for _, f := range decl.Fields {
+		if f.Name == "" || f.Description == "" {
+			continue
+		}
+		if _, taken := docs[f.Name]; taken {
+			// First declaration wins, matching SlugFile: two fields with the
+			// same name in one array is a project bug, and letting the later
+			// one win would make the answer depend on walk order.
+			continue
+		}
+		docs[f.Name] = FieldDoc{Description: f.Description, Key: f.DescriptionKey}
+	}
+	if r.FieldDocs == nil {
+		r.FieldDocs = map[string]map[string]FieldDoc{}
+		r.FieldDocFiles = map[string]string{}
+	}
+	if _, taken := r.FieldDocs[decl.Slug]; taken {
+		return
+	}
+	r.FieldDocs[decl.Slug] = docs
+	r.FieldDocFiles[decl.Slug] = file
+}
+
+// candidate is one file the scan is allowed to read, together with WHAT it is
+// expected to declare.
+//
+// The kind is decided by the path alone and is load-bearing: a CollectionConfig
+// and a Block are the same object literal to a byte scanner — both carry
+// `slug:` and `fields:` — so without it `pages` would join the project's list
+// of block slugs and `pay create pages --set layout=…` would offer it as a
+// blockType. The directory is the only signal available without evaluating
+// project code, which §7.10 forbids.
+type candidate struct {
+	path string
+	kind string
+}
+
+const (
+	// candidateBlock is a file under a `blocks/` directory, a *.block.ts, or
+	// payload.config.ts — the §7.10 block sources.
+	candidateBlock = "block"
+	// candidateCollection is a file under a `collections/` or `globals/`
+	// directory. Its decls are read for FIELD DOCUMENTATION only
+	// (admin.description); its slugs are never treated as blockTypes.
+	candidateCollection = "collection"
+)
+
+// scanCandidates lists every file §7.10 allows the scan to read, classified.
+//
+// Block sources are **/blocks/**/*.ts, **/*.block.ts and payload.config.ts.
+// Entity sources — read for field documentation only — are
+// **/collections/**/*.ts and **/globals/**/*.ts. The order is the walk order,
+// which is lexical, so the result is deterministic.
+func scanCandidates(p *Project) []candidate {
 	roots := []string{p.Dir}
 	if p.SrcDir != "" && !strings.HasPrefix(p.SrcDir, p.Dir+string(filepath.Separator)) && p.SrcDir != p.Dir {
 		roots = append(roots, p.SrcDir)
 	}
 
 	seen := map[string]bool{}
-	var out []string
-	add := func(path string) {
+	var out []candidate
+	add := func(path, kind string) {
 		if path == "" || seen[path] {
 			return
 		}
 		seen[path] = true
-		out = append(out, path)
+		out = append(out, candidate{path: path, kind: kind})
 	}
 
 	if p.PayloadConfig != "" {
-		add(p.PayloadConfig)
+		add(p.PayloadConfig, candidateBlock)
 	}
 
 	for _, root := range roots {
@@ -235,13 +367,41 @@ func blockCandidates(p *Project) []string {
 			if len(out) >= MaxScanFiles {
 				return fs.SkipAll
 			}
-			if isBlockCandidate(path, root) {
-				add(path)
+			switch {
+			case isBlockCandidate(path, root):
+				add(path, candidateBlock)
+			case isCollectionCandidate(path, root):
+				add(path, candidateCollection)
 			}
 			return nil
 		})
 	}
 	return out
+}
+
+// isCollectionCandidate reports the files a collection's or global's own
+// config lives in: **/collections/**/*.ts and **/globals/**/*.ts.
+//
+// They are read for ONE thing — `admin: { description: '…' }` on a field, the
+// per-field instruction an agent needs while filling that field in — and never
+// for block slugs. Payload supports admin.description on a field of any
+// entity, so the same mechanism that documents a block's fields documents a
+// collection's; the only difference is which list the decl is filed under.
+func isCollectionCandidate(path, root string) bool {
+	ext := filepath.Ext(path)
+	if ext != ".ts" && ext != ".tsx" && ext != ".js" && ext != ".mjs" {
+		return false
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	for _, segment := range strings.Split(filepath.ToSlash(filepath.Dir(rel)), "/") {
+		if strings.EqualFold(segment, "collections") || strings.EqualFold(segment, "globals") {
+			return true
+		}
+	}
+	return false
 }
 
 func isBlockCandidate(path, root string) bool {
@@ -267,6 +427,41 @@ func isBlockCandidate(path, root string) bool {
 	}
 	return false
 }
+
+// DescriptionKeys are the config paths §7.10 accepts a human description from,
+// in preference order, and the exact strings reported back as
+// description_key.
+//
+// `admin.description` is Payload's own documented FIELD-level key and is both
+// the right place for per-field docs and the first choice here. A BLOCK has no
+// such key: a Block's `admin` accepts only components / custom /
+// disableBlockName / group / images / jsx, and `tsc --noEmit` rejects
+// `admin: { description }` on one. So a block's description has to live in
+// `custom`, Payload's sanctioned arbitrary-metadata escape hatch — which is
+// free-form, meaning every project spells it differently. The obvious
+// neighbours are therefore all accepted, and whichever one answered is always
+// reported next to the text rather than being flattened into a "description"
+// that implies Payload defines one.
+var DescriptionKeys = []string{
+	"admin.description", "custom.description", "custom.docs", "custom.summary",
+}
+
+// descriptionRank orders DescriptionKeys; a key that is not one of them is
+// never recorded at all.
+func descriptionRank(key string) int {
+	for i, k := range DescriptionKeys {
+		if k == key {
+			return i
+		}
+	}
+	return len(DescriptionKeys)
+}
+
+// docHosts are the child objects whose contents document their parent:
+// `admin: {…}` and `custom: {…}`. Everything else nested in a block or a field
+// is ignored, which is what keeps an unrelated `description:` on some other
+// sub-object from being read as documentation.
+var docHosts = map[string]bool{"admin": true, "custom": true}
 
 // BlockSlugsFromSource extracts the `slug: '…'` half of BlockDeclsFromSource,
 // in the same order and with the same duplicate handling.
@@ -313,6 +508,32 @@ func BlockDeclsFromSource(src string) []BlockDecl {
 		typ      string
 		required *bool
 
+		// labelSingular/labelPlural are this object's `labels: { singular,
+		// plural }` — a block's human name. They are filled when the child
+		// `labels` object closes.
+		labelSingular string
+		labelPlural   string
+
+		// description/descriptionKey are the human sentence found under this
+		// object's `admin:` or `custom:` child, together with the literal key
+		// path it came from. Both are set at once or neither is: a description
+		// whose origin was lost is exactly the half-fact §7.8.3 forbids.
+		description    string
+		descriptionKey string
+
+		// role is "admin", "custom" or "labels" when this object IS the child
+		// of that name, and "" for every other object; host is the object it
+		// documents. Together they are what lets a `description:` five braces
+		// deep be attributed to the right block or field — or, far more often,
+		// be ignored.
+		role string
+		host *object
+
+		// pendingChild is set between a `labels`/`admin`/`custom` key and the
+		// `{` that follows it, exactly as pendingFields is for `fields` — so
+		// that only the object literally assigned to that key adopts the role.
+		pendingChild string
+
 		// owner is the block object whose `fields:` array this object is a
 		// direct element of, and nil for every other object (a nested
 		// `admin: {}`, the block itself, an unrelated literal).
@@ -355,7 +576,26 @@ func BlockDeclsFromSource(src string) []BlockDecl {
 			// balanced. Both halves matter: a truncated file (§7.10 caps reads
 			// at 512 KB) can end mid-array with everything so far parsed.
 			FieldsComplete: o.fieldsClosed && !o.fieldsPartial,
+			LabelSingular:  o.labelSingular,
+			LabelPlural:    o.labelPlural,
+			Description:    o.description,
+			DescriptionKey: o.descriptionKey,
 		})
+	}
+
+	// document copies a closed `admin:`/`custom:` child's text onto the object
+	// it describes, keeping the strongest key when a project wrote more than
+	// one. Preference is DescriptionKeys' order, so the answer cannot depend on
+	// which key the file happened to list first.
+	document := func(o *object) {
+		if o.host == nil || o.description == "" {
+			return
+		}
+		if o.host.description != "" &&
+			descriptionRank(o.host.descriptionKey) <= descriptionRank(o.descriptionKey) {
+			return
+		}
+		o.host.description, o.host.descriptionKey = o.description, o.descriptionKey
 	}
 
 	i := 0
@@ -404,9 +644,15 @@ func BlockDeclsFromSource(src string) []BlockDecl {
 		case c == '[':
 			// Only the `[` that directly follows `fields:` adopts elements.
 			var owner *object
-			if len(stack) > 0 && stack[len(stack)-1].pendingFields {
-				owner = stack[len(stack)-1]
-				owner.pendingFields = false
+			if len(stack) > 0 {
+				top := stack[len(stack)-1]
+				// An array is not an `admin:`/`custom:`/`labels:` object, so
+				// nothing inside it may claim that role.
+				top.pendingChild = ""
+				if top.pendingFields {
+					owner = top
+					owner.pendingFields = false
+				}
 			}
 			brackets = append(brackets, bracket{owner: owner})
 			pendingKey = ""
@@ -422,7 +668,14 @@ func BlockDeclsFromSource(src string) []BlockDecl {
 			pendingKey = ""
 			i++
 		case c == '{':
-			stack = append(stack, &object{owner: inFieldsArray()})
+			child := &object{owner: inFieldsArray()}
+			if len(stack) > 0 {
+				if parent := stack[len(stack)-1]; parent.pendingChild != "" {
+					child.role, child.host = parent.pendingChild, parent
+					parent.pendingChild = ""
+				}
+			}
+			stack = append(stack, child)
 			pendingKey = ""
 			i++
 		case c == '}':
@@ -430,6 +683,21 @@ func BlockDeclsFromSource(src string) []BlockDecl {
 				o := stack[len(stack)-1]
 				stack = stack[:len(stack)-1]
 				emit(o)
+				switch o.role {
+				case "labels":
+					// A block's human name. Only the two literals Payload
+					// defines are copied up; an absent one stays "".
+					if o.host != nil {
+						if o.labelSingular != "" {
+							o.host.labelSingular = o.labelSingular
+						}
+						if o.labelPlural != "" {
+							o.host.labelPlural = o.labelPlural
+						}
+					}
+				case "admin", "custom":
+					document(o)
+				}
 				if o.owner != nil {
 					if o.name == "" {
 						// An element with no `name:` is a row, a collapsible,
@@ -438,8 +706,10 @@ func BlockDeclsFromSource(src string) []BlockDecl {
 						// here, so the block's field list is incomplete.
 						o.owner.fieldsPartial = true
 					} else {
-						o.owner.fields = append(o.owner.fields,
-							BlockFieldDecl{Name: o.name, Type: o.typ, Required: o.required})
+						o.owner.fields = append(o.owner.fields, BlockFieldDecl{
+							Name: o.name, Type: o.typ, Required: o.required,
+							Description: o.description, DescriptionKey: o.descriptionKey,
+						})
 					}
 				}
 			}
@@ -461,10 +731,52 @@ func BlockDeclsFromSource(src string) []BlockDecl {
 				continue
 			}
 			top := stack[len(stack)-1]
+			// A new key ends any unclaimed `admin:`/`custom:`/`labels:`
+			// expectation: only the object literally assigned to that key may
+			// adopt its role.
+			top.pendingChild = ""
 			switch key {
 			case "fields":
 				top.hasFields = true
 				top.pendingFields = true
+			case "admin", "custom", "labels":
+				top.pendingChild = key
+			case "singular", "plural":
+				// Only inside a `labels: {…}` object. Anywhere else these are
+				// somebody else's keys.
+				if top.role != "labels" {
+					break
+				}
+				if value, next, ok := readKeyString(src, i); ok {
+					if key == "singular" {
+						top.labelSingular = value
+					} else {
+						top.labelPlural = value
+					}
+					i = next
+				} else {
+					i = next
+				}
+			case "description", "docs", "summary":
+				// Only inside an `admin: {…}` or `custom: {…}` object, and
+				// only for a key DescriptionKeys names — so `admin.docs` and a
+				// stray `description:` on an unrelated literal are both
+				// ignored rather than attributed to a block.
+				if !docHosts[top.role] {
+					break
+				}
+				path := top.role + "." + key
+				if descriptionRank(path) == len(DescriptionKeys) {
+					break
+				}
+				value, next, ok := readKeyString(src, i)
+				i = next
+				if !ok || value == "" {
+					break
+				}
+				if top.description == "" || descriptionRank(path) < descriptionRank(top.descriptionKey) {
+					top.description, top.descriptionKey = value, path
+				}
 			case "slug":
 				if value, next, ok := readKeyString(src, i); ok {
 					top.slug, top.hasSlug, i = value, true, next

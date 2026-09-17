@@ -101,6 +101,7 @@ func newDescribeCmd(rt *Runtime) *cobra.Command {
 			data["blocks_source_summary"] = shard.BlocksSource
 			data["block_fields"] = shard.BlockFields
 			addBlockSchemas(rt, data, shard, shard.BlockSlugsFor(), f.blocksDetail, slug)
+			addFieldDocs(data, shard)
 			data["queryable_paths"] = orEmptyStrings(shard.QueryablePaths())
 			data["sortable_paths"] = orEmptyStrings(shard.SortablePaths())
 			data["date_fields"] = orEmptyStrings(shard.DateFields())
@@ -150,11 +151,37 @@ func newDescribeCmd(rt *Runtime) *cobra.Command {
 			"--block <slug>, which prints that block type's own fields, their types, their\n" +
 			"relationship targets and their required-ness with provenance.\n" +
 			"--blocks-detail inlines every one of them at once and is OFF by default on\n" +
-			"purpose. Measured on the live project: `pay describe pages` is 31 KB, and 70 KB\n" +
-			"with --blocks-detail, while `--field layout` goes from 4.4 KB to 43 KB — ten\n" +
+			"purpose. Measured on the live project: `pay describe pages` is 34 KB, and 81 KB\n" +
+			"with --blocks-detail, while `--field layout` goes from 7.2 KB to 53 KB — seven\n" +
 			"times the output of the most-run discovery command, to answer a question that\n" +
 			"is asked one block at a time. .block_schemas_available names every block whose\n" +
 			"schema is cached; --block <slug> prints the one you are about to write.\n" +
+			"\n" +
+			"WHAT A BLOCK IS FOR. .block_docs[SLUG] is printed beside every slug list and\n" +
+			"carries the block's human label and a one-sentence description, so an agent can\n" +
+			"choose between cta, content and mediaBlock without a second command.\n" +
+			"--block <slug> repeats it as .docs, and every field inside carries its own\n" +
+			".description — the per-field instruction for filling that field in.\n" +
+			"These are the PROJECT'S OWN WORDS, read from the block's config.ts on disk:\n" +
+			"`labels: { singular, plural }` and a description under custom.description,\n" +
+			"custom.docs or custom.summary. Payload publishes neither over REST or GraphQL,\n" +
+			"and defines NO description field for a block at all (a Block's `admin` accepts\n" +
+			"only components/custom/disableBlockName/group/images/jsx), which is why the text\n" +
+			"lives in `custom` and why .description_key always names the key that answered.\n" +
+			"A project gets any of this only if its authors wrote it: null means nobody did,\n" +
+			"never that PayCLI failed, and .docs_reason says which of the two it is. A\n" +
+			"plugin's blocks live in node_modules, which is never scanned, so theirs are\n" +
+			"always null.\n" +
+			"\n" +
+			"PER-FIELD INSTRUCTIONS. For ordinary collection fields the same mechanism is\n" +
+			"Payload's own `admin: { description }`, which IS supported on a field. They are\n" +
+			"published as .field_docs[PATH] — a separate map, not a key on every field entry,\n" +
+			"because three more keys on ~90 entries would add ~16 KB to this command to\n" +
+			"publish null 90 times. .documented_paths lists them, .field_docs_source says\n" +
+			"whether the entity's config was read at all, and --field PATH answers for one\n" +
+			"field as .field_doc. Only an entity's TOP-LEVEL fields array is read; a field\n" +
+			"nested in a group, an array or a tab is reported as undocumented rather than\n" +
+			"given a path this scanner would have had to guess.\n" +
 			"\n" +
 			"Required-ness inside a block is tri-state and is null more often than on a\n" +
 			"collection field. Payload publishes NO input type for a block type, so §7.4's\n" +
@@ -174,6 +201,11 @@ func newDescribeCmd(rt *Runtime) *cobra.Command {
 			{Why: "one field in full, including its operators", Cmd: "pay describe pages --field title"},
 			{Why: "the blockTypes a blocks field accepts", Cmd: "pay describe pages --field layout"},
 			{Why: "what goes INSIDE one block type", Cmd: "pay describe pages --block cta"},
+			{Why: "which block do I want? label + description for every one",
+				Cmd: "pay describe pages --path .block_docs"},
+			{Why: "what is this one block FOR", Cmd: "pay describe pages --block cta --path .docs"},
+			{Why: "the project's own instructions for filling fields in",
+				Cmd: "pay describe pages --path .field_docs"},
 			{Why: "just that block's required fields", Cmd: "pay describe pages --block mediaBlock --path .required_fields[]"},
 			{Why: "every block type of one field, in full", Cmd: "pay describe pages --field layout --blocks-detail"},
 			{Why: "schema plus a real document", Cmd: "pay describe pages --sample"},
@@ -192,6 +224,10 @@ func newDescribeCmd(rt *Runtime) *cobra.Command {
 				Right: "Every blocks field has its own list: pages.layout and forms.fields share none. Read .blocks[FIELD]."},
 			{Wrong: "Writing a block with only the fields --block listed as required.",
 				Right: "Required-ness inside a block is often null (Payload publishes no input type for one). .block.required_unknown names every field nobody could answer for; .block.reason says why."},
+			{Wrong: "Reading a null label or description as a PayCLI failure.",
+				Right: "Payload publishes neither and defines no description for a block at all. PayCLI reports what the project's authors wrote in the block's config.ts (`labels:` and custom.description / custom.docs / custom.summary); null means nobody wrote one. .docs_reason says which case it is."},
+			{Wrong: "Expecting a description on a plugin's blocks.",
+				Right: "The form-builder's blocks live in node_modules, which §7.10 never scans, so their label and description are always null with labels_source \"unknown\". Read .block[].fields for what they contain."},
 			{Wrong: "Treating blockName or id as content.",
 				Right: "id, blockName and blockType are Payload plumbing. blockType is mandatory and must be the SLUG; id is server-generated; blockName is an optional admin label. .block.fields[].plumbing marks them."},
 		},
@@ -255,6 +291,17 @@ func describeOneField(rt *Runtime, slug, targetKind string,
 		"entity": header,
 		"field":  field,
 	}
+	// This field's own human instruction, from the project's
+	// `admin: { description }`. null is "the project's authors wrote none" —
+	// Payload publishes admin.description nowhere in the API, so there is no
+	// second source to fall back to and nothing is ever invented here.
+	doc, documented := shard.FieldDocFor(path)
+	if documented {
+		data["field_doc"] = doc
+	} else {
+		data["field_doc"] = nil
+	}
+	data["field_doc_source"] = fieldDocSource(shard, documented)
 	if field.PayloadType == discovery.TypeBlocks {
 		// Everything below is THIS field's answer. shard.BlocksSource is an
 		// entity-wide summary and is deliberately not used here: `forms.fields`
@@ -284,6 +331,52 @@ func describeOneField(rt *Runtime, slug, targetKind string,
 	env := output.New("describe", output.KindSchema, data)
 	env.WithTarget(&output.Target{Kind: targetKind, Slug: slug})
 	return env, nil
+}
+
+// addFieldDocs publishes an entity's per-field documentation as its own map,
+// keyed by field path, plus the provenance of the map as a whole.
+//
+// It is a separate key rather than three more keys on each of ~90 field
+// entries because the latter would add ~16 KB to `pay describe pages` to
+// publish null 90 times. Here the cost is proportional to what the project
+// actually wrote, and is zero on a project that wrote nothing.
+func addFieldDocs(data map[string]any, shard *discovery.Shard) {
+	docs := shard.FieldDocs
+	if docs == nil {
+		// An empty map, never null: "no field of this entity is documented" is
+		// a complete answer, and field_docs_source says whether anything was
+		// read at all.
+		docs = map[string]discovery.FieldDoc{}
+	}
+	data["field_docs"] = docs
+	data["field_docs_source"] = orUnknown(shard.FieldDocsSource)
+	data["field_docs_file"] = shard.FieldDocsFile
+	data["documented_paths"] = orEmptyStrings(shard.DocumentedPaths())
+	data["field_docs_note"] = fieldDocsNote
+}
+
+// fieldDocsNote states where a per-field description comes from and why one
+// may be missing — so an agent reads an absent entry as "this project did not
+// write one" rather than "PayCLI failed to fetch it".
+const fieldDocsNote = "field_docs are the project's OWN per-field instructions, read from " +
+	"`admin: { description: '…' }` in the entity's config on disk (§7.10). Payload publishes them " +
+	"nowhere in the API — not in a REST response and not in GraphQL introspection — so a field is " +
+	"listed here only if its authors wrote one, and only when it is declared in the entity's " +
+	"TOP-LEVEL fields array. An absent path means undocumented, never undiscovered."
+
+// fieldDocSource labels a single field's documentation. A field with no entry
+// still reports whether the entity's config was read at all, which is the
+// difference between "nobody documented this field" and "PayCLI never saw the
+// config".
+func fieldDocSource(shard *discovery.Shard, documented bool) string {
+	if documented {
+		return discovery.SourceProjectSource
+	}
+	if shard.FieldDocsSource == discovery.SourceProjectSource {
+		// The config WAS read; this field simply carries no description.
+		return discovery.SourceNA
+	}
+	return discovery.SourceUnknown
 }
 
 // describeOneBlock answers `pay describe <entity> --block <slug>`: the field
@@ -333,14 +426,24 @@ func describeOneBlock(rt *Runtime, slug, targetKind string, shard *discovery.Sha
 	}
 
 	data := map[string]any{
-		"kind":            targetKind,
-		"entity":          header,
-		"block":           schema,
+		"kind":   targetKind,
+		"entity": header,
+		"block":  schema,
+		// docs is the answer to "what is this block FOR" on its own path, so
+		// `--path .docs.description` works without walking the schema. Its
+		// values are the same ones .block carries; it is a shortcut, not a
+		// second source.
+		"docs":            schema.Doc(),
+		"docs_note":       discovery.BlockDocsNote,
 		"block_fields":    accepted,
 		"content_fields":  blockFieldPaths(schema.ContentFields()),
 		"required_fields": schema.RequiredFields(),
-		"plumbing_note":   discovery.BlockPlumbingNote,
-		"examples":        blockExamples(slug, accepted[0], schema),
+		// documented_fields names every field of this block that carries a
+		// per-field instruction from `admin: { description }`, so an agent can
+		// see at a glance whether there is any guidance to read.
+		"documented_fields": documentedBlockFields(schema),
+		"plumbing_note":     discovery.BlockPlumbingNote,
+		"examples":          blockExamples(slug, accepted[0], schema),
 	}
 	if len(schema.RequiredUnknown) > 0 {
 		rt.Warnf(warnBlockRequiredUnknown, "%s", schema.Reason)
@@ -375,6 +478,19 @@ func blockFieldsAccepting(shard *discovery.Shard, block, fieldPath string) []str
 	return out
 }
 
+// documentedBlockFields lists the paths whose description is non-null. An
+// empty list is a real answer — "this block's fields carry no per-field
+// instructions" — and is why the key is always present.
+func documentedBlockFields(schema discovery.BlockTypeSchema) []string {
+	out := []string{}
+	for _, f := range schema.Fields {
+		if f.Description != nil && *f.Description != "" {
+			out = append(out, f.Path)
+		}
+	}
+	return out
+}
+
 func blockFieldPaths(fields []discovery.BlockFieldSchema) []string {
 	out := make([]string, 0, len(fields))
 	for _, f := range fields {
@@ -406,6 +522,16 @@ func addBlockSchemas(rt *Runtime, data map[string]any, shard *discovery.Shard,
 		}
 	}
 	data["block_schemas_available"] = available
+	// The human half, printed BESIDE every slug list and never gated behind
+	// --blocks-detail: a slug alone does not let an agent choose between cta,
+	// content and mediaBlock, and needing a second command per candidate is
+	// exactly the cost this key removes. It is one short object per block, not
+	// a field schema, so the default response grows by ~1 KB rather than the
+	// ~39 KB --blocks-detail costs.
+	if docs := blockDocs(shard, available); len(docs) > 0 {
+		data["block_docs"] = docs
+		data["block_docs_note"] = discovery.BlockDocsNote
+	}
 	if len(missing) > 0 {
 		// Never silently short: a slug with no schema is reported by name.
 		data["block_schemas_missing"] = missing
@@ -426,6 +552,24 @@ func addBlockSchemas(rt *Runtime, data map[string]any, shard *discovery.Shard,
 		out[s] = bs
 	}
 	data["block_schemas"] = out
+}
+
+// blockDocs is the compact label/description view for a set of slugs, keyed by
+// slug. Only blocks whose schema is cached appear: a slug with no schema has no
+// documentation either, and block_schemas_missing already names it.
+func blockDocs(shard *discovery.Shard, slugs []string) map[string]discovery.BlockDoc {
+	out := make(map[string]discovery.BlockDoc, len(slugs))
+	for _, s := range slugs {
+		bs, ok := shard.BlockSchemaFor(s)
+		if !ok {
+			continue
+		}
+		out[s] = bs.Doc()
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func firstOr(ss []string, fallback string) string {

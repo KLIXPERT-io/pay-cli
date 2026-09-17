@@ -116,6 +116,8 @@
       "hook_mutated": "unknown",
       "label": "Title"
     },
+    "field_doc": null,
+    "field_doc_source": "unknown",
     "kind": "collection",
     "where_examples": [
       "pay find pages --where 'title equals VALUE'",

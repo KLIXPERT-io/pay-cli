@@ -1473,8 +1473,90 @@ discovered — `null` there means "not discovered", never "this block has no fie
 
 `pay describe <c> --block <slug>` prints one block's schema; `--blocks-detail` inlines every
 one of them and is **opt-in**, because measured on the live project it takes
-`pay describe pages` from 31 KB to 70 KB and `pay describe pages --field layout` from 4.4 KB
-to 43 KB.
+`pay describe pages` from 34 KB to 81 KB and `pay describe pages --field layout` from 7.2 KB
+to 53 KB (re-measured after §7.10b added the documentation keys; it was 31 KB → 70 KB and
+4.4 KB → 43 KB before).
+
+### 7.10b What a block IS — labels, descriptions and per-field instructions
+
+A slug says a block *exists*. It does not say what it is **for**, and an agent choosing between `cta`,
+`content` and `mediaBlock` was left inferring intent from three names. `interface_name` and a field
+list do not help: both describe shape, not purpose.
+
+**The API cannot answer this at all.** A block's `labels` are admin-UI metadata and appear in neither
+a REST response nor GraphQL introspection, and Payload defines **no description field for a block
+whatsoever** — verified: a `Block`'s `admin` accepts only
+`components / custom / disableBlockName / group / images / jsx`, and `tsc --noEmit` rejects
+`admin: { description }` on one. So the same §7.10 scan that recovers the slugs recovers the words,
+from the same object literal, in the same pass — no extra file read and no extra request:
+
+| Fact | Read from | Reported as |
+|---|---|---|
+| block label | `labels: { singular, plural }` | `label`, `label_plural`, `labels_source` |
+| what the block is FOR | `custom.description`, else `custom.docs`, else `custom.summary` | `description`, `description_source`, **`description_key`** |
+| per-field instruction | a field's `admin: { description }` (also `custom.*`) | that field's `description`, `description_source`, `description_key` |
+
+`custom` is Payload's sanctioned arbitrary-metadata escape hatch and is **free-form**, so every
+project spells this differently. Three keys are accepted and **the one that answered is always
+reported**: `description_key: "custom.description"` is the difference between reporting a project
+convention and implying Payload has a standard field. `admin.description` outranks the `custom.*`
+neighbours because on a *field* it is Payload's own documented key; a Block cannot carry it.
+
+**Tri-state, as everywhere else.** An absent label or description is `null` with source `"unknown"`,
+never a title-cased guess at the slug — `mediaBlock` → "Media Block" is a label the admin UI never
+shows. `docs_reason` says which of the two cases it is and is empty **exactly** when both were found:
+
+* **a plugin's block** (`textarea`, from `@payloadcms/plugin-form-builder`) has no config on disk at
+  all, because node_modules is deliberately never scanned. This is expected and is **stated**:
+  `blockType "textarea" has no config on disk to read them from — normal for a plugin-provided block,
+  which lives in node_modules — and the API publishes neither`.
+* **a project block whose author wrote only half** names the declaring file and the keys PayCLI reads,
+  so the fix is one line in a file the message points at.
+
+**A project gets any of this only if its authors wrote it.** PayCLI reports what is there and invents
+nothing; that sentence is in `pay help describe`, in `data.block_docs_note` and in the shipped skill,
+so a `null` is never read as a PayCLI failure.
+
+**Where it surfaces.** The rule is that the words appear **wherever the slugs appear**, because
+needing a second command per candidate is the cost this exists to remove:
+
+* `pay describe <e>` and `pay describe <e> --field <blocks-field>` gain `block_docs[SLUG]` — a compact
+  `{label, label_plural, labels_source, description, description_source, description_key,
+  fields_count, docs_reason}` per slug — plus `block_docs_note`. **Measured on the live project:
+  `pay describe pages` 31 KB → 34 KB, `describe forms` 25 KB → 30 KB (9 plugin blocks, each carrying
+  its reason), `--field layout` 4.4 KB → 7.2 KB.** The field *schemas* stay behind `--blocks-detail`
+  (70 KB → 81 KB) exactly as before: this key carries what is needed to CHOOSE, never what is needed
+  to CONSTRUCT.
+* `pay describe <e> --block <slug>` prints the full schema (label/description on `.block`), repeats
+  the compact form as `.docs` so `--path .docs.description` works, and lists
+  `documented_fields[]` — every field of that block carrying an instruction.
+* `pay explain --collection <slug>` gets the same keys.
+* shell completion of `--block` renders the label/description as the candidate's description, so
+  `pay describe pages --block <TAB>` shows what each block is for.
+
+**Ordinary collection fields get the same treatment**, because `admin: { description }` is one
+mechanism documenting both and a per-field instruction ("Pass a media document id") is precisely what
+an agent needs while filling a field in. The scan therefore also reads `**/collections/**` and
+`**/globals/**`, with two constraints:
+
+1. **A collection slug is never a block slug.** A `CollectionConfig` and a `Block` are the same object
+   literal to a byte scanner — both carry `slug:` and `fields:` — so the candidate's *directory*
+   decides which list its decls join. Without that, `pages` would be offered as a `blockType` and
+   Payload would silently drop the row (§9.7).
+2. **Top-level `fields:` only.** A field inside a group, an array or a tab is not reached and is
+   reported as undocumented rather than given a dotted path the scanner would have had to guess.
+
+They are published as **`field_docs[PATH]`** — a separate map, deliberately *not* three more keys on
+each field entry: `pay describe pages` carries ~90 field entries, so that would have added **~16 KB**
+to the most-run command in order to publish `null` 90 times. `documented_paths[]` lists them,
+`field_docs_file` names the file, and `--field PATH` answers for one field as `field_doc`. §7.8.2's
+fixed 26-key field entry is unchanged.
+
+`field_docs_source` is a three-way answer and each value is a different fact:
+`"project-source"` with entries (read the config, here is what it says), `"project-source"` with none
+(read the config, nobody documented anything), `"unknown"` (never saw a config — the normal case for
+a plugin-provided collection such as `forms`, whose config lives in node_modules). Collapsing the
+middle case into the last would turn a project's deliberate silence into a PayCLI failure.
 
 ### 7.11 `payload_version` and `db_adapter`
 

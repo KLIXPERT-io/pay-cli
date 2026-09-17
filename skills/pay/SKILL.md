@@ -244,10 +244,11 @@ raises `input_silently_dropped` (absent from the response) or `value_normalized_
 (present but changed, e.g. a `slug` hook rewriting `My Page` → `my-page`). Check
 `warnings[]` on every write.
 
-**Blocks.** A blocks field asks two separate questions and `pay` answers them separately:
+**Blocks.** A blocks field asks three separate questions and `pay` answers them separately:
 
 ```bash
 pay describe pages --field layout --path .block_types   # WHICH blocks may go in it
+pay describe pages --path .block_docs                   # what each one is FOR
 pay describe pages --block cta                          # WHAT IS INSIDE one
 ```
 
@@ -262,6 +263,53 @@ you write, `blockName` is an optional admin label, `id` is server-generated.
 input type for a block type, so the only proofs are a GraphQL `NON_NULL` and the block's
 own `config.ts`. `.block.required_unknown` names every field nobody could answer for and
 `.block.reason` says why — treat those as "unknown", never as "not required".
+
+**What a block is FOR.** Choosing between `cta`, `content` and `mediaBlock` from slugs alone
+is guesswork, so `.block_docs[SLUG]` is printed beside every slug list:
+
+```bash
+pay describe pages --path .block_docs                   # label + description for each
+pay describe pages --block cta --path .docs             # just this one
+pay describe pages --block mediaBlock --path .documented_fields
+```
+
+```json
+{"cta": {"label": "Call to Action", "label_plural": "Calls to Action",
+         "description": "A prompt with rich text and one or more buttons, used to push the reader to a next step.",
+         "description_key": "custom.description", "description_source": "project-source",
+         "fields_count": 9, "docs_reason": ""}}
+```
+
+These are **the project's own words**, read from the block's `config.ts` on disk —
+`labels: { singular, plural }` plus a description under `custom.description`, `custom.docs`
+or `custom.summary`. Payload publishes neither over REST or GraphQL and defines **no**
+description field for a block at all, which is why the text lives in `custom` and why
+`description_key` always names the key that answered.
+
+**A project gets this only if its authors wrote it.** `null` means nobody did — never that
+`pay` failed — and `docs_reason` says which case it is. A plugin's blocks (the form
+builder's `textarea`, `email`, `select`, …) live in `node_modules`, which is never scanned,
+so their label and description are always `null` with `labels_source: "unknown"`. That is
+expected; read `--block <slug>` for their fields instead.
+
+Inside a block, each field carries its own `description` from Payload's `admin.description`
+— the per-field instruction for filling that field in ("Pass a media document id"), with
+`description_source` and `description_key`. `null` with `"unknown"` means undocumented.
+
+**Field instructions on ordinary collections** use the same `admin: { description }` and are
+published as `.field_docs[PATH]` (a separate map, so the field entries stay at 26 keys):
+
+```bash
+pay describe pages --path .field_docs          # every documented field of this entity
+pay describe pages --path .documented_paths    # just the paths
+pay describe pages --field title --path .field_doc
+```
+
+`field_docs_source` is `"project-source"` when the entity's config was read (an empty
+`field_docs` then means the authors documented nothing) and `"unknown"` when there was no
+config to read — the normal case for a plugin-provided collection such as `forms`. Only an
+entity's **top-level** `fields:` array is read; a field nested in a group, array or tab is
+reported as undocumented rather than guessed at.
 
 **Bulk delete ignores `limit`.** `DELETE /api/{coll}?where=…&limit=1` deletes **every**
 match. `pay` therefore never passes `--where` straight through: it counts, resolves the
@@ -340,8 +388,9 @@ pay delete crm-contacts 224                 # PATCH deletedAt, reports "trashed"
 pay find crm-contacts --trash --where 'id eq 224'
 pay restore crm-contacts 224
 
-# 9. Build a blocks field: the slugs, then what goes inside one
+# 9. Build a blocks field: the slugs, what each is for, then what goes inside one
 pay describe pages --field layout --path .block_types
+pay describe pages --path .block_docs                    # label + description per slug
 pay describe pages --block cta --path '.block.fields[].path'
 pay describe pages --block mediaBlock --path .required_fields[]
 # → a full, runnable create is in references/recipes.md §13

@@ -228,13 +228,22 @@ fi
 
 ## 13. Blocks: what goes inside one, then write it
 
-A blocks field answers two different questions. **Which** blocks it accepts is a slug
-list; **what is inside** one is that block type's own field schema.
+A blocks field answers three different questions. **Which** blocks it accepts is a slug
+list; **what each one is for** is its label and description; **what is inside** one is that
+block type's own field schema.
 
 ```bash
 # Which blockTypes does this field accept? (slugs, never interfaceNames)
 pay describe pages --field layout --path .block_types
 # → ["archive","content","cta","formBlock","mediaBlock"]
+
+# Which one do I actually want? (printed beside every slug list)
+pay describe pages --path .block_docs
+# → {"cta": {"label":"Call to Action",
+#            "description":"A prompt with rich text and one or more buttons, used to push
+#                           the reader to a next step such as contact or signup.",
+#            "description_key":"custom.description","description_source":"project-source",
+#            "fields_count":9,"docs_reason":""}, …}
 
 # What is inside one of them?
 pay describe pages --block cta --path '.block.fields[].path'
@@ -251,8 +260,46 @@ pay describe pages --field layout --blocks-detail
 ```
 
 Each entry of `.block.fields[]` carries `payload_type`, `json_type`, `has_many`,
-`options` (enum values), `relation_to` + `write_shape` for relationships and uploads, and
-`required` + `required_source`.
+`options` (enum values), `relation_to` + `write_shape` for relationships and uploads,
+`required` + `required_source`, and `description` — the field's own instruction from
+Payload's `admin: { description }`:
+
+```bash
+pay describe pages --block mediaBlock --path '.block.fields[0]'
+# → {"name":"media", …, "required":true,
+#     "description":"The image or video to display. Pass a media document id.",
+#     "description_source":"project-source","description_key":"admin.description"}
+
+pay describe pages --block mediaBlock --path .documented_fields
+# → ["media"]        (every field of this block that carries an instruction)
+```
+
+**Labels and descriptions are the project's own words, not API data.** They are read from
+the block's `config.ts` on disk: `labels: { singular, plural }`, and a description under
+`custom.description` / `custom.docs` / `custom.summary` — `description_key` always says
+which key answered, because Payload defines **no** description field for a block at all
+(a `Block`'s `admin` accepts only components/custom/disableBlockName/group/images/jsx).
+A project gets any of this only if its authors wrote it; `null` means nobody did, never
+that `pay` failed, and `docs_reason` says which:
+
+```bash
+pay describe forms --block textarea --path .docs
+# → {"slug":"textarea","label":null,"label_plural":null,"labels_source":"unknown",
+#    "description":null,"description_source":"unknown","description_key":"",
+#    "fields_count":5,
+#    "docs_reason":"blockType \"textarea\" has no config on disk to read them from —
+#                   normal for a plugin-provided block, which lives in node_modules —
+#                   and the API publishes neither"}
+```
+
+The same `admin: { description }` documents ordinary collection fields, published as
+`.field_docs[PATH]` so the field entries stay at their fixed 26 keys:
+
+```bash
+pay describe pages --path .field_docs            # {PATH: {description, key, source}}
+pay describe pages --path .documented_paths      # just the documented paths
+pay describe pages --field title --path .field_doc
+```
 
 **`plumbing: true` marks Payload's own keys.** `blockType` is mandatory on every block you
 write and must be the **slug**; `blockName` is an optional admin-UI label; `id` is

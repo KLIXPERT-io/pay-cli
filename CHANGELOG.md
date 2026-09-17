@@ -56,6 +56,35 @@ improving an `error.message` or `hint` are **not** breaking. Never branch on
   blockType slug came from. A shard written before `block_schemas` existed still decodes
   and still resolves slugs; the block interiors report as not discovered until the next
   `pay discover --refresh`.
+- **What a block IS.** Every block type now carries the project's own `label`,
+  `label_plural` and a one-sentence `description`, so an agent can choose between `cta`,
+  `content` and `mediaBlock` without opening the project. They are printed as
+  `block_docs[SLUG]` beside every slug list (`pay describe <e>`,
+  `pay describe <e> --field <blocks-field>`, `pay explain --collection <e>`), repeated as
+  `.docs` by `--block <slug>`, and rendered as the shell-completion description of
+  `--block`. Measured: `pay describe pages` 31 KB → 34 KB, `describe forms` 25 KB → 30 KB;
+  the field *schemas* stay behind `--blocks-detail` (70 KB → 81 KB).
+- Each field inside a block carries its own `description` from Payload's
+  `admin: { description }` — the per-field instruction for filling that field in — and
+  `--block <slug>` lists `documented_fields[]`.
+- The same mechanism documents ordinary collection and global fields, published as
+  `field_docs[PATH]` with `documented_paths`, `field_docs_file` and `field_docs_source`
+  (and `field_doc` on `--field PATH`). It is a separate map rather than three more keys on
+  every field entry: §7.8.2's fixed 26-key field entry is unchanged, and adding them there
+  would have cost ~16 KB on `pay describe pages` to publish `null` 90 times.
+- Provenance is tri-state throughout. Payload publishes a block's labels nowhere and
+  defines **no** description field for a block at all (a `Block`'s `admin` accepts only
+  components/custom/disableBlockName/group/images/jsx), so the text is read from the
+  block's `config.ts` — `labels: { singular, plural }` plus `custom.description`,
+  `custom.docs` or `custom.summary` — and `description_key` always names the key that
+  answered. A project gets this only if its authors wrote it: absent means `null` with
+  source `"unknown"` and a `docs_reason`, never a title-cased guess at the slug. A plugin's
+  blocks live in `node_modules`, which is never scanned, so theirs are always `null`.
+- The §7.10 scan now also reads `**/collections/**` and `**/globals/**`, for field
+  documentation only. A collection's slug is never admitted to the block vocabulary — a
+  `CollectionConfig` and a `Block` are the same object literal to a byte scanner — and only
+  an entity's top-level `fields:` array is read, so a field nested in a group, an array or
+  a tab is reported as undocumented rather than given a guessed path.
 
 ## [0.1.0] — unreleased
 

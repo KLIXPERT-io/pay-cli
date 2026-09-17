@@ -9,6 +9,7 @@ import (
 
 	"github.com/KLIXPERT-io/pay-cli/internal/cache"
 	"github.com/KLIXPERT-io/pay-cli/internal/config"
+	"github.com/KLIXPERT-io/pay-cli/internal/discovery"
 	"github.com/KLIXPERT-io/pay-cli/internal/logging"
 	"github.com/KLIXPERT-io/pay-cli/internal/output"
 )
@@ -202,13 +203,50 @@ func CompleteBlockSlugs(rt *Runtime) func(*cobra.Command, []string, string) ([]s
 		}
 		out := []string{}
 		for _, b := range shard.BlockSlugsFor() {
-			if strings.HasPrefix(b, toComplete) {
-				out = append(out, b)
+			if !strings.HasPrefix(b, toComplete) {
+				continue
 			}
+			// The slug is what gets written; the block's own label or
+			// description rides along as cobra's tab-completion description
+			// (value\tdescription), so choosing between cta, content and
+			// mediaBlock does not need a second command. A block the project
+			// never documented completes as a bare slug — nothing is invented.
+			out = append(out, b+completionDescription(shard, b))
 		}
 		sort.Strings(out)
 		return out, cobra.ShellCompDirectiveNoFileComp
 	}
+}
+
+// completionDescriptionCap bounds the text a shell prints beside a slug. A
+// block description is one sentence; a long one is elided rather than wrapped
+// across the user's terminal.
+const completionDescriptionCap = 72
+
+// completionDescription is the "\tdescription" suffix cobra renders beside a
+// completion candidate, or "" when the project documented nothing.
+func completionDescription(shard *discovery.Shard, slug string) string {
+	bs, ok := shard.BlockSchemaFor(slug)
+	if !ok {
+		return ""
+	}
+	text := ""
+	if bs.Label != nil && *bs.Label != "" {
+		text = *bs.Label
+	}
+	if bs.Description != nil && *bs.Description != "" {
+		if text != "" {
+			text += " — "
+		}
+		text += *bs.Description
+	}
+	if text == "" {
+		return ""
+	}
+	if len(text) > completionDescriptionCap {
+		text = strings.TrimSpace(text[:completionDescriptionCap]) + "…"
+	}
+	return "\t" + text
 }
 
 func CompleteProfiles(rt *Runtime) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {

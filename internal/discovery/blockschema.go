@@ -82,6 +82,13 @@ type BlockSourceField struct {
 	Name     string
 	Type     string
 	Required *bool
+	// Description is the field's own `admin: { description: '…' }` — the
+	// per-field instruction an agent needs while filling that field in
+	// ("Pass a media document id"). "" is "the project's authors wrote none".
+	Description string
+	// DescriptionKey is the literal config path the text came from,
+	// "admin.description" in the normal case.
+	DescriptionKey string
 }
 
 // BlockSourceDecl is one block's declaration as it exists on disk.
@@ -95,6 +102,17 @@ type BlockSourceDecl struct {
 	File     string
 	Fields   []BlockSourceField
 	Complete bool
+	// LabelSingular and LabelPlural are the block's `labels:` literals. They
+	// are the human name of the block — "Call to Action" for slug cta — and
+	// are "" when the project declares none, never a title-cased guess.
+	LabelSingular string
+	LabelPlural   string
+	// Description is what this block is FOR, in the project's own words, and
+	// DescriptionKey is the config key it was read from. Payload defines NO
+	// standard description for a block, so the key is always reported with the
+	// text: see config.DescriptionKeys.
+	Description    string
+	DescriptionKey string
 }
 
 // Field returns the declaration for a field name.
@@ -151,6 +169,23 @@ type BlockFieldSchema struct {
 	Plumbing bool `json:"plumbing"`
 
 	Label string `json:"label"`
+
+	// Description is the field's own human instruction in the project's own
+	// words, read from `admin: { description: '…' }` in the block's config.ts
+	// (§7.10). It is a POINTER: null is "nobody wrote one", which is a
+	// different fact from an empty string and must never be filled in with a
+	// sentence PayCLI made up.
+	Description *string `json:"description"`
+	// DescriptionSource is "project-source" when Description is non-null and
+	// "unknown" when it is null. A plugin's block lives in node_modules, which
+	// §7.10 never scans, so every one of its fields reads "unknown" — expected,
+	// and stated rather than hidden.
+	DescriptionSource string `json:"description_source"`
+	// DescriptionKey is the literal config key the text came from
+	// ("admin.description"), "" when there is none. Payload has no standard
+	// description for a BLOCK, so naming the key is what keeps this output
+	// honest about where the words originated.
+	DescriptionKey string `json:"description_key"`
 }
 
 // BlockFieldSchemaKeys is the exact key set every block field entry carries,
@@ -165,6 +200,7 @@ var BlockFieldSchemaKeys = []string{
 	"write_shape",
 	"plumbing",
 	"label",
+	"description", "description_source", "description_key",
 }
 
 // BlockTypeSchema is one block type's full answer: the slug to write, the
@@ -197,6 +233,134 @@ type BlockTypeSchema struct {
 	// Reason is empty exactly when every content field's required-ness is
 	// known; otherwise it says in plain words what is missing and why.
 	Reason string `json:"reason"`
+
+	// Label and LabelPlural are the block's human name, read from its
+	// `labels: { singular, plural }` (§7.10). They are POINTERS because a
+	// project that declares none has none: null is the honest answer, and
+	// title-casing the slug would manufacture a label the admin UI never
+	// shows.
+	Label       *string `json:"label"`
+	LabelPlural *string `json:"label_plural"`
+	// LabelsSource is "project-source" when the labels were read off disk and
+	// "unknown" when they were not.
+	LabelsSource string `json:"labels_source"`
+
+	// Description is the one-sentence statement of what this block is FOR —
+	// the fact that lets an agent choose between cta, content and mediaBlock
+	// without opening the project. null when the project's authors wrote none.
+	Description *string `json:"description"`
+	// DescriptionSource is "project-source" or "unknown".
+	DescriptionSource string `json:"description_source"`
+	// DescriptionKey is the config key the text was read from —
+	// "custom.description", "custom.docs" or "custom.summary". It is reported
+	// because Payload defines NO description for a block: a Block's `admin`
+	// accepts only components/custom/disableBlockName/group/images/jsx and
+	// `tsc --noEmit` rejects `admin: { description }` on one, so the text is
+	// always project convention rather than a standard field, and saying which
+	// key it came from is the difference between reporting and implying.
+	DescriptionKey string `json:"description_key"`
+	// DocsReason is empty exactly when both the label and the description were
+	// found; otherwise it says in plain words which is missing and why.
+	DocsReason string `json:"docs_reason"`
+}
+
+// BlockDoc is the CHOOSING view of one block type: the human name, what the
+// block is for, and how many fields it has — enough to pick between cta,
+// content and mediaBlock without running a second command, and small enough to
+// print beside every slug list.
+//
+// It is a projection of BlockTypeSchema, never a second source of truth: every
+// value here is copied from the schema that `--block <slug>` prints in full.
+type BlockDoc struct {
+	Slug        string  `json:"slug"`
+	Label       *string `json:"label"`
+	LabelPlural *string `json:"label_plural"`
+	// LabelsSource / DescriptionSource are "project-source" or "unknown".
+	// Nothing here is ever derived from the slug: a block whose author wrote
+	// no labels has none, and title-casing "mediaBlock" would invent one.
+	LabelsSource      string  `json:"labels_source"`
+	Description       *string `json:"description"`
+	DescriptionSource string  `json:"description_source"`
+	// DescriptionKey names the config key the text came from, because Payload
+	// defines none for a block: see BlockTypeSchema.DescriptionKey.
+	DescriptionKey string `json:"description_key"`
+	// FieldsCount is the block's content fields, excluding the three plumbing
+	// keys every block row carries.
+	FieldsCount int `json:"fields_count"`
+	// DocsReason is empty exactly when both label and description were found,
+	// and otherwise says why they were not — a plugin block has no config on
+	// disk, and that is expected rather than a failure.
+	DocsReason string `json:"docs_reason"`
+}
+
+// BlockDocsNote states, once per response, where a block's label and
+// description come from — so that a null is read as "this project did not
+// write one" and never as "PayCLI failed".
+const BlockDocsNote = "label and description are the project's OWN words, read from the block's " +
+	"config.ts on disk (§7.10): `labels: { singular, plural }` and a description under " +
+	"custom.description / custom.docs / custom.summary. Payload publishes neither over REST or " +
+	"GraphQL and defines NO description field for a block at all, so a project gets these only if " +
+	"its authors wrote them; null means nobody did, and description_key says which key answered."
+
+// Doc projects a block's schema into the compact form printed beside a slug
+// list.
+func (s BlockTypeSchema) Doc() BlockDoc {
+	return BlockDoc{
+		Slug:              s.Slug,
+		Label:             s.Label,
+		LabelPlural:       s.LabelPlural,
+		LabelsSource:      orUnknownSource(s.LabelsSource),
+		Description:       s.Description,
+		DescriptionSource: orUnknownSource(s.DescriptionSource),
+		DescriptionKey:    s.DescriptionKey,
+		FieldsCount:       len(s.ContentFields()),
+		DocsReason:        s.DocsReason,
+	}
+}
+
+// orUnknownSource keeps a provenance key from ever being the empty string,
+// which is not one of §7.8.3's documented values.
+func orUnknownSource(source string) string {
+	if source == "" {
+		return SourceUnknown
+	}
+	return source
+}
+
+// DisplayName is the one-line human name for a block: its declared singular
+// label, or the slug itself when the project declared none. It is for display
+// only — the slug is what is written to the API — and it never fabricates a
+// label, which is why the fallback is the slug verbatim rather than a
+// title-cased guess.
+func (s BlockTypeSchema) DisplayName() string {
+	if s.Label != nil && *s.Label != "" {
+		return *s.Label
+	}
+	return s.Slug
+}
+
+// normalizeDocs fills in the provenance keys a shard written by an OLDER
+// PayCLI does not carry.
+//
+// A cache is not migrated on upgrade, so a shard decoded from one predating
+// the label/description keys arrives with "" where §7.8.3 requires a
+// documented value. "" is not one of them, and an agent that sees it cannot
+// tell "unknown" from "the producer forgot": this maps it to the honest
+// unknown before anything prints it. It only ever replaces an empty string, so
+// it is idempotent and can never overwrite a measured fact.
+func (s *BlockTypeSchema) normalizeDocs() {
+	s.LabelsSource = orUnknownSource(s.LabelsSource)
+	s.DescriptionSource = orUnknownSource(s.DescriptionSource)
+	for i := range s.Fields {
+		if s.Fields[i].DescriptionSource != "" {
+			continue
+		}
+		if s.Fields[i].Plumbing {
+			s.Fields[i].DescriptionSource = SourceNA
+			continue
+		}
+		s.Fields[i].DescriptionSource = SourceUnknown
+	}
 }
 
 // ContentFields returns the block's fields minus Payload's plumbing.
@@ -230,17 +394,26 @@ func (s BlockTypeSchema) RequiredFields() []string {
 // written under the other.
 func BuildBlockSchema(slug, iface string, schema *Schema, decl BlockSourceDecl, declared bool) BlockTypeSchema {
 	out := BlockTypeSchema{
-		Slug:            slug,
-		InterfaceName:   iface,
-		Fields:          []BlockFieldSchema{},
-		FieldsSource:    SourceUnknown,
-		RequiredSource:  SourceUnknown,
-		RequiredUnknown: []string{},
-		PlumbingNote:    BlockPlumbingNote,
+		Slug:              slug,
+		InterfaceName:     iface,
+		Fields:            []BlockFieldSchema{},
+		FieldsSource:      SourceUnknown,
+		RequiredSource:    SourceUnknown,
+		RequiredUnknown:   []string{},
+		PlumbingNote:      BlockPlumbingNote,
+		LabelsSource:      SourceUnknown,
+		DescriptionSource: SourceUnknown,
 	}
 	if declared {
 		out.ConfigFile = decl.File
 	}
+	// The human documentation is read off disk and is independent of GraphQL:
+	// it must survive an unreadable object type, because "what is this block
+	// FOR" is answerable from the config alone.
+	out.Label, out.LabelPlural, out.LabelsSource = blockLabels(decl, declared)
+	out.Description, out.DescriptionSource, out.DescriptionKey = blockDescription(decl, declared)
+	out.DocsReason = blockDocsReason(slug, declared, decl, out.Label != nil, out.Description != nil)
+
 	obj := schema.Type(iface)
 	if obj == nil || obj.Kind != KindObject {
 		out.Reason = fmt.Sprintf("the GraphQL object type %q for blockType %q could not be read, "+
@@ -279,6 +452,67 @@ func BuildBlockSchema(slug, iface string, schema *Schema, decl BlockSourceDecl, 
 	}
 	out.Reason = blockRequiredReason(slug, declared, decl, out.RequiredUnknown)
 	return out
+}
+
+// blockLabels turns a block's on-disk `labels:` into the tri-state §7.8.3
+// requires: a pointer that is null when nothing declared it, together with the
+// source that answered. A block that declares only one of the two gets that
+// one; the missing half stays null rather than being derived from its sibling.
+func blockLabels(decl BlockSourceDecl, declared bool) (singular, plural *string, source string) {
+	if !declared || (decl.LabelSingular == "" && decl.LabelPlural == "") {
+		return nil, nil, SourceUnknown
+	}
+	if decl.LabelSingular != "" {
+		singular = strPtr(decl.LabelSingular)
+	}
+	if decl.LabelPlural != "" {
+		plural = strPtr(decl.LabelPlural)
+	}
+	return singular, plural, SourceProjectSource
+}
+
+// blockDescription returns the block's human description, its source and the
+// config key it was read from. All three move together: a description with no
+// key would imply Payload defines one, and Payload does not.
+func blockDescription(decl BlockSourceDecl, declared bool) (*string, string, string) {
+	if !declared || decl.Description == "" {
+		return nil, SourceUnknown, ""
+	}
+	return strPtr(decl.Description), SourceProjectSource, decl.DescriptionKey
+}
+
+// blockDocsReason states why a block has no label or no description — never
+// "no reason given", and never silence.
+//
+// The three cases are genuinely different and an agent acts differently on
+// each: a plugin block can never be documented from disk, a project block with
+// no `labels:` is a one-line edit away from having one, and a missing
+// description is missing because Payload has no field for it.
+func blockDocsReason(slug string, declared bool, decl BlockSourceDecl, haveLabel, haveDesc bool) string {
+	if haveLabel && haveDesc {
+		return ""
+	}
+	if !declared {
+		return fmt.Sprintf("blockType %q has no config on disk to read them from — normal for a "+
+			"plugin-provided block, which lives in node_modules — and the API publishes neither", slug)
+	}
+	missing := []string{}
+	if !haveLabel {
+		missing = append(missing, "no `labels:`")
+	}
+	if !haveDesc {
+		missing = append(missing, "no "+strings.Join(descriptionKeyNames(), " / "))
+	}
+	return fmt.Sprintf("%s declares blockType %q with %s", decl.File, slug, strings.Join(missing, " and "))
+}
+
+// descriptionKeyNames is config.DescriptionKeys minus the field-only
+// `admin.description`, which a Block cannot carry. internal/discovery must not
+// import internal/config (arch-lint rule 5's sibling: the pipeline stays
+// testable without a filesystem), so the block-level list is stated here and
+// pinned to config's by TestBlockDescriptionKeysMatchScanner.
+func descriptionKeyNames() []string {
+	return []string{"custom.description", "custom.docs", "custom.summary"}
 }
 
 // blockRequiredReason states, in plain words, why some of a block's fields
@@ -368,6 +602,8 @@ func (b *blockWalk) walk(obj *IntroType, prefix string, parent *string, depth in
 		}
 
 		entry.Required, entry.RequiredSource = b.required(f.Name, nonNull, depth, entry.Plumbing)
+		entry.Description, entry.DescriptionSource, entry.DescriptionKey =
+			b.description(f.Name, depth, entry.Plumbing)
 		entry.WriteShape = WriteShapeFor(entry.PayloadType, entry.Polymorphic, entry.HasMany)
 		b.fields = append(b.fields, entry)
 
@@ -384,6 +620,35 @@ func (b *blockWalk) sourceField(name string) (BlockSourceField, bool) {
 		return BlockSourceField{}, false
 	}
 	return b.decl.Field(name)
+}
+
+// description returns the field's own human instruction, read from
+// `admin: { description: '…' }` in the block's config.ts.
+//
+// It is null far more often than it is present, and every null is labelled:
+//
+//   - a plumbing key (id/blockName/blockType) is Payload's, not the author's,
+//     so no project can document it — "n/a", not "unknown";
+//   - a nested field (depth > 0) is out of reach, because §7.10's scanner
+//     reads only a block's top-level `fields:` array;
+//   - a plugin block has no config on disk at all.
+//
+// GraphQL is not a fallback here: introspection's own `description` is
+// Payload's schema-generator output, never the project's admin.description
+// (verified: the live CallToActionBlock's fields carry none), so reading it
+// would publish a machine string as if it were the author's instruction.
+func (b *blockWalk) description(name string, depth int, plumbing bool) (*string, string, string) {
+	if plumbing {
+		return nil, SourceNA, ""
+	}
+	if depth > 0 {
+		return nil, SourceUnknown, ""
+	}
+	src, ok := b.sourceField(name)
+	if !ok || src.Description == "" {
+		return nil, SourceUnknown, ""
+	}
+	return strPtr(src.Description), SourceProjectSource, src.DescriptionKey
 }
 
 // required implements this file's two-source ladder. Every branch returns a

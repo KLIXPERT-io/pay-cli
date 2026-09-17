@@ -9,11 +9,37 @@ is .blocks[FIELD] (slugs) and is always printed. WHAT IS INSIDE one is
 --block <slug>, which prints that block type's own fields, their types, their
 relationship targets and their required-ness with provenance.
 --blocks-detail inlines every one of them at once and is OFF by default on
-purpose. Measured on the live project: `pay describe pages` is 31 KB, and 70 KB
-with --blocks-detail, while `--field layout` goes from 4.4 KB to 43 KB — ten
+purpose. Measured on the live project: `pay describe pages` is 34 KB, and 81 KB
+with --blocks-detail, while `--field layout` goes from 7.2 KB to 53 KB — seven
 times the output of the most-run discovery command, to answer a question that
 is asked one block at a time. .block_schemas_available names every block whose
 schema is cached; --block <slug> prints the one you are about to write.
+
+WHAT A BLOCK IS FOR. .block_docs[SLUG] is printed beside every slug list and
+carries the block's human label and a one-sentence description, so an agent can
+choose between cta, content and mediaBlock without a second command.
+--block <slug> repeats it as .docs, and every field inside carries its own
+.description — the per-field instruction for filling that field in.
+These are the PROJECT'S OWN WORDS, read from the block's config.ts on disk:
+`labels: { singular, plural }` and a description under custom.description,
+custom.docs or custom.summary. Payload publishes neither over REST or GraphQL,
+and defines NO description field for a block at all (a Block's `admin` accepts
+only components/custom/disableBlockName/group/images/jsx), which is why the text
+lives in `custom` and why .description_key always names the key that answered.
+A project gets any of this only if its authors wrote it: null means nobody did,
+never that PayCLI failed, and .docs_reason says which of the two it is. A
+plugin's blocks live in node_modules, which is never scanned, so theirs are
+always null.
+
+PER-FIELD INSTRUCTIONS. For ordinary collection fields the same mechanism is
+Payload's own `admin: { description }`, which IS supported on a field. They are
+published as .field_docs[PATH] — a separate map, not a key on every field entry,
+because three more keys on ~90 entries would add ~16 KB to this command to
+publish null 90 times. .documented_paths lists them, .field_docs_source says
+whether the entity's config was read at all, and --field PATH answers for one
+field as .field_doc. Only an entity's TOP-LEVEL fields array is read; a field
+nested in a group, an array or a tab is reported as undocumented rather than
+given a path this scanner would have had to guess.
 
 Required-ness inside a block is tri-state and is null more often than on a
 collection field. Payload publishes NO input type for a block type, so §7.4's
@@ -78,6 +104,15 @@ EXAMPLES
   # what goes INSIDE one block type
   pay describe pages --block cta
 
+  # which block do I want? label + description for every one
+  pay describe pages --path .block_docs
+
+  # what is this one block FOR
+  pay describe pages --block cta --path .docs
+
+  # the project's own instructions for filling fields in
+  pay describe pages --path .field_docs
+
   # just that block's required fields
   pay describe pages --block mediaBlock --path .required_fields[]
 
@@ -104,7 +139,11 @@ COMMON MISTAKES
      Instead: Every blocks field has its own list: pages.layout and forms.fields share none. Read .blocks[FIELD].
   6. Writing a block with only the fields --block listed as required.
      Instead: Required-ness inside a block is often null (Payload publishes no input type for one). .block.required_unknown names every field nobody could answer for; .block.reason says why.
-  7. Treating blockName or id as content.
+  7. Reading a null label or description as a PayCLI failure.
+     Instead: Payload publishes neither and defines no description for a block at all. PayCLI reports what the project's authors wrote in the block's config.ts (`labels:` and custom.description / custom.docs / custom.summary); null means nobody wrote one. .docs_reason says which case it is.
+  8. Expecting a description on a plugin's blocks.
+     Instead: The form-builder's blocks live in node_modules, which §7.10 never scans, so their label and description are always null with labels_source "unknown". Read .block[].fields for what they contain.
+  9. Treating blockName or id as content.
      Instead: id, blockName and blockType are Payload plumbing. blockType is mandatory and must be the SLUG; id is server-generated; blockName is an optional admin label. .block.fields[].plumbing marks them.
 
 SEE ALSO

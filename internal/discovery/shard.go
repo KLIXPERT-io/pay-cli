@@ -161,6 +161,40 @@ type Shard struct {
 	BlockSchemas map[string]BlockTypeSchema `json:"block_schemas"`
 	// RequiredPaths is the flattened list of paths whose required is true.
 	RequiredPaths []string `json:"required_paths"`
+
+	// FieldDocs are the per-field human instructions this entity's own config
+	// declares — `admin: { description: '…' }` — keyed by field path.
+	//
+	// It is a SEPARATE map rather than three more keys on every field entry,
+	// and that is a size decision with a measured reason: `pay describe pages`
+	// carries ~90 field entries, so three keys each would add ~16 KB to the
+	// most frequently run command in order to publish null 90 times. Here the
+	// cost is proportional to what the project actually documented, and is
+	// nothing at all on a project that documented nothing.
+	//
+	// FieldDocsSource is what distinguishes "scanned, found none" from "never
+	// scanned": a producer records no map rather than an empty one.
+	FieldDocs map[string]FieldDoc `json:"field_docs,omitempty"`
+	// FieldDocsSource is "project-source" when this entity's config was read
+	// off disk and "unknown" when it was not — the normal case for a
+	// plugin-provided collection, whose config lives in node_modules.
+	FieldDocsSource string `json:"field_docs_source,omitempty"`
+	// FieldDocsFile is the absolute path the docs were read from, "" when
+	// there is none.
+	FieldDocsFile string `json:"field_docs_file,omitempty"`
+}
+
+// FieldDoc is one field's human documentation as the project wrote it.
+//
+// Key is always reported with Description: `admin.description` is Payload's
+// own field-level key, but PayCLI also accepts a `custom.*` neighbour, and an
+// agent is entitled to know which one a sentence came from.
+type FieldDoc struct {
+	Description string `json:"description"`
+	Key         string `json:"key"`
+	// Source is "project-source"; it exists so that a single entry is
+	// self-describing when it is lifted out of the map.
+	Source string `json:"source"`
 }
 
 // NewShard returns an empty shard for a slug.
@@ -245,6 +279,52 @@ func (s *Shard) blocksSourceSummary() string {
 	return SourceMixed
 }
 
+// SetFieldDocs records this entity's per-field documentation and the file it
+// was read from, keeping the three keys that describe it consistent.
+//
+// It is the only writer of them, so a producer cannot record documentation
+// without also recording where it came from (§7.8.3). Calling it with an empty
+// map still records the SOURCE: "the config was read and documents nothing" is
+// a different, and more useful, answer than "no config was read".
+func (s *Shard) SetFieldDocs(docs map[string]FieldDoc, file, source string) {
+	if s == nil {
+		return
+	}
+	s.FieldDocsSource = orUnknownSource(source)
+	s.FieldDocsFile = file
+	if len(docs) == 0 {
+		s.FieldDocs = nil
+		return
+	}
+	s.FieldDocs = docs
+}
+
+// FieldDocFor returns one field path's documentation and whether the project
+// declared any. The bool is the tri-state: false is "nobody wrote one", never
+// an empty sentence.
+func (s *Shard) FieldDocFor(path string) (FieldDoc, bool) {
+	if s == nil || len(s.FieldDocs) == 0 {
+		return FieldDoc{}, false
+	}
+	d, ok := s.FieldDocs[path]
+	return d, ok && d.Description != ""
+}
+
+// DocumentedPaths lists every field path carrying a description, sorted.
+func (s *Shard) DocumentedPaths() []string {
+	out := []string{}
+	if s == nil {
+		return out
+	}
+	for path, d := range s.FieldDocs {
+		if d.Description != "" {
+			out = append(out, path)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // BlockTypesFor returns the blockType slugs one field accepts, and whether
 // PayCLI knows. The bool is the §7.10 tri-state: false means unknown, not
 // "accepts nothing".
@@ -264,6 +344,9 @@ func (s *Shard) BlockSchemaFor(slug string) (BlockTypeSchema, bool) {
 		return BlockTypeSchema{}, false
 	}
 	bs, ok := s.BlockSchemas[slug]
+	if ok {
+		bs.normalizeDocs()
+	}
 	return bs, ok
 }
 
@@ -402,7 +485,9 @@ func HashShard(s *Shard) string {
 		BlockFields   map[string]BlockField      `json:"block_fields"`
 		BlockSchemas  map[string]BlockTypeSchema `json:"block_schemas"`
 		RequiredPaths []string                   `json:"required_paths"`
-	}{s.Slug, s.Fields, s.JoinFields, s.Blocks, s.BlocksSource, s.BlockFields, s.BlockSchemas, s.RequiredPaths}
+		FieldDocs     map[string]FieldDoc        `json:"field_docs"`
+	}{s.Slug, s.Fields, s.JoinFields, s.Blocks, s.BlocksSource, s.BlockFields, s.BlockSchemas,
+		s.RequiredPaths, s.FieldDocs}
 	b, err := json.Marshal(payload)
 	if err != nil {
 		// Field contains only JSON-safe types, so this cannot happen; hashing

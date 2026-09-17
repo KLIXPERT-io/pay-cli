@@ -113,6 +113,18 @@
         "cmd": "pay describe pages --block cta"
       },
       {
+        "why": "which block do I want? label + description for every one",
+        "cmd": "pay describe pages --path .block_docs"
+      },
+      {
+        "why": "what is this one block FOR",
+        "cmd": "pay describe pages --block cta --path .docs"
+      },
+      {
+        "why": "the project's own instructions for filling fields in",
+        "cmd": "pay describe pages --path .field_docs"
+      },
+      {
         "why": "just that block's required fields",
         "cmd": "pay describe pages --block mediaBlock --path .required_fields[]"
       },
@@ -153,6 +165,14 @@
       {
         "wrong": "Writing a block with only the fields --block listed as required.",
         "right": "Required-ness inside a block is often null (Payload publishes no input type for one). .block.required_unknown names every field nobody could answer for; .block.reason says why."
+      },
+      {
+        "wrong": "Reading a null label or description as a PayCLI failure.",
+        "right": "Payload publishes neither and defines no description for a block at all. PayCLI reports what the project's authors wrote in the block's config.ts (`labels:` and custom.description / custom.docs / custom.summary); null means nobody wrote one. .docs_reason says which case it is."
+      },
+      {
+        "wrong": "Expecting a description on a plugin's blocks.",
+        "right": "The form-builder's blocks live in node_modules, which §7.10 never scans, so their label and description are always null with labels_source \"unknown\". Read .block[].fields for what they contain."
       },
       {
         "wrong": "Treating blockName or id as content.",

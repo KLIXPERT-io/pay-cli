@@ -234,11 +234,21 @@ func seedBlockSchemas(t *testing.T, home, baseURL string) cache.Scope {
 			FieldsSource: discovery.SourceGraphQL, RequiredSource: discovery.SourceProjectSource,
 			ConfigFile: "/p/src/blocks/MediaBlock/config.ts", RequiredUnknown: []string{},
 			PlumbingNote: discovery.BlockPlumbingNote,
+			// §7.10's human half: what this block is CALLED and what it is
+			// FOR, in the project's own words, with the key they came from.
+			Label: strPtrTest("Media"), LabelPlural: strPtrTest("Media"),
+			LabelsSource:      discovery.SourceProjectSource,
+			Description:       strPtrTest("A single image or video from the media library."),
+			DescriptionSource: discovery.SourceProjectSource,
+			DescriptionKey:    "custom.description",
 			Fields: []discovery.BlockFieldSchema{
 				{Name: "media", Path: "media", PayloadType: discovery.TypeUpload,
 					Required: &yes, RequiredSource: discovery.SourceProjectSource,
 					RelationTo: []string{"media"}, RelationToSource: discovery.SourceGraphQL,
-					WriteShape: strPtrTest(discovery.WriteShapeID)},
+					WriteShape:        strPtrTest(discovery.WriteShapeID),
+					Description:       strPtrTest("The image or video to display. Pass a media document id."),
+					DescriptionSource: discovery.SourceProjectSource,
+					DescriptionKey:    "admin.description"},
 				{Name: "blockName", Path: "blockName", PayloadType: discovery.TypeText,
 					Required: &no, RequiredSource: discovery.SourcePayloadProtocol, Plumbing: true},
 				{Name: "blockType", Path: "blockType", PayloadType: discovery.TypeText,
@@ -249,6 +259,12 @@ func seedBlockSchemas(t *testing.T, home, baseURL string) cache.Scope {
 			Slug: "text", InterfaceName: "Text",
 			FieldsSource: discovery.SourceGraphQL, RequiredSource: discovery.SourceMixed,
 			RequiredUnknown: []string{"label"}, PlumbingNote: discovery.BlockPlumbingNote,
+			// The plugin block: no config on disk, so no label and no
+			// description — stated, never hidden.
+			LabelsSource:      discovery.SourceUnknown,
+			DescriptionSource: discovery.SourceUnknown,
+			DocsReason: "blockType \"text\" has no config on disk to read them from — normal for a " +
+				"plugin-provided block, which lives in node_modules — and the API publishes neither",
 			Reason: "required-ness for label is unknown: no project source declares blockType \"text\" " +
 				"(a plugin-provided block lives in node_modules, which is never scanned)",
 			Fields: []discovery.BlockFieldSchema{
@@ -517,5 +533,311 @@ func TestDescribeFieldBlocksDetailIsScopedToThatField(t *testing.T) {
 	}
 	if _, want := schemas["text"]; !want {
 		t.Errorf("block_schemas = %v, want this field's own text block", schemas)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// §7.10 human documentation, at the command level.
+//
+// The product question was "is there a description — what this block is FOR".
+// A slug and a field list do not answer it, and an agent choosing between cta,
+// content and mediaBlock was left guessing from names.
+// ---------------------------------------------------------------------------
+
+// TestDescribeBlockPrintsWhatTheBlockIsFor: --block must answer the question in
+// the project's own words, and must say which config key answered it — Payload
+// defines no description for a block, so an unlabelled sentence would imply a
+// standard field that does not exist.
+func TestDescribeBlockPrintsWhatTheBlockIsFor(t *testing.T) {
+	home := t.TempDir()
+	seedBlockSchemas(t, home, testBaseURL)
+
+	data := cliRun(t, invocation{
+		Home: home,
+		Args: []string{"describe", "pages", "--block", "mediaBlock"},
+		Env:  seededEnv(testBaseURL),
+	}).data(t)
+
+	docs, ok := data["docs"].(map[string]any)
+	if !ok {
+		t.Fatalf("docs = %#v, want the block's label and description", data["docs"])
+	}
+	if docs["label"] != "Media" || docs["labels_source"] != discovery.SourceProjectSource {
+		t.Errorf("docs label = %v (%v), want the project's own label", docs["label"], docs["labels_source"])
+	}
+	if docs["description"] != "A single image or video from the media library." {
+		t.Errorf("docs.description = %v", docs["description"])
+	}
+	if docs["description_key"] != "custom.description" {
+		t.Errorf("docs.description_key = %v, want the key the words came from", docs["description_key"])
+	}
+	if docs["description_source"] != discovery.SourceProjectSource {
+		t.Errorf("docs.description_source = %v", docs["description_source"])
+	}
+	// The same facts must be on the full schema, not only the shortcut.
+	block, _ := data["block"].(map[string]any)
+	if block["label"] != "Media" || block["description_key"] != "custom.description" {
+		t.Errorf("block = %v, want the documentation on the schema too", block)
+	}
+	// And the response must say where these come from, so that a null
+	// elsewhere reads as "the authors wrote none" rather than "PayCLI failed".
+	if note, _ := data["docs_note"].(string); !strings.Contains(note, "custom.description") {
+		t.Errorf("docs_note = %q, want it to name the keys PayCLI reads", note)
+	}
+}
+
+// TestDescribeBlockPrintsPerFieldInstructions: `admin.description` IS supported
+// on a field, and a per-field instruction is exactly what an agent needs while
+// filling one in.
+func TestDescribeBlockPrintsPerFieldInstructions(t *testing.T) {
+	home := t.TempDir()
+	seedBlockSchemas(t, home, testBaseURL)
+
+	data := cliRun(t, invocation{
+		Home: home,
+		Args: []string{"describe", "pages", "--block", "mediaBlock"},
+		Env:  seededEnv(testBaseURL),
+	}).data(t)
+
+	block, _ := data["block"].(map[string]any)
+	fields, _ := block["fields"].([]any)
+	media, _ := fields[0].(map[string]any)
+	if media["description"] != "The image or video to display. Pass a media document id." {
+		t.Errorf("media.description = %v", media["description"])
+	}
+	if media["description_key"] != "admin.description" {
+		t.Errorf("media.description_key = %v, want admin.description", media["description_key"])
+	}
+	// A field nobody documented is null with a source, never an empty string.
+	blockType, _ := fields[2].(map[string]any)
+	if blockType["description"] != nil {
+		t.Errorf("blockType.description = %v, want null", blockType["description"])
+	}
+	documented, _ := data["documented_fields"].([]any)
+	if len(documented) != 1 || documented[0] != "media" {
+		t.Errorf("documented_fields = %v, want [media]", data["documented_fields"])
+	}
+}
+
+// TestDescribeBlockOfAPluginIsHonestlyUnknown: the form-builder's blocks live
+// in node_modules, which §7.10 never scans. They must report null with a
+// stated reason — not a fabricated label, and not silence.
+func TestDescribeBlockOfAPluginIsHonestlyUnknown(t *testing.T) {
+	home := t.TempDir()
+	seedBlockSchemas(t, home, testBaseURL)
+
+	data := cliRun(t, invocation{
+		Home: home,
+		Args: []string{"describe", "pages", "--block", "text"},
+		Env:  seededEnv(testBaseURL),
+	}).data(t)
+
+	docs, ok := data["docs"].(map[string]any)
+	if !ok {
+		t.Fatalf("docs = %#v", data["docs"])
+	}
+	if docs["label"] != nil || docs["description"] != nil {
+		t.Errorf("docs = %v, want nulls: nothing on disk declares them", docs)
+	}
+	if docs["labels_source"] != discovery.SourceUnknown || docs["description_source"] != discovery.SourceUnknown {
+		t.Errorf("sources = %v/%v, want unknown twice", docs["labels_source"], docs["description_source"])
+	}
+	reason, _ := docs["docs_reason"].(string)
+	if !strings.Contains(reason, "node_modules") {
+		t.Errorf("docs_reason = %q, want the plugin case stated in plain words", reason)
+	}
+}
+
+// TestDescribePrintsBlockDocsBesideTheSlugList is the "choose without a second
+// call" requirement: wherever the block slugs are printed, the labels and
+// descriptions are printed with them.
+func TestDescribePrintsBlockDocsBesideTheSlugList(t *testing.T) {
+	home := t.TempDir()
+	seedBlockSchemas(t, home, testBaseURL)
+
+	for _, args := range [][]string{
+		{"describe", "pages"},
+		{"describe", "pages", "--field", "layout"},
+	} {
+		data := cliRun(t, invocation{Home: home, Args: args, Env: seededEnv(testBaseURL)}).data(t)
+		docs, ok := data["block_docs"].(map[string]any)
+		if !ok {
+			t.Fatalf("%v: block_docs = %#v, want one entry per block", args, data["block_docs"])
+		}
+		media, _ := docs["mediaBlock"].(map[string]any)
+		if media["label"] != "Media" || media["description"] == nil {
+			t.Errorf("%v: block_docs.mediaBlock = %v, want the label and description", args, media)
+		}
+		if media["fields_count"] == nil {
+			t.Errorf("%v: block_docs.mediaBlock has no fields_count", args)
+		}
+		// The compact view must not smuggle the whole field schema in: that is
+		// what --blocks-detail is for, and inlining it here is the 39 KB the
+		// default output was measured to avoid.
+		if _, leaked := media["fields"]; leaked {
+			t.Errorf("%v: block_docs.mediaBlock inlines the field schema", args)
+		}
+		if note, _ := data["block_docs_note"].(string); !strings.Contains(note, "config.ts") {
+			t.Errorf("%v: block_docs_note = %q", args, note)
+		}
+	}
+}
+
+// TestDescribeFieldDocsAreSeparateFromTheFieldEntries: an entity's per-field
+// instructions ride in their own map rather than as three more keys on ~90
+// field entries, which was measured to add ~16 KB to the most-run command in
+// order to publish null 90 times.
+func TestDescribeFieldDocsAreSeparateFromTheFieldEntries(t *testing.T) {
+	home := t.TempDir()
+	seedBlockSchemas(t, home, testBaseURL)
+
+	data := cliRun(t, invocation{
+		Home: home, Args: []string{"describe", "pages"}, Env: seededEnv(testBaseURL),
+	}).data(t)
+
+	if _, ok := data["field_docs"]; !ok {
+		t.Fatalf("no field_docs key: an agent must be able to ask without a presence check")
+	}
+	if data["field_docs_source"] != discovery.SourceUnknown {
+		t.Errorf("field_docs_source = %v, want unknown: this fixture has no project on disk",
+			data["field_docs_source"])
+	}
+	if _, ok := data["documented_paths"]; !ok {
+		t.Error("no documented_paths key")
+	}
+	fields, _ := data["fields"].([]any)
+	if len(fields) == 0 {
+		t.Fatal("no fields")
+	}
+	first, _ := fields[0].(map[string]any)
+	if _, leaked := first["description"]; leaked {
+		t.Errorf("field entry carries a description key: §7.8.2's key set is fixed and this is "+
+			"published as .field_docs instead; got %v", first)
+	}
+}
+
+// TestDescribeOneFieldCarriesItsOwnDoc: asking about one field must answer
+// with that field's instruction, and must distinguish "nobody documented this
+// field" from "PayCLI never saw the config".
+func TestDescribeOneFieldCarriesItsOwnDoc(t *testing.T) {
+	home := t.TempDir()
+	seedBlockSchemas(t, home, testBaseURL)
+
+	data := cliRun(t, invocation{
+		Home: home, Args: []string{"describe", "pages", "--field", "title"}, Env: seededEnv(testBaseURL),
+	}).data(t)
+
+	if data["field_doc"] != nil {
+		t.Errorf("field_doc = %v, want null on a fixture with no project source", data["field_doc"])
+	}
+	if data["field_doc_source"] != discovery.SourceUnknown {
+		t.Errorf("field_doc_source = %v, want unknown", data["field_doc_source"])
+	}
+}
+
+// seedFieldDocs rewrites the seeded pages shard with the per-field
+// instructions a project's own collection config would supply, so the
+// documented half of the tri-state is exercised end to end.
+func seedFieldDocs(t *testing.T, home, baseURL string) {
+	t.Helper()
+	sc := seedBlockSchemas(t, home, baseURL)
+
+	store := cache.New(filepath.Join(home, "cache"))
+	cm, ok, _ := store.ReadManifest(sc)
+	if !ok {
+		t.Fatal("seeded manifest is unreadable")
+	}
+	var m discovery.Manifest
+	if err := json.Unmarshal(cm.Raw, &m); err != nil {
+		t.Fatalf("manifest: %v", err)
+	}
+	raw, ok, _ := store.ReadShard(sc, cm, "pages", cache.KindCollection)
+	if !ok {
+		t.Fatal("seeded shard is unreadable")
+	}
+	var shard discovery.Shard
+	if err := json.Unmarshal(raw.Raw, &shard); err != nil {
+		t.Fatalf("shard: %v", err)
+	}
+	shard.SetFieldDocs(map[string]discovery.FieldDoc{
+		"title": {
+			Description: "Shown in listings and in the browser tab. Keep it under 60 characters.",
+			Key:         "admin.description",
+			Source:      discovery.SourceProjectSource,
+		},
+	}, "/p/src/collections/Pages/index.ts", discovery.SourceProjectSource)
+	shard.Finalize()
+
+	for i := range m.Collections {
+		if m.Collections[i].Slug == "pages" {
+			m.Collections[i].FieldsSHA256 = shard.SHA256
+		}
+	}
+	shard.Generation = m.Generation
+	if ok, warns := store.WriteSet(sc, cache.Set{
+		Generation: m.Generation,
+		Manifest:   &m,
+		Shards:     map[string]any{cache.ShardName("pages", cache.KindCollection): &shard},
+	}, payloadtest.Epoch); !ok {
+		t.Fatalf("re-seed failed: %v", warns)
+	}
+}
+
+// TestDescribePublishesCollectionFieldInstructions: `admin.description` is
+// Payload's own field-level key and documents a COLLECTION's fields with the
+// same mechanism it documents a block's. An agent filling `title` in should
+// be told what belongs there.
+func TestDescribePublishesCollectionFieldInstructions(t *testing.T) {
+	home := t.TempDir()
+	seedFieldDocs(t, home, testBaseURL)
+
+	data := cliRun(t, invocation{
+		Home: home, Args: []string{"describe", "pages"}, Env: seededEnv(testBaseURL),
+	}).data(t)
+
+	docs, ok := data["field_docs"].(map[string]any)
+	if !ok {
+		t.Fatalf("field_docs = %#v", data["field_docs"])
+	}
+	title, _ := docs["title"].(map[string]any)
+	if title["description"] != "Shown in listings and in the browser tab. Keep it under 60 characters." {
+		t.Errorf("field_docs.title = %v", title)
+	}
+	if title["key"] != "admin.description" || title["source"] != discovery.SourceProjectSource {
+		t.Errorf("field_docs.title provenance = %v/%v", title["key"], title["source"])
+	}
+	if data["field_docs_source"] != discovery.SourceProjectSource {
+		t.Errorf("field_docs_source = %v", data["field_docs_source"])
+	}
+	if data["field_docs_file"] != "/p/src/collections/Pages/index.ts" {
+		t.Errorf("field_docs_file = %v, want the file the text was read from", data["field_docs_file"])
+	}
+	if paths, _ := data["documented_paths"].([]any); len(paths) != 1 || paths[0] != "title" {
+		t.Errorf("documented_paths = %v", data["documented_paths"])
+	}
+
+	// One field at a time: the instruction must come back with --field too.
+	one := cliRun(t, invocation{
+		Home: home, Args: []string{"describe", "pages", "--field", "title"}, Env: seededEnv(testBaseURL),
+	}).data(t)
+	doc, _ := one["field_doc"].(map[string]any)
+	if doc["key"] != "admin.description" {
+		t.Errorf("field_doc = %v, want title's own instruction", one["field_doc"])
+	}
+	if one["field_doc_source"] != discovery.SourceProjectSource {
+		t.Errorf("field_doc_source = %v", one["field_doc_source"])
+	}
+
+	// A field the config did not document, on an entity whose config WAS read,
+	// is "n/a" — nobody wrote one — which is a different fact from "PayCLI
+	// never saw the config" and must not be reported as "unknown".
+	other := cliRun(t, invocation{
+		Home: home, Args: []string{"describe", "pages", "--field", "slug"}, Env: seededEnv(testBaseURL),
+	}).data(t)
+	if other["field_doc"] != nil {
+		t.Errorf("field_doc = %v, want null", other["field_doc"])
+	}
+	if other["field_doc_source"] != discovery.SourceNA {
+		t.Errorf("field_doc_source = %v, want %q", other["field_doc_source"], discovery.SourceNA)
 	}
 }
