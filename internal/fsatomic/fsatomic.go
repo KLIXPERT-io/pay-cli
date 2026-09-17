@@ -82,7 +82,7 @@ func write(path string, fill func(io.Writer) error, perm fs.FileMode) (err error
 	if err = tmp.Close(); err != nil {
 		return fmt.Errorf("fsatomic: close %s: %w", tmpName, err)
 	}
-	if err = os.Rename(tmpName, path); err != nil {
+	if err = renameWithRetry(tmpName, path); err != nil {
 		return fmt.Errorf("fsatomic: rename %s -> %s: %w", tmpName, path, err)
 	}
 	committed = true
