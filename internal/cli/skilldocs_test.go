@@ -19,7 +19,6 @@ import (
 // cannot rot the way an execution harness against live-only slugs would.
 
 var (
-	skillCmdLine  = regexp.MustCompile(`(?m)^\s*(pay\s.*)$`)
 	skillComment  = regexp.MustCompile(`\s+#.*$`)
 	skillRedirect = regexp.MustCompile(`[<>|].*$`)
 )

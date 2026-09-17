@@ -12,11 +12,13 @@ import (
 // fsatomic.ReadFile, which opens with FILE_SHARE_DELETE so the rename is not
 // denied in the first place. The retry only covers a handle opened by
 // something outside PayCLI — a virus scanner, an editor, Explorer's preview.
-// Deliberately short (5 attempts, ~75ms): the cache holds a file lock across
-// the write, so a long retry here starves other writers and converts an
-// ERROR_ACCESS_DENIED into a lock-acquisition timeout.
+// The budget is 12 attempts with linear backoff (~390ms total). That is sized
+// for genuinely lockless contention — TestWriteConcurrent has 24 goroutines
+// renaming onto one path — and costs the cache nothing, because the cache
+// serialises its writers with a scope lock and so reaches the retry only when
+// a handle is held by something outside PayCLI.
 const (
-	renameRetries = 5
+	renameRetries = 12
 	renameBackoff = 5 * time.Millisecond
 )
 

@@ -252,13 +252,6 @@ func (p Paths) Map() map[string]string {
 	}
 }
 
-func join(base string, elems ...string) string {
-	if base == "" {
-		return ""
-	}
-	return filepath.Join(append([]string{base}, elems...)...)
-}
-
 func appData(env Env, home string) string {
 	if v := env.Get("AppData"); v != "" {
 		return v

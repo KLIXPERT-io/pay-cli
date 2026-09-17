@@ -416,8 +416,13 @@ func TestAuthorizationValueAndFingerprint(t *testing.T) {
 	if Fingerprint("a") == Fingerprint("b") {
 		t.Error("Fingerprint collides on trivial inputs")
 	}
-	if Fingerprint(fixtureKey) != Fingerprint(fixtureKey) {
-		t.Error("Fingerprint is not stable")
+	// A golden value, not Fingerprint(x) != Fingerprint(x): comparing a pure
+	// function to itself in one process proves nothing and cannot fail. This
+	// pins the actual digest, so a change of hash or domain separator — which
+	// would silently invalidate every cache scope key — fails here.
+	const wantFP = "df3e3cca4b554863"
+	if got := Fingerprint(fixtureKey); got != wantFP {
+		t.Errorf("Fingerprint(fixtureKey) = %q, want %q", got, wantFP)
 	}
 	if strings.Contains(Fingerprint(fixtureKey), fixtureKey) {
 		t.Error("Fingerprint leaks the secret")

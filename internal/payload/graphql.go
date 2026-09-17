@@ -117,10 +117,7 @@ var (
 func IsReadOnlyGraphQL(doc string) bool {
 	stripped := gqlString.ReplaceAllString(doc, `""`)
 	stripped = gqlComment.ReplaceAllString(stripped, "")
-	if gqlWrite.MatchString(stripped) {
-		return false
-	}
-	return true
+	return !gqlWrite.MatchString(stripped)
 }
 
 // IntrospectionBlocked reports Payload's NoProductionIntrospection guard.

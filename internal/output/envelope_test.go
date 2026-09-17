@@ -13,9 +13,8 @@ import (
 
 const fixtureKey = "paycli-dev-key-deadbeefdeadbeef"
 
-func strptr(s string) *string { return &s }
-func intptr(i int) *int       { return &i }
-func i64ptr(i int64) *int64   { return &i }
+func intptr(i int) *int     { return &i }
+func i64ptr(i int64) *int64 { return &i }
 
 func fullSuccessEnvelope() *Envelope {
 	version := "3.86.0"

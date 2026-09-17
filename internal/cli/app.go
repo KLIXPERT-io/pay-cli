@@ -430,7 +430,7 @@ func (rt *Runtime) fail(err error) int {
 	// renderer: --errors-to and --quiet must apply to parse failures too.
 	if rt.Cfg == nil && rt.rootCmd != nil {
 		set := rt.rootCmd.PersistentFlags()
-		set.ParseErrorsWhitelist.UnknownFlags = true
+		set.ParseErrorsAllowlist.UnknownFlags = true
 		set.Init(set.Name(), pflag.ContinueOnError)
 		_ = set.Parse(rt.App.Args)
 	}

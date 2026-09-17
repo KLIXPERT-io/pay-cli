@@ -702,6 +702,12 @@ func TestCanonicalJSONRejectsJunk(t *testing.T) {
 // observe a mixed set, and writers never corrupt each other.
 func TestConcurrentStoreHammer(t *testing.T) {
 	s, sc := newTestStore(t)
+	// newTestStore's 2s budget is tuned for the lock-timeout test, not for 8
+	// writers x 25 iterations each fsyncing a file and its directory. On the
+	// Windows runner that work is slow enough that a waiter legitimately
+	// exceeds 2s and the run fails as a timeout rather than on the property
+	// this test exists to check: that readers never observe a mixed set.
+	s.LockTimeout = 60 * time.Second
 	const (
 		writers    = 8
 		readers    = 8

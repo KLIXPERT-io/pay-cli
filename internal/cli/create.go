@@ -45,11 +45,6 @@ func (w *writeData) register(cmd *cobra.Command) {
 	fl.StringArrayVar(&w.setJSON, "set-json", nil, "k=JSON field (repeatable, no coercion — the escape hatch)")
 }
 
-// empty reports whether the caller supplied no body at all.
-func (w *writeData) empty() bool {
-	return w == nil || (w.alt == "" && w.data == "" && w.dataFile == "" && len(w.set) == 0 && len(w.setJSON) == 0)
-}
-
 // build merges the data flags into one request body and applies §9.10.1's
 // typing and coercion. It performs no network I/O.
 func (w *writeData) build(d *Deps, t *collTarget, shard *discovery.Shard) (map[string]any, []output.Warning, error) {

@@ -352,13 +352,6 @@ func (t *collTarget) flags() discovery.Flags {
 	return t.Coll.Flags
 }
 
-func (t *collTarget) singular() string {
-	if t == nil || t.Coll == nil {
-		return ""
-	}
-	return t.Coll.Labels.Singular
-}
-
 // dateFields prefers the shard (authoritative) and falls back to the index.
 func (t *collTarget) dateFields() []string {
 	if t == nil {
@@ -1023,7 +1016,7 @@ func dateFieldDefaultedWarning(t *collTarget, field string, published bool, sinc
 	if until != nil {
 		parts = append(parts, fmt.Sprintf("--until resolved against %s <= %s", field, *until))
 	}
-	why := fmt.Sprintf("%s is the default date field", t.Slug)
+	var why string
 	alt := "publishedAt"
 	if field == "publishedAt" {
 		why = fmt.Sprintf("%s has a publishedAt field and the query is published-scoped", t.Slug)
