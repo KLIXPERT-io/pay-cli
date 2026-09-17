@@ -1,0 +1,87 @@
+Answer "what can I do here?" in one call — cache-backed and offline after the first run.
+
+This is the first command to run on an unfamiliar project. It is size-tiered,
+because a 400 KB capability dump is functionally the same as no capability dump.
+data.collection_slugs is NEVER truncated: only the per-collection detail array is
+capped, and the truncation warning carries the exact command that pages past it.
+
+SYNOPSIS
+  pay explain [--slim|--full] [--collection SLUG]
+  pay explain --section connection|collections|globals|commands|query_syntax|exit_codes|gotchas [--offset N] [--limit M] [--grep PATTERN]
+
+DISCOVERED IN THIS PROJECT
+  profile=default base_url=- discovery_revision=-
+  cache is cold — run 'pay discover' to populate
+
+FLAGS
+    --collection COLLECTION      one entity, in full detail
+    --full                       every field of every entity; refuses above --max-bytes
+    --grep GREP                  case-insensitive substring over the slug and both labels (not a regex)  [grammar plain case-insensitive substring; not a regex]
+    -h, --help                   help for explain
+    --limit N                    return at most M entries of the selected section (0 = tier default)
+    --max-bytes N                size ceiling for --full  [default 409600; range 1024..]
+    --offset N                   skip N entries of the selected section
+    --section SECTION            connection|collections|globals|commands|query_syntax|exit_codes|gotchas  [values connection|collections|globals|commands|query_syntax|exit_codes|gotchas]
+    --slim                       connection + every slug + exit codes only (< 1.5 KB)
+
+  Root flags (every command): run 'pay --help' for the full list.
+    --profile --base-url --output --path --quiet --verbose --timeout --deadline
+    --no-cache --refresh --yes --dry-run --no-audit --no-redact --errors-to
+
+OUTPUT
+  data_kind: capabilities
+  .data = {"connection":{…},"collection_slugs":[…all of them…],"collections":[…detail…],"globals":[…],"query_syntax":{…},"exit_codes":[…],"gotchas":[…]}
+  Envelope: {"ok":true,"v":1,"command":"…","data_kind":"…","data":…,"meta":{…},"warnings":[]}
+
+EXIT CODES
+    0   success
+    2   auth — missing, invalid, locked or unverifiable credential
+    5   validation / bad input — the request was never worth sending
+    6   network — DNS, TLS, timeout or a 5xx from the server
+    9   configuration — no base_url, unknown profile, secret in plaintext
+    10  capability — this project does not support the operation
+  
+  Full table: pay explain --section exit_codes
+
+EXAMPLES
+  # the whole picture, budgeted for a context window
+  pay explain
+
+  # smallest useful answer: connection + every slug
+  pay explain --slim
+
+  # page past the 40-entry detail cap
+  pay explain --section collections --offset 40
+
+  # one entity in full
+  pay explain --collection pages
+
+  # teach yourself the filter syntax
+  pay explain --section query_syntax
+
+  # the whole exit-code table
+  pay explain --section exit_codes
+
+  # the verified footguns for this Payload version
+  pay explain --section gotchas
+
+  # find the CRM collections on a 49-collection project
+  pay explain --section collections --grep crm
+
+
+COMMON MISTAKES
+  1. Reading `.collections` and concluding those are all the collections.
+     Instead: That array is capped at 40. `.collection_slugs` always holds every slug; page the detail with --section collections --offset N.
+  2. Running `--full` on a large project and hitting exit 5.
+     Instead: That is the point — it refuses instead of flooding you. Use the default tier, or --collection SLUG for the one you need.
+  3. Calling it before every command.
+     Instead: It is cached for 10 minutes and served offline; call it once per session, and again after a schema change with --refresh.
+  4. Using --grep as a regex.
+     Instead: It is a plain substring over the slug and both labels. Use --path or jq for anything richer.
+
+SEE ALSO
+  pay collections
+  pay describe <collection>
+  pay doctor
+  pay discover --refresh
+

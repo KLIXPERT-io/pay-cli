@@ -1,0 +1,40 @@
+{
+  "ok": false,
+  "v": 1,
+  "command": "whoami",
+  "data_kind": "error",
+  "error": {
+    "code": "config_missing",
+    "exit": 9,
+    "message": "no base_url is configured for profile \"default\"",
+    "hint": "pay auth login --profile default --base-url http://localhost:3000, or set PAY_BASE_URL",
+    "retriable": false,
+    "confidence": "certain",
+    "fields": [],
+    "did_you_mean": [],
+    "docs": "pay explain --section exit_codes"
+  },
+  "meta": {
+    "request_id": "<id>",
+    "cli_version": "<version>",
+    "profile": "default",
+    "base_url": "",
+    "api_path": "/api",
+    "auth_mode": "auto",
+    "payload_version": null,
+    "payload_version_source": "",
+    "locale": {
+      "requested": null,
+      "fallback": null
+    },
+    "date_field": null,
+    "since": null,
+    "until": null,
+    "duration_ms": 0,
+    "http_requests": 0,
+    "retries": 0,
+    "bytes": 0,
+    "dry_run": false
+  },
+  "warnings": []
+}

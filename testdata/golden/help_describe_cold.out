@@ -1,0 +1,77 @@
+Print one entity's full field schema: types, operators, required, relations.
+
+Every field entry carries the same 26 keys, using null or the sentinels "n/a" /
+"unknown" where a fact could not be learned, so `jq '.data.fields[] |
+select(.required)'` is total and never needs a presence check.
+
+SYNOPSIS
+  pay describe <collection|global> [--field PATH] [--required-only] [--queryable] [--examples] [--sample]
+
+DISCOVERED IN THIS PROJECT
+  profile=default base_url=- discovery_revision=-
+  cache is cold — run 'pay discover' to populate
+
+FLAGS
+    --examples                   add generated, copy-pasteable commands for this entity
+    --field FIELD                describe one field path in full (dotted, e.g. hero.links.link.url)
+    -h, --help                   help for describe
+    --queryable                  only fields usable in --where
+    --required-only              only fields whose required is known true
+    --sample                     also fetch one real document (one extra request)
+
+  Root flags (every command): run 'pay --help' for the full list.
+    --profile --base-url --output --path --quiet --verbose --timeout --deadline
+    --no-cache --refresh --yes --dry-run --no-audit --no-redact --errors-to
+
+OUTPUT
+  data_kind: schema
+  .data = {"kind":"collection","entity":{…},"fields":[{"path":"title","payload_type":"text","required":true,"queryable":true,"operators":["equals","contains",…]}],"required_paths":["title"]}
+  Envelope: {"ok":true,"v":1,"command":"…","data_kind":"…","data":…,"meta":{…},"warnings":[]}
+
+EXIT CODES
+    0   success
+    2   auth — missing, invalid, locked or unverifiable credential
+    6   network — DNS, TLS, timeout or a 5xx from the server
+    9   configuration — no base_url, unknown profile, secret in plaintext
+    10  capability — this project does not support the operation
+  
+  Full table: pay explain --section exit_codes
+
+EXAMPLES
+  # everything about a collection
+  pay describe pages
+
+  # what must I supply to create one?
+  pay describe pages --required-only --path .fields[].path
+
+  # what can I filter on?
+  pay describe pages --queryable --path .queryable_paths[]
+
+  # one field in full, including its operators
+  pay describe pages --field title
+
+  # the blockTypes a blocks field accepts
+  pay describe pages --field layout
+
+  # schema plus a real document
+  pay describe pages --sample
+
+  # generated commands for this collection
+  pay describe pages --examples --path .examples[]
+
+
+COMMON MISTAKES
+  1. Reading `required: null` as "not required".
+     Instead: null means PayCLI never learned it. Attempt the write; a 400 names the missing fields precisely.
+  2. Using a join field in --select.
+     Instead: Join fields are read-only and are requested with --joins 'field:limit=5,sort=-createdAt'; .join_fields lists them.
+  3. Assuming `sortable: true` was measured.
+     Instead: Sortability is heuristic unless sortable_confidence says otherwise; Payload silently ignores an unsortable field.
+  4. Expecting `blocks` to be filled on every project.
+     Instead: Block slugs are not in the API; a null means no source resolved them. .blocks_source says which source did.
+
+SEE ALSO
+  pay collections
+  pay explain --collection <slug>
+  pay find <collection> --select …
+

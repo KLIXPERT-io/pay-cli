@@ -1,0 +1,164 @@
+{
+  "ok": true,
+  "v": 1,
+  "command": "describe",
+  "data_kind": "schema",
+  "target": {
+    "kind": "collection",
+    "slug": "pages"
+  },
+  "data": {
+    "entity": {
+      "date_fields": [
+        "publishedAt",
+        "updatedAt",
+        "createdAt"
+      ],
+      "features": [
+        "versions",
+        "drafts",
+        "duplicate"
+      ],
+      "fields_count": 26,
+      "fields_source": "graphql",
+      "flags": {
+        "upload": false,
+        "auth": false,
+        "use_api_key": false,
+        "versions": true,
+        "drafts": true,
+        "trash": false,
+        "folders": false,
+        "duplicate": true,
+        "orderable": false,
+        "endpoints_disabled": null
+      },
+      "flags_source": {
+        "upload": "graphql",
+        "auth": "graphql",
+        "use_api_key": "graphql",
+        "versions": "graphql",
+        "drafts": "graphql",
+        "trash": "graphql",
+        "folders": "graphql",
+        "duplicate": "graphql",
+        "orderable": "probe",
+        "endpoints_disabled": "unknown"
+      },
+      "graphql": {
+        "singular": "Page",
+        "plural": "Pages",
+        "count": "countPages",
+        "source": "access-zip"
+      },
+      "id_type": "number",
+      "id_type_source": "graphql",
+      "internal": false,
+      "kind": "content",
+      "labels_source": "derived",
+      "ops": [
+        "read",
+        "create",
+        "update",
+        "delete",
+        "versions"
+      ],
+      "permissions": {
+        "create": true,
+        "read": true,
+        "update": true,
+        "delete": true,
+        "read_versions": true,
+        "unlock": false,
+        "field_level": false
+      },
+      "plural": "Pages",
+      "publishable": true,
+      "publishable_reason": null,
+      "reachability": "ok",
+      "singular": "Page",
+      "slug": "pages",
+      "title_field": "title"
+    },
+    "field": {
+      "name": "title",
+      "path": "title",
+      "graphql_path": "title",
+      "parent": null,
+      "payload_type": "text",
+      "payload_type_confidence": "graphql",
+      "graphql_type": "String",
+      "json_type": "string",
+      "required": true,
+      "required_source": "graphql-input",
+      "has_many": false,
+      "localized": null,
+      "localized_source": "unknown",
+      "read_only": false,
+      "options": null,
+      "options_source": "n/a",
+      "relation_to": null,
+      "relation_to_source": "n/a",
+      "polymorphic": false,
+      "write_shape": null,
+      "queryable": true,
+      "operators": [
+        "equals",
+        "not_equals",
+        "like",
+        "contains",
+        "in",
+        "not_in",
+        "all"
+      ],
+      "sortable": true,
+      "sortable_confidence": "heuristic",
+      "hook_mutated": "unknown",
+      "label": "Title"
+    },
+    "kind": "collection",
+    "where_examples": [
+      "pay find pages --where 'title equals VALUE'",
+      "pay find pages --where 'title not_equals VALUE'",
+      "pay find pages --where 'title like VALUE'",
+      "pay find pages --where 'title contains VALUE'"
+    ]
+  },
+  "meta": {
+    "request_id": "<id>",
+    "cli_version": "<version>",
+    "profile": "default",
+    "base_url": "http://localhost:3900",
+    "api_path": "/api",
+    "auth_mode": "anonymous",
+    "payload_version": null,
+    "payload_version_source": "",
+    "locale": {
+      "requested": null,
+      "fallback": null
+    },
+    "date_field": null,
+    "since": null,
+    "until": null,
+    "duration_ms": 0,
+    "http_requests": 0,
+    "retries": 0,
+    "bytes": 0,
+    "cache": {
+      "discovery": "hit",
+      "age_s": 0,
+      "ttl_s": 600,
+      "fingerprint": "4b2e259e863d403780378cec88b4230bdd1376bc41ef0717ca2e246d977d0eb0",
+      "revalidated": false
+    },
+    "discovery_revision": "4b2e259e-c04adfc6",
+    "dry_run": false
+  },
+  "warnings": [
+    {
+      "code": "anonymous_session",
+      "message": "No credential resolved for profile \"default\"; running unauthenticated. Permissions, the collection list and field visibility are all reduced.",
+      "hint": "pay auth login --profile default --base-url http://localhost:3900"
+    }
+  ]
+}
