@@ -73,10 +73,11 @@ sboms:
 # `cosign verify-blob` against the detached ${artifact}.sig + ${artifact}.pem,
 # so those two must keep being produced.
 #
-# --bundle is explicit because cosign v3's sign-blob always writes a bundle and
-# defaults the path to "", which fails with
-# `create bundle file: open : no such file or directory`. The bundle itself is
-# unused by the updater; naming it is simply what v3 requires.
+# This requires cosign v2: v3 REMOVED --output-signature and --output-certificate
+# (its sign-blob only emits a --bundle), so the detached pair the updater checks
+# no longer exists there. release.yml pins cosign to v2 accordingly. Migrating
+# to the bundle format means changing verify.go's verification path, which is
+# security-critical and wants its own review - tracked as a follow-up.
 signs:
   - cmd: cosign
     certificate: "${artifact}.pem"
@@ -84,7 +85,6 @@ signs:
       - sign-blob
       - "--output-certificate=${certificate}"
       - "--output-signature=${signature}"
-      - "--bundle=${artifact}.bundle"
       - "${artifact}"
       - "--yes"
     artifacts: checksum
