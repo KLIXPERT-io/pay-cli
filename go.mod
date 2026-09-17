@@ -17,4 +17,10 @@ require (
 	github.com/danieljoos/wincred v1.2.3 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	golang.org/x/exp/typeparams v0.0.0-20231108232855-2478ac86f678 // indirect
+	golang.org/x/sync v0.22.0 // indirect
+	golang.org/x/tools v0.49.0 // indirect
+	honnef.co/go/tools v0.8.1 // indirect
 )
+
+tool honnef.co/go/tools/cmd/staticcheck

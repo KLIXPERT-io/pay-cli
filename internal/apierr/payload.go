@@ -199,7 +199,7 @@ func validationError(r Response, fields []Field) *Error {
 	e := New(CodeValidationFailed, "%d field(s) are invalid%s.", len(sorted), onCollection(r.Collection))
 	e.Fields = sorted
 	if len(sorted) > 0 && !AnySent(sorted) {
-		e.WithHint("The stored document is already invalid on %d field(s) you did not send - Payload validates the whole document on update, so your change was rejected by pre-existing state, not by your input. Retry with --draft to store the change without validation, or repair the listed fields in the same request.", len(sorted))
+		_ = e.WithHint("The stored document is already invalid on %d field(s) you did not send - Payload validates the whole document on update, so your change was rejected by pre-existing state, not by your input. Retry with --draft to store the change without validation, or repair the listed fields in the same request.", len(sorted))
 	}
 	return e
 }
@@ -294,9 +294,9 @@ func finish(e *Error, r Response, payloadErrorName string) *Error {
 	if e.Code == CodeNonJSONResponse {
 		h.BodyExcerpt = excerpt(r.Body)
 	}
-	e.WithHTTP(h)
+	_ = e.WithHTTP(h)
 	if r.IncludeRaw {
-		e.WithRaw(r.Body, r.NoRedact)
+		_ = e.WithRaw(r.Body, r.NoRedact)
 	}
 	// Prefer the server's own message when it is present and not one of
 	// Payload's generic masks (§11.2): PayCLI's diagnosis becomes the hint.

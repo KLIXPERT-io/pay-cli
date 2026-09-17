@@ -50,7 +50,7 @@ disagreement is resolved here. Where a recommendation was discarded, the reason 
 | 15 | Output format auto-switching to `table` on a TTY (gsc, commands, gopkg) | **Never.** `json` always, unless `--output` / `PAY_OUTPUT` / `defaults.output` says otherwise; `PAY_HUMAN=1` opts into TTY switching | Agent harnesses frequently allocate a PTY, so TTY-dependent output makes the same command emit different bytes in different harnesses. |
 | 16 | Secret storage: OS keychain with silent file fallback (gsc) vs file-first with opt-in keychain (gopkg) | **File-first** (`credentials.json`, 0600); keychain only when explicitly requested | Re-verified on this machine: `go-keyring` fails even with a live D-Bus session bus (`org.freedesktop.secrets was not provided by any .service files`), and a silent fallback means the secret lands in a different place depending on invisible environment state. |
 | 17 | Config dir on macOS: `os.UserConfigDir()` (gsc) vs `~/.config/pay` everywhere (gopkg) | **`~/.config/pay` on both Linux and macOS** | gsc's split between `DataDir()` and `Path()` puts config and cache in different trees on macOS; one guessable path is worth more to an agent than platform idiom. |
-| 18 | Skills: shell out to `npx skills add` (agentux considered it) vs native Go + `go:embed` | **Native, embedded, offline**; a top-level `skills/` directory is **not** created | `go:embed` cannot reach a parent directory, so a second copy would drift from the binary it documents, and the whole point is that the skill describes the installed binary. |
+| 18 | Skills: shell out to `npx skills add` (agentux considered it) vs native Go + `go:embed` | **Native, embedded, offline** — and, by **product-owner override**, the skill lives at the repository root in `skills/pay/`, not nested under `internal/` | The original decision refused a root `skills/` because `go:embed` cannot reach a *parent* directory, so a root copy would have meant a *second* copy that drifts. That reasoning is about the **copy**, not the location, and it is answered by making `skills/` itself a Go package (`skills/embed.go`, `//go:embed all:pay`): the embed reaches a *child*, `internal/skills` imports it, and there is still exactly one tree. What the move buys is the `skills` convention — `npx skills add https://github.com/KLIXPERT-io/pay-cli/skills --skill pay` resolves against a root `skills/` and nothing else — so non-Go agents get the skill without a PayCLI install. `skills/embed_test.go` enforces the invariant the old rule enforced by construction: the embed root **is** the on-disk directory, byte for byte, and the repository contains exactly one `SKILL.md`. |
 | 19 | Generated `SKILL.md` per project | **No.** Static `SKILL.md` + generated `references/PROJECT.md` with a staleness banner | A generated SKILL.md is undiffable in git and invites an agent to trust a stale snapshot as gospel. |
 | 20 | Auto-update default | **Off.** `pay update check` is cheap; applying requires opt-in or an explicit command | An agent invokes `pay` hundreds of times per task, and a binary that mutates itself mid-task can change the (discovery-driven) command surface between two calls. |
 | 21 | agentux's "auto-append `draft=true` to reads that follow a write in the same process" | **Rejected** | Hidden cross-command state makes identical commands return different data, which is exactly the nondeterminism this spec exists to eliminate. |
@@ -240,6 +240,11 @@ pay-cli/
 │   │                             # globals_header.json, versions_list.json, locale_all.json,
 │   │                             # manifest.json, manifest_id_unknown.json, fields_pages.json
 │   └── golden/                   # <case>.out / .err / .exit for CLI-level tests
+├── skills/                       # the agent skill — ROOT level, one copy, §14
+│   ├── embed.go                  # package skills: //go:embed all:pay, exports FS()
+│   ├── embed_test.go             # asserts the embedded tree IS this directory
+│   └── pay/                      SKILL.md
+│                                 references/{query-syntax,errors,recipes,gotchas}.md
 └── internal/
     ├── buildinfo/      buildinfo.go  buildinfo_test.go
     ├── apierr/         code.go  error.go  exit.go  payload.go  diagnose.go  *_test.go
@@ -265,8 +270,7 @@ pay-cli/
     ├── audit/          audit.go  rotate.go  audit_test.go
     ├── safety/         risk.go  confirm.go  dryrun.go  blastradius.go  *_test.go
     ├── skills/         embed.go  install.go  manifest.go  project.go  *_test.go
-    │   └── assets/pay/ SKILL.md
-    │                   references/{query-syntax,errors,recipes,gotchas}.md
+    │                   # installer only: the bytes come from the root skills package
     ├── update/         update.go  state.go  detach.go  managed.go  verify.go
     │                   lock_unix.go  lock_windows.go  platform_unix.go  platform_windows.go  *_test.go
     ├── payloadtest/    server.go  fixture.go  golden.go  clock.go      # imported only by _test.go
@@ -1293,6 +1297,7 @@ miss, not a parse error.
   "join_fields": ["activities","bookings","memberships","enrolments"],
   "blocks": null,
   "blocks_source": "unknown",
+  "block_schemas": null,
   "required_paths": ["firstName", "email"]
 }
 ```
@@ -1413,6 +1418,145 @@ then pin them: pay config set profiles.local.blocks.layout cta,content,mediaBloc
 by a unit test over the hint strings: every `hint` that contains a `pay …` command is executed against
 the fixture manifest in the test suite and must produce a non-empty answer for the situation that
 emitted it.
+
+### 7.10a Block field schemas — what is INSIDE a block
+
+§7.10 answers *which* blocks a field accepts. It does not answer what one contains, and a
+slug alone is not enough to construct a block: an agent that knows `cta` exists still cannot
+write one.
+
+**The shape is readable from the block's own GraphQL OBJECT type** — the union member, not an
+input type. Verified live:
+
+```
+__type(name:"CallToActionBlock").fields -> richText: JSON, links: [CallToActionBlock_Links!],
+                                           id: String, blockName: String, blockType: String
+__type(name:"MediaBlock").fields        -> media: Media, id, blockName, blockType
+__type(name:"Textarea").fields          -> name: String!, label, width: Float, defaultValue,
+                                           required: Boolean, id, blockName, blockType
+```
+
+Every union member reachable from a blocks field is therefore added to §7.4's leaf set and
+resolved **in the same adaptive batch as every other leaf** — one more alias each, never one
+more request each — together with its nested group/array row types, bounded at three levels.
+A block's `mutation{Type}Input` is deliberately NOT requested: Payload does not generate one.
+Measured on the live project: 17 → 18 requests, 7 → 8 GraphQL batches, 683 KB → 698 KB.
+
+**Required-ness is the one fact GraphQL cannot fully answer.** Payload generates no
+INPUT_OBJECT for a block type (the blocks mutation argument is the `JSON` scalar), so §7.4's
+`mutation{Singular}Input` NON_NULL trick has nothing to read — every INPUT_OBJECT in the live
+schema was enumerated and there is no `CallToActionBlock` / `Textarea` input. Two partial
+sources remain and each is labelled:
+
+1. **`NON_NULL` on the block object type** ⇒ `required: true`, `required_source: "graphql"`.
+   Payload emits it only for `required: true` (verified: `Textarea.name` is `String!`). Its
+   **absence proves nothing**: a draft-enabled collection force-nullables every field beneath
+   it, which is why `MediaBlock.media` is `required: true` in
+   `src/blocks/MediaBlock/config.ts` and still nullable in the schema.
+2. **The block's own `config.ts`**, harvested by §7.10's scan, which also records whether the
+   whole `fields:` array was parseable. Only a **complete** declaration may answer `false` for
+   a field it does not list; `CallToAction`'s array contains `linkGroup({…})`, a helper call
+   the scanner never expands, so `links` stays unknown rather than becoming "not required".
+
+Anything neither source answers is `required: null`, `required_source: "unknown"`, listed in
+`required_unknown[]`, explained by `reason`, and surfaced as a `block_required_unknown`
+warning. It is never defaulted to `false`.
+
+`id`, `blockName` and `blockType` carry `plumbing: true` and
+`required_source: "payload-protocol"`: they are Payload's wire format rather than this
+project's content, and `blockType` is the only one that is mandatory to send.
+
+The result is persisted per entity as `block_schemas`, **keyed by slug** (§7.8.2), with
+`block_fields[].slug_interface_names` recording which union member each slug came from. A
+shard written before the key existed decodes unchanged and reports the interiors as not
+discovered — `null` there means "not discovered", never "this block has no fields".
+
+`pay describe <c> --block <slug>` prints one block's schema; `--blocks-detail` inlines every
+one of them and is **opt-in**, because measured on the live project it takes
+`pay describe pages` from 34 KB to 81 KB and `pay describe pages --field layout` from 7.2 KB
+to 53 KB (re-measured after §7.10b added the documentation keys; it was 31 KB → 70 KB and
+4.4 KB → 43 KB before).
+
+### 7.10b What a block IS — labels, descriptions and per-field instructions
+
+A slug says a block *exists*. It does not say what it is **for**, and an agent choosing between `cta`,
+`content` and `mediaBlock` was left inferring intent from three names. `interface_name` and a field
+list do not help: both describe shape, not purpose.
+
+**The API cannot answer this at all.** A block's `labels` are admin-UI metadata and appear in neither
+a REST response nor GraphQL introspection, and Payload defines **no description field for a block
+whatsoever** — verified: a `Block`'s `admin` accepts only
+`components / custom / disableBlockName / group / images / jsx`, and `tsc --noEmit` rejects
+`admin: { description }` on one. So the same §7.10 scan that recovers the slugs recovers the words,
+from the same object literal, in the same pass — no extra file read and no extra request:
+
+| Fact | Read from | Reported as |
+|---|---|---|
+| block label | `labels: { singular, plural }` | `label`, `label_plural`, `labels_source` |
+| what the block is FOR | `custom.description`, else `custom.docs`, else `custom.summary` | `description`, `description_source`, **`description_key`** |
+| per-field instruction | a field's `admin: { description }` (also `custom.*`) | that field's `description`, `description_source`, `description_key` |
+
+`custom` is Payload's sanctioned arbitrary-metadata escape hatch and is **free-form**, so every
+project spells this differently. Three keys are accepted and **the one that answered is always
+reported**: `description_key: "custom.description"` is the difference between reporting a project
+convention and implying Payload has a standard field. `admin.description` outranks the `custom.*`
+neighbours because on a *field* it is Payload's own documented key; a Block cannot carry it.
+
+**Tri-state, as everywhere else.** An absent label or description is `null` with source `"unknown"`,
+never a title-cased guess at the slug — `mediaBlock` → "Media Block" is a label the admin UI never
+shows. `docs_reason` says which of the two cases it is and is empty **exactly** when both were found:
+
+* **a plugin's block** (`textarea`, from `@payloadcms/plugin-form-builder`) has no config on disk at
+  all, because node_modules is deliberately never scanned. This is expected and is **stated**:
+  `blockType "textarea" has no config on disk to read them from — normal for a plugin-provided block,
+  which lives in node_modules — and the API publishes neither`.
+* **a project block whose author wrote only half** names the declaring file and the keys PayCLI reads,
+  so the fix is one line in a file the message points at.
+
+**A project gets any of this only if its authors wrote it.** PayCLI reports what is there and invents
+nothing; that sentence is in `pay help describe`, in `data.block_docs_note` and in the shipped skill,
+so a `null` is never read as a PayCLI failure.
+
+**Where it surfaces.** The rule is that the words appear **wherever the slugs appear**, because
+needing a second command per candidate is the cost this exists to remove:
+
+* `pay describe <e>` and `pay describe <e> --field <blocks-field>` gain `block_docs[SLUG]` — a compact
+  `{label, label_plural, labels_source, description, description_source, description_key,
+  fields_count, docs_reason}` per slug — plus `block_docs_note`. **Measured on the live project:
+  `pay describe pages` 31 KB → 34 KB, `describe forms` 25 KB → 30 KB (9 plugin blocks, each carrying
+  its reason), `--field layout` 4.4 KB → 7.2 KB.** The field *schemas* stay behind `--blocks-detail`
+  (70 KB → 81 KB) exactly as before: this key carries what is needed to CHOOSE, never what is needed
+  to CONSTRUCT.
+* `pay describe <e> --block <slug>` prints the full schema (label/description on `.block`), repeats
+  the compact form as `.docs` so `--path .docs.description` works, and lists
+  `documented_fields[]` — every field of that block carrying an instruction.
+* `pay explain --collection <slug>` gets the same keys.
+* shell completion of `--block` renders the label/description as the candidate's description, so
+  `pay describe pages --block <TAB>` shows what each block is for.
+
+**Ordinary collection fields get the same treatment**, because `admin: { description }` is one
+mechanism documenting both and a per-field instruction ("Pass a media document id") is precisely what
+an agent needs while filling a field in. The scan therefore also reads `**/collections/**` and
+`**/globals/**`, with two constraints:
+
+1. **A collection slug is never a block slug.** A `CollectionConfig` and a `Block` are the same object
+   literal to a byte scanner — both carry `slug:` and `fields:` — so the candidate's *directory*
+   decides which list its decls join. Without that, `pages` would be offered as a `blockType` and
+   Payload would silently drop the row (§9.7).
+2. **Top-level `fields:` only.** A field inside a group, an array or a tab is not reached and is
+   reported as undocumented rather than given a dotted path the scanner would have had to guess.
+
+They are published as **`field_docs[PATH]`** — a separate map, deliberately *not* three more keys on
+each field entry: `pay describe pages` carries ~90 field entries, so that would have added **~16 KB**
+to the most-run command in order to publish `null` 90 times. `documented_paths[]` lists them,
+`field_docs_file` names the file, and `--field PATH` answers for one field as `field_doc`. §7.8.2's
+fixed 26-key field entry is unchanged.
+
+`field_docs_source` is a three-way answer and each value is a different fact:
+`"project-source"` with entries (read the config, here is what it says), `"project-source"` with none
+(read the config, nobody documented anything), `"unknown"` (never saw a config — the normal case for
+a plugin-provided collection such as `forms`, whose config lives in node_modules). Collapsing the
+middle case into the last would turn a project's deliberate silence into a PayCLI failure.
 
 ### 7.11 `payload_version` and `db_adapter`
 
@@ -1869,6 +2013,18 @@ pay versions get     <collection>|--global SLUG <versionId> [--depth]
 pay versions restore <collection>|--global SLUG <versionId> [--draft] [--dry-run] [--yes]
 pay versions diff    <collection> <vA> <vB>          # client-side JSON diff
 
+# §9.11's edit pipeline. Every `pay blocks` verb reads ONE document from stdin, edits it and
+# writes it to stdout; `pay apply` is the only stage that reaches the network.
+pay blocks ls  [--field PATH] [--long]
+pay blocks mv  <selector> (--at N | --before SEL | --after SEL | --first | --last) [--field PATH]
+pay blocks rm  <selector>... [--all] [--field PATH]
+pay blocks add <blockType> [--data JSON|@F] [--set k=v]... [--set-json k=JSON]... [--name NAME]
+               [--at N | --before SEL | --after SEL | --first | --last] [--field PATH]
+pay blocks cp  <selector> [--at N | --before SEL | --after SEL | --first | --last] [--field PATH]
+pay blocks set <selector> [--set k=v]... [--set-json k=JSON]... [--unset KEY]... [--field PATH]
+pay apply [collection] [id] [--field PATH]... [--all-fields] [--depth] [--select]
+          [--draft|--publish|--unpublish] [--locale CODE] [--no-echo-check] [--dry-run] [--yes]
+
 pay raw <GET|POST|PATCH|DELETE> <path> [--query k=v]... [--data JSON] [--file F] [--raw-body]
 pay config get|set|unset|list|paths|explain
 pay skills install [--global] [--dir PATH] [--agent a,b|all] [--force] [--with-project-context]
@@ -2167,6 +2323,79 @@ fails with `feature_unavailable` (exit 10) carrying `publishable_reason` and the
 read-them-from-source instruction, because no amount of retrying will make an unknown `blockType`
 knowable from the API.
 
+### 9.11 The edit pipeline (`pay blocks` + `pay apply`)
+
+Reordering blocks on a page is the single most common content edit and the one Payload's REST API
+models worst: there is no per-row endpoint, so the only way to move one block is to replace the whole
+array. Before §9.11 that meant read to a file, edit with jq, write back with `--set-json` — three
+commands, a temp file, and four failure modes PayCLI can see and jq cannot:
+
+| Failure | Why it happens | What §9.11 does |
+|---|---|---|
+| The moved row lands past its anchor | "move row 0 after row 3" is an insert at index **2** of the remaining three rows, not at 4; the anchor shifts when the row is lifted out | `rows.Move` resolves the anchor **before** the removal and recomputes the destination **after** it; every direction is a table test |
+| A duplicated row overwrites its original | Payload matches a row by `id`, so a copy that kept its ids rewrites the row it came from and the array **loses** an entry | `pay blocks cp` strips every `id` at every depth, unconditionally |
+| A mistyped `blockType` vanishes | Payload **drops** a row whose `blockType` it does not recognise and still answers **201** | `block_type_unknown` (exit 10) against the field's own resolved slugs (§7.10), with `did_you_mean` |
+| A relationship is written back expanded | a read above `--depth 0` replaces `"media": 7` with the whole media document | `populated_relationship` warning naming `field[i].key`, hinting at `--depth 0` |
+
+**9.11.1 The stage contract.** Each stage reads one JSON value on stdin and writes one envelope on
+stdout. It accepts a PayCLI envelope **or** a bare document, which is what makes the family usable
+against a file. Three rules hold at every hand-off:
+
+1. **An upstream failure stays an upstream failure.** A stage whose stdin holds `ok:false` re-emits
+   that error with its original `error.code` and exit status, `command` set to the stage that could
+   not run. Re-classifying it locally would turn a `doc_not_found` from `pay get` into a
+   `bad_request_body` from `pay blocks mv`, sending the caller to fix a selector that was right.
+2. **Upstream warnings are carried forward.** A locale-fallback warning raised by the read is about
+   the document the LAST stage will write.
+3. **The edit is recorded, not the document.** Every stage appends to `envelope.edits`
+   (§10.1), which is the list `pay apply` narrows its write to.
+
+**9.11.2 `edits` is why `apply` is safe.** The obvious implementation of "write the piped document
+back" is to PATCH all of it, and that also rewrites `_status`, `createdAt` and every expanded
+relationship — a one-block reorder silently republishing a page. `apply` instead sends
+`{field: value}` for each path in `edits.fields`, so a pipeline that moved one block writes one key.
+`--all-fields` opts out, drops `id`/`createdAt`/`updatedAt` and **warns**; `--field` narrows further
+and can never widen beyond the piped document. An envelope with no `edits` is `no_edits` (exit 5),
+never a silent fall back to writing everything.
+
+`apply` is `pay update <id>` with the body assembled from a pipe: same L1 risk level, same
+confirmation policy, same audit record, same echo-diff, and literally the same `runUpdateOne`. A
+global target routes to `POST /globals/{slug}` and keeps `globals update`'s **L2** level, because
+going through a pipeline must not make a global cheaper to confirm.
+
+**9.11.3 The selector grammar** is closed, for the same reason `--path` is not jq (conflict 31):
+
+```
+N | -N | first | last | id:VALUE | name:VALUE | type:SLUG | type:SLUG[N]
+```
+
+`--before`/`--after` take a **selector**, not an index, because "after the media block" survives the
+next stage editing the array and "at index 3" does not. A selector matching several rows is
+`selector_ambiguous` (exit 5) with every match listed as a ready-to-paste selector; `rm --all` is the
+only way to mean "every match". A selector matching none is `selector_no_match` (exit **4**, the same
+not-found class a missing document gets) with the rows that DO exist in the hint. `pay blocks ls`
+emits, per row, the shortest selector that addresses it and no other — `id:` whenever the row has
+one, because an index is stale the moment another stage inserts or removes a row.
+
+**9.11.4 Field resolution** is explicit `--field` → the project's schema → the document's own shape.
+The last step picks the one array whose rows **all** carry a `blockType` and warns
+(`blocks_field_inferred`); more than one candidate is `field_ambiguous` (exit 5) with both named,
+never a guess. A collection with no discovered schema still edits, with
+`local_validation_skipped` saying that `blockType` was not checked.
+
+**9.11.5 Every `pay blocks` verb is L0** and uses a lenient runtime: no profile, no credential and no
+cache are required, because none of them is needed to rewrite an array. Discovery is used when it is
+there and is what turns a typo into a local failure. `pay blocks ls` alone ends the pipe — its data is
+a listing, reported as `op_result` so it cannot be mistaken for a document to apply.
+
+**9.11.6 `--data @-` unwraps an envelope.** `pay get … | pay update … --data @-` is the shape every
+caller reaches for first, and it used to POST `{"ok":true,"data":{…},"meta":{…}}` as the request
+body — which Payload accepts with a 2xx and silently drops every key of. The write verbs now detect a
+PayCLI envelope (`ok` **and** `v` **and** `data_kind` **and** `meta` together, four keys no Payload
+document carries) and use its `.data`, with an `envelope_unwrapped` warning; an error envelope fails
+with the upstream's own code. Detection requires all four so a collection with a boolean `ok` column
+is never mistaken for an envelope.
+
 ---
 
 ## 10. Output
@@ -2231,6 +2460,11 @@ Rules:
   `count`. Payload's `{docs:…}` wrapper is unwrapped into `data` + `page`; a global's
   `{result, message}` is normalised to `data` so globals and collections look identical to a caller.
 * `page` is present iff `data_kind == "doc_list"`. `truncated` is one boolean requiring no arithmetic.
+* `edits` is present **only** on §9.11's edit pipeline — the `pay blocks` verbs and `pay apply`. It is
+  `{fields, ops}`: `fields` are the document paths the pipeline changed, in first-touched order and
+  deduplicated, and `ops` is every transform applied, oldest first. `pay apply` builds its PATCH body
+  from `fields` alone, which is what keeps a one-block reorder from also rewriting `_status` and
+  every expanded relationship. A command that talks to Payload never sets it.
 * `next` is present iff there is a useful follow-up. `next.cmd` is a **literally runnable string with
   the current flags and profile already baked in** — the agent copies it rather than reconstructing it.
   `next.reason` ∈ `more_pages` | `retry_failed_subset` | `needs_auth` | `verify_write` |
@@ -2793,20 +3027,43 @@ returns 500, not 404, for a missing file) and resolves `--size thumbnail` via
 
 ## 14. Skills
 
-The canonical source lives **only** at `internal/skills/assets/pay/`, compiled in with
-`//go:embed all:assets`. No top-level `skills/` directory is created — `go:embed` cannot reach a
-parent directory, so a second copy would inevitably drift from the binary it documents, and
-`pay skills print` makes it redundant anyway.
+The canonical source lives **only** at the repository root, under `skills/pay/`. That directory is
+*itself* a Go package — `skills/embed.go`, `package skills`, `//go:embed all:pay` — which is what
+makes "root-level" and "exactly one copy" compatible: `go:embed` cannot reach a *parent* directory,
+but it reaches a *child* freely, so the package that embeds the tree lives in the tree's own
+directory. `internal/skills` imports it (`root "github.com/KLIXPERT-io/pay-cli/skills"`) and owns
+installation, manifests and `references/PROJECT.md`; it embeds nothing itself.
+
+The bytes compiled into `pay` are therefore read from the files a reader of the repository sees.
+There is no sync step, no generated mirror, and nothing to drift — see §1 conflict 18, whose original
+embedded-only decision this supersedes without giving up its guarantee.
 
 ```
-internal/skills/assets/pay/
-├── SKILL.md                      static, hand-written, git-reviewed
-└── references/
-    ├── query-syntax.md
-    ├── errors.md                 the taxonomy, exit-code table, and the six body shapes
-    ├── recipes.md                paginate, bulk safely, upload, versions, drafts
-    └── gotchas.md
+skills/                           ROOT level (not under internal/)
+├── embed.go                      package skills — //go:embed all:pay, exports FS()
+├── embed_test.go                 asserts embed root == this directory, and that the
+│                                 repository contains exactly one SKILL.md
+└── pay/                          <- `--skill pay`
+    ├── SKILL.md                  static, hand-written, git-reviewed
+    └── references/
+        ├── query-syntax.md
+        ├── errors.md             the taxonomy, exit-code table, and the six body shapes
+        ├── recipes.md            paginate, bulk safely, upload, versions, drafts
+        └── gotchas.md
 ```
+
+The layout is the `skills` convention (github.com/anthropics/skills), the same one
+`KLIXPERT-io/gsc-cli` ships as `skills/gsc-cli/SKILL.md`, so there are two install routes and they
+read the *same* files:
+
+```sh
+pay skills install                                                            # offline, from the binary
+npx skills add https://github.com/KLIXPERT-io/pay-cli/skills --skill pay       # from the repository
+```
+
+`pay skills install` remains the primary route and is fully offline: it needs no network, no Node
+and no `git`, it writes `.pay-skill.json` so reinstalls can tell an upgrade from a user edit, and it
+is the only route that can also generate `references/PROJECT.md` for the project at hand.
 
 `SKILL.md` frontmatter:
 

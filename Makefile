@@ -102,9 +102,11 @@ vet: toolchain ## go vet
 	go vet ./...
 
 .PHONY: lint
-lint: vet ## staticcheck + the §3.1 architectural rules
-	@if go tool staticcheck --version >/dev/null 2>&1; then go tool staticcheck ./...; \
-	 else echo "note: go tool staticcheck is unavailable; skipping"; fi
+lint: vet ## staticcheck + golangci-lint + the §3.1 architectural rules
+	go tool staticcheck ./...
+	@if command -v golangci-lint >/dev/null 2>&1; then \
+	  golangci-lint config verify && golangci-lint run ./...; \
+	 else echo "note: golangci-lint is not installed; CI runs it. go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest"; fi
 	./scripts/arch-lint.sh
 
 .PHONY: arch-lint

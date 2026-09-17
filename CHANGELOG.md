@@ -32,6 +32,104 @@ improving an `error.message` or `hint` are **not** breaking. Never branch on
 
 ## [Unreleased]
 
+### Added
+
+- **An edit pipeline for blocks: `pay blocks` + `pay apply`.** Reordering or dropping a block used to
+  be read-to-a-file, edit-with-jq, write-back-with-`--set-json`. It is now one pipe:
+
+  ```sh
+  pay get pages 12 --depth 0 | pay blocks mv type:cta --after type:mediaBlock | pay apply --yes
+  ```
+
+  Six local verbs — `ls`, `mv`, `rm`, `add`, `cp`, `set` — each read ONE document from stdin, edit a
+  blocks (or array) field, and write the document to stdout. They compose in any order and any
+  number; `pay apply` is the only stage that reaches the network. All six are L0 and need no profile,
+  credential or cache, so they also work on a JSON file.
+- **`pay apply` writes only the fields the pipeline touched.** Each transform records what it changed
+  in the new `envelope.edits` (`{fields, ops}`), and `apply` builds its PATCH from `edits.fields`
+  alone. PATCHing the whole piped document back would also rewrite `_status`, `createdAt` and every
+  relationship a read above `--depth 0` expanded into a full document — a one-block reorder silently
+  republishing a page. `--all-fields` opts out and warns. Otherwise `apply` *is* `pay update <id>`:
+  same risk level, confirmation, audit record, echo-diff and code path. The collection and id come
+  from the piped envelope's `target`, so nothing is retyped at the end of a pipe.
+- **A closed selector grammar** — `N`, `-N`, `first`, `last`, `id:V`, `name:V`, `type:SLUG`,
+  `type:SLUG[N]` — shared by every verb. `--before`/`--after` take a *selector*, not an index,
+  because "after the media block" survives another stage editing the array and "at index 3" does not.
+  `pay blocks ls` prints, per row, the shortest selector that addresses it and no other (an `id:`
+  whenever the row has one). A selector matching several rows where one was required is
+  `selector_ambiguous` (exit 5) listing every match ready to paste; `rm --all` is the only way to
+  mean "every match". No match is `selector_no_match` (exit 4) with the rows that do exist.
+- **Four Payload footguns are now local failures or warnings**, all verified live: the anchor index
+  shifting once a moved row is lifted out (`mv` resolves the anchor before the removal and recomputes
+  after it); a duplicated row keeping its `id` and therefore *overwriting* its original rather than
+  adding a row (`cp` strips every `id` at every depth); an unknown `blockType`, which Payload **drops
+  while answering 201** (`block_type_unknown`, exit 10, with `did_you_mean` from the field's own
+  slugs); and a relationship expanded by a read above `--depth 0` being written back as an object
+  (`populated_relationship` warning naming `field[i].key`).
+- **`--data @-` now unwraps a piped PayCLI envelope.** `pay get … | pay update … --data @-` used to
+  send `{"ok":true,"data":{…},"meta":{…}}` as the request body, which Payload accepts with a 2xx and
+  silently drops every key of — the write looked successful and changed nothing. It now uses the
+  envelope's `.data` and raises `envelope_unwrapped`; an error envelope fails with the *upstream's*
+  code. Detection needs `ok`, `v`, `data_kind` and `meta` together, so a collection with a boolean
+  `ok` field is never mistaken for an envelope.
+- New error codes: `selector_no_match` (exit 4), `selector_ambiguous`, `field_ambiguous`, `no_input`,
+  `no_edits` (exit 5) and `block_type_unknown` (exit 10). New warning codes:
+  `blocks_field_inferred`, `field_absent`, `populated_relationship`, `envelope_unwrapped`,
+  `local_validation_skipped`, `apply_all_fields`, `upstream_error`.
+- New envelope key `edits`, present only on the edit-pipeline commands.
+
+- **Block field schemas.** `pay describe <entity> --block <slug>` prints what is INSIDE a
+  block type — its fields, their payload types, enum options, relationship targets and
+  `write_shape` — instead of only the slugs a blocks field accepts. `--blocks-detail`
+  inlines every reachable block type on the collection and `--field` views; it is opt-in
+  because the interiors are several times the size of the rest of the answer.
+  `id`, `blockName` and `blockType` are marked `plumbing: true`: they are Payload's keys,
+  not content, and `blockType` is the one that must be sent.
+- Block schemas are discovered from each union member's GraphQL OBJECT type in the same
+  adaptive `__type` batch as every other leaf — measured on the live project, that is one
+  extra batched request (17 → 18 requests, 7 → 8 GraphQL batches, +15 KB; cold-run time
+  stays inside run-to-run noise: 3.9–5.0 s before, 4.1–5.3 s after, three runs each) — and
+  are persisted in the field shard as `block_schemas`, so they are cache-backed and
+  offline after discovery.
+- Required-ness inside a block is tri-state with provenance: a GraphQL `NON_NULL` proves
+  `required: true`, the block's own `config.ts` supplies the rest for a project's own
+  blocks, and anything neither source answers stays `null` with `required_source:
+  "unknown"`, a named `required_unknown` list, a reason, and a `block_required_unknown`
+  warning. Payload publishes no input type for a block type, so it is never guessed.
+- `shard.block_fields[].slug_interface_names` records which GraphQL union member each
+  blockType slug came from. A shard written before `block_schemas` existed still decodes
+  and still resolves slugs; the block interiors report as not discovered until the next
+  `pay discover --refresh`.
+- **What a block IS.** Every block type now carries the project's own `label`,
+  `label_plural` and a one-sentence `description`, so an agent can choose between `cta`,
+  `content` and `mediaBlock` without opening the project. They are printed as
+  `block_docs[SLUG]` beside every slug list (`pay describe <e>`,
+  `pay describe <e> --field <blocks-field>`, `pay explain --collection <e>`), repeated as
+  `.docs` by `--block <slug>`, and rendered as the shell-completion description of
+  `--block`. Measured: `pay describe pages` 31 KB → 34 KB, `describe forms` 25 KB → 30 KB;
+  the field *schemas* stay behind `--blocks-detail` (70 KB → 81 KB).
+- Each field inside a block carries its own `description` from Payload's
+  `admin: { description }` — the per-field instruction for filling that field in — and
+  `--block <slug>` lists `documented_fields[]`.
+- The same mechanism documents ordinary collection and global fields, published as
+  `field_docs[PATH]` with `documented_paths`, `field_docs_file` and `field_docs_source`
+  (and `field_doc` on `--field PATH`). It is a separate map rather than three more keys on
+  every field entry: §7.8.2's fixed 26-key field entry is unchanged, and adding them there
+  would have cost ~16 KB on `pay describe pages` to publish `null` 90 times.
+- Provenance is tri-state throughout. Payload publishes a block's labels nowhere and
+  defines **no** description field for a block at all (a `Block`'s `admin` accepts only
+  components/custom/disableBlockName/group/images/jsx), so the text is read from the
+  block's `config.ts` — `labels: { singular, plural }` plus `custom.description`,
+  `custom.docs` or `custom.summary` — and `description_key` always names the key that
+  answered. A project gets this only if its authors wrote it: absent means `null` with
+  source `"unknown"` and a `docs_reason`, never a title-cased guess at the slug. A plugin's
+  blocks live in `node_modules`, which is never scanned, so theirs are always `null`.
+- The §7.10 scan now also reads `**/collections/**` and `**/globals/**`, for field
+  documentation only. A collection's slug is never admitted to the block vocabulary — a
+  `CollectionConfig` and a `Block` are the same object literal to a byte scanner — and only
+  an entity's top-level `fields:` array is read, so a field nested in a group, an array or
+  a tab is reported as undocumented rather than given a guessed path.
+
 ## [0.1.0] — unreleased
 
 First public release.

@@ -89,6 +89,12 @@ type Paths struct {
 	ConfigFile string
 
 	Sources map[string]string
+
+	// goos is the platform these paths were resolved FOR, captured so the
+	// derived-path helpers below join with the same separator rules PathsFor
+	// used. Unexported: it is an implementation detail, not part of the
+	// documented Paths surface, and Map() must stay at 8 entries.
+	goos string
 }
 
 // PathsFor is the pure form of path resolution: everything it needs is an
@@ -103,14 +109,14 @@ type Paths struct {
 // the more specific variable still wins over it — that is the conventional
 // reading, and it lets a test pin PAY_HOME while redirecting just the cache.
 func PathsFor(env Env, goos, home string) Paths {
-	p := Paths{Sources: map[string]string{}}
+	p := Paths{Sources: map[string]string{}, goos: goos}
 	payHome := env.Get("PAY_HOME")
 
 	set := func(field *string, source *string, value, src string) bool {
 		if value == "" {
 			return false
 		}
-		*field = filepath.Clean(value)
+		*field = cleanFor(goos, value)
 		*source = src
 		return true
 	}
@@ -122,47 +128,47 @@ func PathsFor(env Env, goos, home string) Paths {
 	case set(&p.ConfigDir, &cfgSrc, env.Get("PAY_CONFIG_DIR"), "env:PAY_CONFIG_DIR"):
 	case set(&p.ConfigDir, &cfgSrc, payHome, "env:PAY_HOME"):
 	case goos == "windows":
-		set(&p.ConfigDir, &cfgSrc, filepath.Join(appData(env, home), "pay"), "windows:%AppData%")
+		set(&p.ConfigDir, &cfgSrc, joinFor(goos, appData(env, home), "pay"), "windows:%AppData%")
 	default:
 		if xdg := env.Get("XDG_CONFIG_HOME"); xdg != "" {
-			set(&p.ConfigDir, &cfgSrc, filepath.Join(xdg, "pay"), "env:XDG_CONFIG_HOME")
+			set(&p.ConfigDir, &cfgSrc, joinFor(goos, xdg, "pay"), "env:XDG_CONFIG_HOME")
 		} else {
-			set(&p.ConfigDir, &cfgSrc, filepath.Join(home, ".config", "pay"), "default")
+			set(&p.ConfigDir, &cfgSrc, joinFor(goos, home, ".config", "pay"), "default")
 		}
 	}
 
 	// cache dir
 	switch {
 	case set(&p.CacheDir, &cacheSrc, env.Get("PAY_CACHE_DIR"), "env:PAY_CACHE_DIR"):
-	case set(&p.CacheDir, &cacheSrc, join(payHome, "cache"), "env:PAY_HOME"):
+	case set(&p.CacheDir, &cacheSrc, joinUnder(goos, payHome, "cache"), "env:PAY_HOME"):
 	case goos == "windows":
-		set(&p.CacheDir, &cacheSrc, filepath.Join(localAppData(env, home), "pay", "cache"), "windows:%LocalAppData%")
+		set(&p.CacheDir, &cacheSrc, joinFor(goos, localAppData(env, home), "pay", "cache"), "windows:%LocalAppData%")
 	default:
 		if xdg := env.Get("XDG_CACHE_HOME"); xdg != "" {
-			set(&p.CacheDir, &cacheSrc, filepath.Join(xdg, "pay"), "env:XDG_CACHE_HOME")
+			set(&p.CacheDir, &cacheSrc, joinFor(goos, xdg, "pay"), "env:XDG_CACHE_HOME")
 		} else {
-			set(&p.CacheDir, &cacheSrc, filepath.Join(home, ".cache", "pay"), "default")
+			set(&p.CacheDir, &cacheSrc, joinFor(goos, home, ".cache", "pay"), "default")
 		}
 	}
 
 	// state dir
 	switch {
 	case set(&p.StateDir, &stateSrc, env.Get("PAY_STATE_DIR"), "env:PAY_STATE_DIR"):
-	case set(&p.StateDir, &stateSrc, join(payHome, "state"), "env:PAY_HOME"):
+	case set(&p.StateDir, &stateSrc, joinUnder(goos, payHome, "state"), "env:PAY_HOME"):
 	case goos == "windows":
-		set(&p.StateDir, &stateSrc, filepath.Join(localAppData(env, home), "pay", "state"), "windows:%LocalAppData%")
+		set(&p.StateDir, &stateSrc, joinFor(goos, localAppData(env, home), "pay", "state"), "windows:%LocalAppData%")
 	default:
 		if xdg := env.Get("XDG_STATE_HOME"); xdg != "" {
-			set(&p.StateDir, &stateSrc, filepath.Join(xdg, "pay"), "env:XDG_STATE_HOME")
+			set(&p.StateDir, &stateSrc, joinFor(goos, xdg, "pay"), "env:XDG_STATE_HOME")
 		} else {
-			set(&p.StateDir, &stateSrc, filepath.Join(home, ".local", "state", "pay"), "default")
+			set(&p.StateDir, &stateSrc, joinFor(goos, home, ".local", "state", "pay"), "default")
 		}
 	}
 
-	p.ConfigFile = filepath.Join(p.ConfigDir, ConfigFileName)
+	p.ConfigFile = joinFor(goos, p.ConfigDir, ConfigFileName)
 	fileSrc := "default"
 	if v, ok := env.Lookup("PAY_CONFIG"); ok {
-		p.ConfigFile = filepath.Clean(v)
+		p.ConfigFile = cleanFor(goos, v)
 		fileSrc = "env:PAY_CONFIG"
 	}
 
@@ -191,7 +197,7 @@ func (p Paths) WithConfigFile(path string) Paths {
 		return p
 	}
 	out := p.clone()
-	out.ConfigFile = filepath.Clean(path)
+	out.ConfigFile = cleanFor(p.goos, path)
 	out.Sources["config_file"] = "flag"
 	return out
 }
@@ -202,7 +208,7 @@ func (p Paths) WithCacheDir(dir string) Paths {
 		return p
 	}
 	out := p.clone()
-	out.CacheDir = filepath.Clean(dir)
+	out.CacheDir = cleanFor(p.goos, dir)
 	out.Sources["cache_dir"] = "config:[cache].dir"
 	return out
 }
@@ -217,20 +223,20 @@ func (p Paths) clone() Paths {
 }
 
 // CredentialsFile is §4.4's 0600 credential store.
-func (p Paths) CredentialsFile() string { return filepath.Join(p.ConfigDir, CredentialsFileName) }
+func (p Paths) CredentialsFile() string { return joinFor(p.goos, p.ConfigDir, CredentialsFileName) }
 
 // AuditFile is §14's 0600 append-only audit log.
-func (p Paths) AuditFile() string { return filepath.Join(p.ConfigDir, AuditFileName) }
+func (p Paths) AuditFile() string { return joinFor(p.goos, p.ConfigDir, AuditFileName) }
 
 // CacheRoot is the generation directory; `rm -rf` on it must only ever cost
 // time (§4.1).
-func (p Paths) CacheRoot() string { return filepath.Join(p.CacheDir, CacheGeneration) }
+func (p Paths) CacheRoot() string { return joinFor(p.goos, p.CacheDir, CacheGeneration) }
 
 // ScopeDir is the cache directory for one §8.1 scope key.
-func (p Paths) ScopeDir(scope string) string { return filepath.Join(p.CacheRoot(), scope) }
+func (p Paths) ScopeDir(scope string) string { return joinFor(p.goos, p.CacheRoot(), scope) }
 
 // UpdateStateFile is §15's self-update bookkeeping.
-func (p Paths) UpdateStateFile() string { return filepath.Join(p.StateDir, UpdateStateFileName) }
+func (p Paths) UpdateStateFile() string { return joinFor(p.goos, p.StateDir, UpdateStateFileName) }
 
 // Map renders the paths for `pay config paths --output json`.
 func (p Paths) Map() map[string]string {
@@ -244,13 +250,6 @@ func (p Paths) Map() map[string]string {
 		"state_dir":         p.StateDir,
 		"update_state_file": p.UpdateStateFile(),
 	}
-}
-
-func join(base string, elems ...string) string {
-	if base == "" {
-		return ""
-	}
-	return filepath.Join(append([]string{base}, elems...)...)
 }
 
 func appData(env Env, home string) string {

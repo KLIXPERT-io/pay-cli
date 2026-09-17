@@ -117,7 +117,7 @@ func TestLongGetIsPromotedBeforeSending(t *testing.T) {
 func TestLengthRejectionTriggersThePromotionOnce(t *testing.T) {
 	s := newStub(t, func(w http.ResponseWriter, r *http.Request, n int) {
 		if n == 1 {
-			w.WriteHeader(431)
+			w.WriteHeader(http.StatusRequestHeaderFieldsTooLarge)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -165,7 +165,7 @@ func TestPromotedRequestStaysRetriable(t *testing.T) {
 	// idempotency-safe, so a promoted read may still be retried.
 	s := newStub(t, func(w http.ResponseWriter, _ *http.Request, n int) {
 		if n <= 2 {
-			w.WriteHeader(503)
+			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")

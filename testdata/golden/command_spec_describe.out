@@ -1,0 +1,217 @@
+{
+  "ok": true,
+  "v": 1,
+  "command": "describe",
+  "data_kind": "command_spec",
+  "data": {
+    "path": [
+      "describe"
+    ],
+    "short": "Print one entity's full field schema: types, operators, required, relations.",
+    "args": [
+      {
+        "name": "entity",
+        "required": true,
+        "type": "enum",
+        "values_from": "discovery.collections",
+        "example": "pages"
+      }
+    ],
+    "flags": [
+      {
+        "name": "block",
+        "type": "string",
+        "repeatable": false,
+        "default": null,
+        "usage": "describe ONE blockType's own field schema: what goes INSIDE a cta, not just that cta exists"
+      },
+      {
+        "name": "blocks-detail",
+        "type": "bool",
+        "repeatable": false,
+        "default": false,
+        "usage": "inline EVERY reachable blockType's field schema (off by default: see BLOCKS in `pay help describe`)"
+      },
+      {
+        "name": "examples",
+        "type": "bool",
+        "repeatable": false,
+        "default": false,
+        "usage": "add generated, copy-pasteable commands for this entity"
+      },
+      {
+        "name": "field",
+        "type": "string",
+        "repeatable": false,
+        "default": null,
+        "usage": "describe one field path in full (dotted, e.g. hero.links.link.url)"
+      },
+      {
+        "name": "help",
+        "shorthand": "h",
+        "type": "bool",
+        "repeatable": false,
+        "default": false,
+        "usage": "help for describe"
+      },
+      {
+        "name": "queryable",
+        "type": "bool",
+        "repeatable": false,
+        "default": false,
+        "usage": "only fields usable in --where"
+      },
+      {
+        "name": "required-only",
+        "type": "bool",
+        "repeatable": false,
+        "default": false,
+        "usage": "only fields whose required is known true"
+      },
+      {
+        "name": "sample",
+        "type": "bool",
+        "repeatable": false,
+        "default": false,
+        "usage": "also fetch one real document (one extra request)"
+      }
+    ],
+    "output": {
+      "data_kind": "schema",
+      "skeleton": "{\"kind\":\"collection\",\"entity\":{…},\"fields\":[{\"path\":\"title\",\"payload_type\":\"text\",\"required\":true,\"queryable\":true,\"operators\":[\"equals\",\"contains\",…]}],\"required_paths\":[\"title\"]}"
+    },
+    "exit_codes": [
+      0,
+      2,
+      6,
+      9,
+      10
+    ],
+    "examples": [
+      {
+        "why": "everything about a collection",
+        "cmd": "pay describe pages"
+      },
+      {
+        "why": "what must I supply to create one?",
+        "cmd": "pay describe pages --required-only --path .fields[].path"
+      },
+      {
+        "why": "what can I filter on?",
+        "cmd": "pay describe pages --queryable --path .queryable_paths[]"
+      },
+      {
+        "why": "one field in full, including its operators",
+        "cmd": "pay describe pages --field title"
+      },
+      {
+        "why": "the blockTypes a blocks field accepts",
+        "cmd": "pay describe pages --field layout"
+      },
+      {
+        "why": "what goes INSIDE one block type",
+        "cmd": "pay describe pages --block cta"
+      },
+      {
+        "why": "which block do I want? label + description for every one",
+        "cmd": "pay describe pages --path .block_docs"
+      },
+      {
+        "why": "what is this one block FOR",
+        "cmd": "pay describe pages --block cta --path .docs"
+      },
+      {
+        "why": "the project's own instructions for filling fields in",
+        "cmd": "pay describe pages --path .field_docs"
+      },
+      {
+        "why": "just that block's required fields",
+        "cmd": "pay describe pages --block mediaBlock --path .required_fields[]"
+      },
+      {
+        "why": "every block type of one field, in full",
+        "cmd": "pay describe pages --field layout --blocks-detail"
+      },
+      {
+        "why": "schema plus a real document",
+        "cmd": "pay describe pages --sample"
+      },
+      {
+        "why": "generated commands for this collection",
+        "cmd": "pay describe pages --examples --path .examples[]"
+      }
+    ],
+    "common_mistakes": [
+      {
+        "wrong": "Reading `required: null` as \"not required\".",
+        "right": "null means PayCLI never learned it. Attempt the write; a 400 names the missing fields precisely."
+      },
+      {
+        "wrong": "Using a join field in --select.",
+        "right": "Join fields are read-only and are requested with --joins 'field:limit=5,sort=-createdAt'; .join_fields lists them."
+      },
+      {
+        "wrong": "Assuming `sortable: true` was measured.",
+        "right": "Sortability is heuristic unless sortable_confidence says otherwise; Payload silently ignores an unsortable field."
+      },
+      {
+        "wrong": "Expecting `blocks` to be filled on every project.",
+        "right": "Block slugs are not in the API; a null means no source resolved them. .blocks_source[FIELD] says which source did."
+      },
+      {
+        "wrong": "Reusing one collection's block types for another field.",
+        "right": "Every blocks field has its own list: pages.layout and forms.fields share none. Read .blocks[FIELD]."
+      },
+      {
+        "wrong": "Writing a block with only the fields --block listed as required.",
+        "right": "Required-ness inside a block is often null (Payload publishes no input type for one). .block.required_unknown names every field nobody could answer for; .block.reason says why."
+      },
+      {
+        "wrong": "Reading a null label or description as a PayCLI failure.",
+        "right": "Payload publishes neither and defines no description for a block at all. PayCLI reports what the project's authors wrote in the block's config.ts (`labels:` and custom.description / custom.docs / custom.summary); null means nobody wrote one. .docs_reason says which case it is."
+      },
+      {
+        "wrong": "Expecting a description on a plugin's blocks.",
+        "right": "The form-builder's blocks live in node_modules, which §7.10 never scans, so their label and description are always null with labels_source \"unknown\". Read .block[].fields for what they contain."
+      },
+      {
+        "wrong": "Treating blockName or id as content.",
+        "right": "id, blockName and blockType are Payload plumbing. blockType is mandatory and must be the SLUG; id is server-generated; blockName is an optional admin label. .block.fields[].plumbing marks them."
+      }
+    ],
+    "see_also": [
+      "pay collections",
+      "pay explain --collection <slug>",
+      "pay find <collection> --select …"
+    ]
+  },
+  "meta": {
+    "request_id": "<id>",
+    "cli_version": "<version>",
+    "profile": "default",
+    "base_url": "",
+    "api_path": "/api",
+    "auth_mode": "anonymous",
+    "payload_version": null,
+    "payload_version_source": "",
+    "locale": {
+      "requested": null,
+      "fallback": null
+    },
+    "date_field": null,
+    "since": null,
+    "until": null,
+    "duration_ms": 0,
+    "http_requests": 0,
+    "retries": 0,
+    "bytes": 0,
+    "dry_run": false
+  },
+  "warnings": [
+    {
+      "code": "anonymous_session",
+      "message": "No credential resolved for profile \"default\"; running unauthenticated. Permissions, the collection list and field visibility are all reduced.",
+      "hint": "pay auth login --profile default"
+    }
+  ]
+}

@@ -341,7 +341,9 @@ func (u *Updater) Apply(ctx context.Context) (*ApplyResult, error) {
 			}
 			return res, apierr.Wrap(err, apierr.CodeInternal, "cannot take the update lock %s: %v", u.LockPath, err)
 		}
-		defer lock.release()
+		// release only reports a failure to unlink a lock file we are done with;
+		// there is nothing the caller could do about it.
+		defer func() { _ = lock.release() }()
 	}
 
 	tag, err := u.targetVersion(ctx)
@@ -540,12 +542,12 @@ func (u *Updater) download(ctx context.Context, url string, limit int64) ([]byte
 
 	if resp.StatusCode != http.StatusOK {
 		code := apierr.CodeServerUnavailable
-		switch {
-		case resp.StatusCode == http.StatusNotFound:
+		switch resp.StatusCode {
+		case http.StatusNotFound:
 			code = apierr.CodeRouteNotFound
-		case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
+		case http.StatusUnauthorized, http.StatusForbidden:
 			code = apierr.CodeAuthInvalid
-		case resp.StatusCode == http.StatusTooManyRequests:
+		case http.StatusTooManyRequests:
 			code = apierr.CodeRateLimited
 		}
 		return nil, apierr.New(code, "GET %s returned HTTP %d.", path.Base(url), resp.StatusCode).

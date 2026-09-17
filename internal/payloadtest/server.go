@@ -74,7 +74,7 @@ func NewServer(t testing.TB, opts ...Option) *Server {
 		opt(s)
 	}
 	s.Server = httptest.NewServer(http.HandlerFunc(s.serve))
-	t.Cleanup(s.Server.Close)
+	t.Cleanup(s.Close)
 	return s
 }
 

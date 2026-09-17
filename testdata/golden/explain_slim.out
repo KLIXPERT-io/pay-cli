@@ -1,0 +1,197 @@
+{
+  "ok": true,
+  "v": 1,
+  "command": "explain",
+  "data_kind": "capabilities",
+  "data": {
+    "collection_slugs": [
+      "categories",
+      "crm-activities",
+      "crm-attachments",
+      "crm-audit-log",
+      "crm-availability-schedules",
+      "crm-booking-pages",
+      "crm-bookings",
+      "crm-campaign-events",
+      "crm-campaigns",
+      "crm-companies",
+      "crm-contact-signals",
+      "crm-contacts",
+      "crm-conversations",
+      "crm-deal-line-items",
+      "crm-drafts",
+      "crm-email-layouts",
+      "crm-flow-enrolments",
+      "crm-flows",
+      "crm-import-row-errors",
+      "crm-imports",
+      "crm-inboxes",
+      "crm-list-memberships",
+      "crm-lists",
+      "crm-locations",
+      "crm-message-events",
+      "crm-messages",
+      "crm-opportunities",
+      "crm-pipelines",
+      "crm-products",
+      "crm-provider-connections",
+      "crm-saved-views",
+      "crm-signal-definitions",
+      "crm-tags",
+      "crm-tasks",
+      "crm-templates",
+      "crm-workflow-runs",
+      "form-submissions",
+      "forms",
+      "media",
+      "pages",
+      "payload-folders",
+      "payload-jobs",
+      "payload-kv",
+      "payload-locked-documents",
+      "payload-migrations",
+      "payload-preferences",
+      "posts",
+      "redirects",
+      "search",
+      "users"
+    ],
+    "connection": {
+      "api_path": "/api",
+      "api_path_source": "default",
+      "auth_collection": "users",
+      "auth_mode": "api-key",
+      "base_url": "http://localhost:3900",
+      "can_access_admin": false,
+      "cli_version": "<version>",
+      "collections_total": 50,
+      "custom_endpoints": [],
+      "db_adapter": "postgres",
+      "db_adapter_source": "inferred",
+      "discovery_revision": "4b2e259e-c04adfc6",
+      "generated_at": "2026-09-16T12:00:00Z",
+      "globals_total": 5,
+      "graphql_mode": "ok",
+      "graphql_path": "/api/graphql",
+      "identity_verified": true,
+      "localization": {
+        "enabled": false,
+        "enabled_source": "graphql-arg-absent",
+        "locales": [],
+        "default": null,
+        "default_source": "unknown",
+        "locales_source": "graphql-arg-absent",
+        "fallback_default": null,
+        "locale_count": null
+      },
+      "payload_version": null,
+      "payload_version_source": "unknown",
+      "profile": "default"
+    },
+    "exit_codes": [
+      {
+        "exit": 0,
+        "meaning": "success"
+      },
+      {
+        "codes_total": 5,
+        "exit": 1,
+        "meaning": "internal — a PayCLI bug, a corrupt cache or an unwritable audit log"
+      },
+      {
+        "codes_total": 7,
+        "exit": 2,
+        "meaning": "auth — missing, invalid, locked or unverifiable credential"
+      },
+      {
+        "codes_total": 3,
+        "exit": 3,
+        "meaning": "throttled — rate limited, document locked or server busy (retriable)"
+      },
+      {
+        "codes_total": 4,
+        "exit": 4,
+        "meaning": "not found — document, route or version does not exist"
+      },
+      {
+        "codes_total": 21,
+        "exit": 5,
+        "meaning": "validation / bad input — the request was never worth sending"
+      },
+      {
+        "codes_total": 7,
+        "exit": 6,
+        "meaning": "network — DNS, TLS, timeout or a 5xx from the server"
+      },
+      {
+        "codes_total": 1,
+        "exit": 7,
+        "meaning": "partial — some items in a bulk operation failed; see .error.failures"
+      },
+      {
+        "codes_total": 2,
+        "exit": 8,
+        "meaning": "access denied — authenticated but not permitted"
+      },
+      {
+        "codes_total": 6,
+        "exit": 9,
+        "meaning": "configuration — no base_url, unknown profile, secret in plaintext"
+      },
+      {
+        "codes_total": 8,
+        "exit": 10,
+        "meaning": "capability — this project does not support the operation"
+      },
+      {
+        "codes_total": 1,
+        "exit": 11,
+        "meaning": "confirmation required — re-run with --yes (or --dry-run first)"
+      }
+    ],
+    "global_slugs": [
+      "crm-brand",
+      "crm-features",
+      "footer",
+      "header",
+      "payload-jobs-stats"
+    ]
+  },
+  "meta": {
+    "request_id": "<id>",
+    "cli_version": "<version>",
+    "profile": "default",
+    "base_url": "http://localhost:3900",
+    "api_path": "/api",
+    "auth_mode": "anonymous",
+    "payload_version": null,
+    "payload_version_source": "",
+    "locale": {
+      "requested": null,
+      "fallback": null
+    },
+    "date_field": null,
+    "since": null,
+    "until": null,
+    "duration_ms": 0,
+    "http_requests": 0,
+    "retries": 0,
+    "bytes": 2862,
+    "cache": {
+      "discovery": "hit",
+      "age_s": 0,
+      "ttl_s": 600,
+      "fingerprint": "4b2e259e863d403780378cec88b4230bdd1376bc41ef0717ca2e246d977d0eb0",
+      "revalidated": false
+    },
+    "discovery_revision": "4b2e259e-c04adfc6",
+    "dry_run": false
+  },
+  "warnings": [
+    {
+      "code": "anonymous_session",
+      "message": "No credential resolved for profile \"default\"; running unauthenticated. Permissions, the collection list and field visibility are all reduced.",
+      "hint": "pay auth login --profile default --base-url http://localhost:3900"
+    }
+  ]
+}

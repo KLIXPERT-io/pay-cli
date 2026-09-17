@@ -54,6 +54,13 @@ archives:
     format_overrides:
       - goos: windows
         formats: [zip]
+    # An explicit list, not GoReleaser's default glob set. It matters most for
+    # skills/: that tree is the agent skill's single source of truth (§14) and
+    # it is already compiled into the binary by //go:embed, so shipping the
+    # Markdown alongside `pay` would put a second, silently divergable copy in
+    # every archive. `pay skills install` writes it from the binary, and
+    # `npx skills add https://github.com/KLIXPERT-io/pay-cli/skills --skill pay`
+    # reads it from the repository — neither route wants it in the tarball.
     files:
       - README.md
       - INSTALL.md
@@ -69,6 +76,15 @@ sboms:
 # archive -> checksums.txt -> signature, and a mismatch anywhere along it is
 # the same signal. `pay update-self` verifies both links and reports one of
 # three outcomes (verified / unverifiable / verification_failed).
+# Keyless signing of checksums.txt. internal/update/verify.go verifies with
+# `cosign verify-blob` against the detached ${artifact}.sig + ${artifact}.pem,
+# so those two must keep being produced.
+#
+# This requires cosign v2: v3 REMOVED --output-signature and --output-certificate
+# (its sign-blob only emits a --bundle), so the detached pair the updater checks
+# no longer exists there. release.yml pins cosign to v2 accordingly. Migrating
+# to the bundle format means changing verify.go's verification path, which is
+# security-critical and wants its own review - tracked as a follow-up.
 signs:
   - cmd: cosign
     certificate: "${artifact}.pem"

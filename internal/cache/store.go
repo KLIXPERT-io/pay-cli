@@ -178,7 +178,7 @@ func (s *Store) ReadManifest(sc Scope) (*Manifest, bool, *output.Warning) {
 		return nil, false, nil
 	}
 	path := s.ManifestPath(sc)
-	data, err := os.ReadFile(path)
+	data, err := fsatomic.ReadFile(path)
 	if err != nil {
 		return nil, false, readWarning(path, err)
 	}
@@ -235,7 +235,7 @@ func (s *Store) ReadShard(sc Scope, m *Manifest, slug string, kind EntityKind) (
 	if !ok {
 		return nil, false, warning(WarnCacheUnreadable, s.ScopeDir(sc)+": refusing unsafe shard path "+shardRef)
 	}
-	data, err := os.ReadFile(path)
+	data, err := fsatomic.ReadFile(path)
 	if err != nil {
 		return nil, false, readWarning(path, err)
 	}
@@ -315,7 +315,7 @@ func (s *Store) ReadGraphQLType(sc Scope, typeName, schemaSHA256 string, now tim
 }
 
 func (s *Store) readEntry(path string, sc Scope, now time.Time) (*Entry, bool, *output.Warning) {
-	data, err := os.ReadFile(path)
+	data, err := fsatomic.ReadFile(path)
 	if err != nil {
 		return nil, false, readWarning(path, err)
 	}
@@ -627,7 +627,7 @@ func (s *Store) Touch(sc Scope, now time.Time) (bool, *output.Warning) {
 		return false, nil
 	}
 	path := s.ManifestPath(sc)
-	data, err := os.ReadFile(path)
+	data, err := fsatomic.ReadFile(path)
 	if err != nil {
 		return false, readWarning(path, err)
 	}

@@ -11,11 +11,12 @@ import (
 
 	"github.com/KLIXPERT-io/pay-cli/internal/cache"
 
+	"github.com/spf13/cobra"
+
 	"github.com/KLIXPERT-io/pay-cli/internal/apierr"
 	"github.com/KLIXPERT-io/pay-cli/internal/discovery"
 	"github.com/KLIXPERT-io/pay-cli/internal/payloadtest"
 	"github.com/KLIXPERT-io/pay-cli/internal/safety"
-	"github.com/spf13/cobra"
 )
 
 // TestDeletePlan is §12.4's soft-delete-by-default rule.

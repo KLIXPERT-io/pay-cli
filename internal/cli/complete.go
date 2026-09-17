@@ -9,6 +9,7 @@ import (
 
 	"github.com/KLIXPERT-io/pay-cli/internal/cache"
 	"github.com/KLIXPERT-io/pay-cli/internal/config"
+	"github.com/KLIXPERT-io/pay-cli/internal/discovery"
 	"github.com/KLIXPERT-io/pay-cli/internal/logging"
 	"github.com/KLIXPERT-io/pay-cli/internal/output"
 )
@@ -172,6 +173,82 @@ func CompleteFieldPaths(rt *Runtime, mode FieldMode) func(*cobra.Command, []stri
 
 // CompleteProfiles completes --profile from the two config files. It reads no
 // credentials and never touches the keychain.
+// CompleteBlockSlugs completes `pay describe <entity> --block <slug>` from the
+// cached shard's block schemas.
+//
+// It suggests the slugs, never the GraphQL interfaceNames: an interfaceName is
+// exactly the value Payload silently drops (§7.10), so offering one on TAB
+// would be a suggestion that produces a 201 and no content.
+func CompleteBlockSlugs(rt *Runtime) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		started := rt.Now()
+		if !rt.completionSetup(cmd) || len(args) == 0 {
+			return noSuggestions()
+		}
+		slug := args[0]
+		m, ok := rt.CachedManifest()
+		if !ok {
+			return noSuggestions()
+		}
+		kind := cache.KindCollection
+		if _, isColl := m.Collection(slug); !isColl {
+			if _, isGlobal := m.Global(slug); !isGlobal {
+				return noSuggestions()
+			}
+			kind = cache.KindGlobal
+		}
+		shard, ok := rt.CachedShard(slug, kind)
+		if !ok || rt.overBudget(started) {
+			return noSuggestions()
+		}
+		out := []string{}
+		for _, b := range shard.BlockSlugsFor() {
+			if !strings.HasPrefix(b, toComplete) {
+				continue
+			}
+			// The slug is what gets written; the block's own label or
+			// description rides along as cobra's tab-completion description
+			// (value\tdescription), so choosing between cta, content and
+			// mediaBlock does not need a second command. A block the project
+			// never documented completes as a bare slug — nothing is invented.
+			out = append(out, b+completionDescription(shard, b))
+		}
+		sort.Strings(out)
+		return out, cobra.ShellCompDirectiveNoFileComp
+	}
+}
+
+// completionDescriptionCap bounds the text a shell prints beside a slug. A
+// block description is one sentence; a long one is elided rather than wrapped
+// across the user's terminal.
+const completionDescriptionCap = 72
+
+// completionDescription is the "\tdescription" suffix cobra renders beside a
+// completion candidate, or "" when the project documented nothing.
+func completionDescription(shard *discovery.Shard, slug string) string {
+	bs, ok := shard.BlockSchemaFor(slug)
+	if !ok {
+		return ""
+	}
+	text := ""
+	if bs.Label != nil && *bs.Label != "" {
+		text = *bs.Label
+	}
+	if bs.Description != nil && *bs.Description != "" {
+		if text != "" {
+			text += " — "
+		}
+		text += *bs.Description
+	}
+	if text == "" {
+		return ""
+	}
+	if len(text) > completionDescriptionCap {
+		text = strings.TrimSpace(text[:completionDescriptionCap]) + "…"
+	}
+	return "\t" + text
+}
+
 func CompleteProfiles(rt *Runtime) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if !rt.completionSetup(cmd) {

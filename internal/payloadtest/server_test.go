@@ -62,7 +62,7 @@ func TestServerMatchesQuerySupersets(t *testing.T) {
 	// The fixture was recorded with limit=2&depth=0; a request that adds a
 	// harmless parameter must still match it rather than 404.
 	resp, body := get(t, srv, "/api/pages?depth=0&limit=2&fallback-locale=none")
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d: %s", resp.StatusCode, firstN(string(body), 200))
 	}
 }
@@ -98,7 +98,7 @@ func TestServerDistinguishesAnonymousFromAuthenticated(t *testing.T) {
 		t.Errorf("an unauthenticated /me returned a user: %v", parsed["user"])
 	}
 
-	req, _ := http.NewRequest("GET", srv.URL+"/api/users/me", nil) //nolint:noctx
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/users/me", nil) //nolint:noctx
 	req.Header.Set("Authorization", "users API-Key whatever")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -116,7 +116,7 @@ func TestServerDistinguishesAnonymousFromAuthenticated(t *testing.T) {
 
 func TestServerMatchesAHeader(t *testing.T) {
 	srv := NewServer(t)
-	req, _ := http.NewRequest("POST", srv.URL+"/api/pages", strings.NewReader("{}")) //nolint:noctx
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/pages", strings.NewReader("{}")) //nolint:noctx
 	req.Header.Set("Accept-Language", "de")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -124,7 +124,7 @@ func TestServerMatchesAHeader(t *testing.T) {
 	}
 	body, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
-	if resp.StatusCode != 400 {
+	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d", resp.StatusCode)
 	}
 	// The German body is the §11.2 regression guard: it must not be the English
@@ -154,7 +154,7 @@ func TestServerRecordsTraffic(t *testing.T) {
 func TestServerUnmatchedRouteIsPayloadShaped(t *testing.T) {
 	srv := NewServer(t)
 	resp, body := get(t, srv, "/api/definitely-not-recorded/42")
-	if resp.StatusCode != 404 {
+	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("status = %d", resp.StatusCode)
 	}
 	if !strings.Contains(string(body), "Route not found") {
@@ -172,7 +172,7 @@ func TestServerWithHandlerOverrides(t *testing.T) {
 		_, _ = w.Write([]byte(`{"errors":[{"message":"Too Many Requests"}]}`))
 	}))
 	resp, body := get(t, srv, "/api/access")
-	if resp.StatusCode != 429 || resp.Header.Get("Retry-After") != "3" {
+	if resp.StatusCode != http.StatusTooManyRequests || resp.Header.Get("Retry-After") != "3" {
 		t.Fatalf("override did not take: %d %v %s", resp.StatusCode, resp.Header, body)
 	}
 }

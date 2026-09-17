@@ -98,6 +98,34 @@ func NewField(name, path string) Field {
 	}
 }
 
+// BlockField is one blocks field's resolved answer, recorded per field
+// because there is no such thing as a project-wide blockType list: verified
+// live that Page.layout accepts 5 block types and Form.fields accepts 9
+// entirely different ones.
+type BlockField struct {
+	Path string `json:"path"`
+	// Slugs are the blockType values the REST API accepts here, or null when
+	// none could be resolved.
+	Slugs []string `json:"slugs"`
+	// Source is the weakest provenance among Slugs, or "mixed".
+	Source string `json:"source"`
+	// SlugSources gives every slug its own provenance so a confirmed slug is
+	// distinguishable from one inferred from an interfaceName.
+	SlugSources map[string]string `json:"slug_sources"`
+	// SlugInterfaces pairs each slug with the GraphQL union member it came
+	// from, which is how a slug is joined to the block's field schema in
+	// Shard.BlockSchemas.
+	SlugInterfaces map[string]string `json:"slug_interface_names"`
+	// InterfaceNames is the field's GraphQL union possibleTypes, verbatim.
+	// They are NOT blockType slugs and must never be sent to the API.
+	InterfaceNames []string `json:"interface_names"`
+	// Unresolved lists union members no source could name; the field accepts
+	// them but PayCLI cannot say what to call them.
+	Unresolved []string `json:"unresolved_interface_names"`
+	// Reason is empty exactly when every slug came from a confirmed source.
+	Reason string `json:"reason"`
+}
+
 // Shard is one entity's field schema — the artefact decoded only for the
 // collection named on the command line (§8.2).
 type Shard struct {
@@ -111,11 +139,62 @@ type Shard struct {
 	// Blocks maps a blocks field's path to its resolved blockType slugs. It is
 	// null — not an empty map — when no source could resolve them, which is
 	// the difference between "this project has no blocks" and "PayCLI does not
-	// know" (§7.10).
-	Blocks       map[string][]string `json:"blocks"`
-	BlocksSource string              `json:"blocks_source"`
+	// know" (§7.10). Every entry is resolved from THAT FIELD's own GraphQL
+	// union, so two blocks fields on the same entity can and do carry
+	// different lists.
+	Blocks map[string][]string `json:"blocks"`
+	// BlocksSource is the entity-wide summary: the one source when every
+	// blocks field resolved the same way, "mixed" when they did not, "unknown"
+	// when the entity has no resolved blocks field at all. It is a SUMMARY —
+	// BlockFields[path].Source is the per-field answer and the one an agent
+	// should read.
+	BlocksSource string `json:"blocks_source"`
+	// BlockFields carries the full per-field answer for every blocks field,
+	// including each slug's own provenance and the GraphQL union the slugs
+	// were derived from. It is null when the entity has no blocks field.
+	BlockFields map[string]BlockField `json:"block_fields"`
+	// BlockSchemas is every reachable block type's OWN field schema, keyed by
+	// blockType slug — what is inside a cta, not merely that cta exists. It is
+	// null on a shard written before the key existed and on a REST-only shard
+	// (there is no union to read), which is why every consumer treats null as
+	// "not discovered" and says so rather than as "this block has no fields".
+	BlockSchemas map[string]BlockTypeSchema `json:"block_schemas"`
 	// RequiredPaths is the flattened list of paths whose required is true.
 	RequiredPaths []string `json:"required_paths"`
+
+	// FieldDocs are the per-field human instructions this entity's own config
+	// declares — `admin: { description: '…' }` — keyed by field path.
+	//
+	// It is a SEPARATE map rather than three more keys on every field entry,
+	// and that is a size decision with a measured reason: `pay describe pages`
+	// carries ~90 field entries, so three keys each would add ~16 KB to the
+	// most frequently run command in order to publish null 90 times. Here the
+	// cost is proportional to what the project actually documented, and is
+	// nothing at all on a project that documented nothing.
+	//
+	// FieldDocsSource is what distinguishes "scanned, found none" from "never
+	// scanned": a producer records no map rather than an empty one.
+	FieldDocs map[string]FieldDoc `json:"field_docs,omitempty"`
+	// FieldDocsSource is "project-source" when this entity's config was read
+	// off disk and "unknown" when it was not — the normal case for a
+	// plugin-provided collection, whose config lives in node_modules.
+	FieldDocsSource string `json:"field_docs_source,omitempty"`
+	// FieldDocsFile is the absolute path the docs were read from, "" when
+	// there is none.
+	FieldDocsFile string `json:"field_docs_file,omitempty"`
+}
+
+// FieldDoc is one field's human documentation as the project wrote it.
+//
+// Key is always reported with Description: `admin.description` is Payload's
+// own field-level key, but PayCLI also accepts a `custom.*` neighbour, and an
+// agent is entitled to know which one a sentence came from.
+type FieldDoc struct {
+	Description string `json:"description"`
+	Key         string `json:"key"`
+	// Source is "project-source"; it exists so that a single entry is
+	// self-describing when it is lifted out of the map.
+	Source string `json:"source"`
 }
 
 // NewShard returns an empty shard for a slug.
@@ -127,6 +206,8 @@ func NewShard(generation, slug string) *Shard {
 		JoinFields:    []string{},
 		Blocks:        nil,
 		BlocksSource:  SourceUnknown,
+		BlockFields:   nil,
+		BlockSchemas:  nil,
 		RequiredPaths: []string{},
 	}
 }
@@ -142,6 +223,160 @@ func (s *Shard) Field(path string) (Field, bool) {
 		}
 	}
 	return Field{}, false
+}
+
+// SetBlockField records ONE blocks field's resolution and keeps every derived
+// view of it consistent: block_fields[path] (the full answer), blocks[path]
+// (the slug list §9.7 validates a --set blockType against) and blocks_source
+// (the entity-wide summary).
+//
+// It is the only writer of those three keys, so they cannot drift apart and a
+// producer cannot record slugs without also recording where they came from
+// (§7.8.3).
+func (s *Shard) SetBlockField(bf BlockField) {
+	if s == nil || bf.Path == "" {
+		return
+	}
+	if s.BlockFields == nil {
+		s.BlockFields = map[string]BlockField{}
+	}
+	s.BlockFields[bf.Path] = bf
+	if len(bf.Slugs) > 0 {
+		if s.Blocks == nil {
+			s.Blocks = map[string][]string{}
+		}
+		s.Blocks[bf.Path] = bf.Slugs
+	} else {
+		delete(s.Blocks, bf.Path)
+		if len(s.Blocks) == 0 {
+			// nil, not an empty map: §7.10's tri-state.
+			s.Blocks = nil
+		}
+	}
+	s.BlocksSource = s.blocksSourceSummary()
+}
+
+// blocksSourceSummary collapses the per-field sources into the one entity-wide
+// string blocks_source has always been. It reports "mixed" rather than picking
+// a winner when the fields disagree, because naming one source and hiding the
+// other is how a global answer looked trustworthy while being wrong.
+func (s *Shard) blocksSourceSummary() string {
+	sources := map[string]bool{}
+	for _, bf := range s.BlockFields {
+		if len(bf.Slugs) == 0 {
+			continue
+		}
+		sources[bf.Source] = true
+	}
+	switch len(sources) {
+	case 0:
+		return SourceUnknown
+	case 1:
+		for k := range sources {
+			return k
+		}
+	}
+	return SourceMixed
+}
+
+// SetFieldDocs records this entity's per-field documentation and the file it
+// was read from, keeping the three keys that describe it consistent.
+//
+// It is the only writer of them, so a producer cannot record documentation
+// without also recording where it came from (§7.8.3). Calling it with an empty
+// map still records the SOURCE: "the config was read and documents nothing" is
+// a different, and more useful, answer than "no config was read".
+func (s *Shard) SetFieldDocs(docs map[string]FieldDoc, file, source string) {
+	if s == nil {
+		return
+	}
+	s.FieldDocsSource = orUnknownSource(source)
+	s.FieldDocsFile = file
+	if len(docs) == 0 {
+		s.FieldDocs = nil
+		return
+	}
+	s.FieldDocs = docs
+}
+
+// FieldDocFor returns one field path's documentation and whether the project
+// declared any. The bool is the tri-state: false is "nobody wrote one", never
+// an empty sentence.
+func (s *Shard) FieldDocFor(path string) (FieldDoc, bool) {
+	if s == nil || len(s.FieldDocs) == 0 {
+		return FieldDoc{}, false
+	}
+	d, ok := s.FieldDocs[path]
+	return d, ok && d.Description != ""
+}
+
+// DocumentedPaths lists every field path carrying a description, sorted.
+func (s *Shard) DocumentedPaths() []string {
+	out := []string{}
+	if s == nil {
+		return out
+	}
+	for path, d := range s.FieldDocs {
+		if d.Description != "" {
+			out = append(out, path)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// BlockTypesFor returns the blockType slugs one field accepts, and whether
+// PayCLI knows. The bool is the §7.10 tri-state: false means unknown, not
+// "accepts nothing".
+func (s *Shard) BlockTypesFor(path string) ([]string, bool) {
+	if s == nil {
+		return nil, false
+	}
+	slugs, ok := s.Blocks[path]
+	return slugs, ok && len(slugs) > 0
+}
+
+// BlockSchemaFor returns one blockType's field schema and whether the shard
+// carries it. The bool is the tri-state: false is "PayCLI did not discover
+// this block's interior", never "the block has no fields".
+func (s *Shard) BlockSchemaFor(slug string) (BlockTypeSchema, bool) {
+	if s == nil {
+		return BlockTypeSchema{}, false
+	}
+	bs, ok := s.BlockSchemas[slug]
+	if ok {
+		bs.normalizeDocs()
+	}
+	return bs, ok
+}
+
+// BlockSlugsFor returns every blockType slug reachable from any blocks field
+// of this entity, sorted and deduplicated.
+func (s *Shard) BlockSlugsFor() []string {
+	if s == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	out := []string{}
+	for _, bf := range s.BlockFields {
+		for _, slug := range bf.Slugs {
+			if !seen[slug] {
+				seen[slug] = true
+				out = append(out, slug)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// BlockFieldFor returns the full per-field record for a blocks field.
+func (s *Shard) BlockFieldFor(path string) (BlockField, bool) {
+	if s == nil {
+		return BlockField{}, false
+	}
+	bf, ok := s.BlockFields[path]
+	return bf, ok
 }
 
 // Paths returns every field path in shard order.
@@ -242,13 +477,17 @@ func HashShard(s *Shard) string {
 		return ""
 	}
 	payload := struct {
-		Slug          string              `json:"slug"`
-		Fields        []Field             `json:"fields"`
-		JoinFields    []string            `json:"join_fields"`
-		Blocks        map[string][]string `json:"blocks"`
-		BlocksSource  string              `json:"blocks_source"`
-		RequiredPaths []string            `json:"required_paths"`
-	}{s.Slug, s.Fields, s.JoinFields, s.Blocks, s.BlocksSource, s.RequiredPaths}
+		Slug          string                     `json:"slug"`
+		Fields        []Field                    `json:"fields"`
+		JoinFields    []string                   `json:"join_fields"`
+		Blocks        map[string][]string        `json:"blocks"`
+		BlocksSource  string                     `json:"blocks_source"`
+		BlockFields   map[string]BlockField      `json:"block_fields"`
+		BlockSchemas  map[string]BlockTypeSchema `json:"block_schemas"`
+		RequiredPaths []string                   `json:"required_paths"`
+		FieldDocs     map[string]FieldDoc        `json:"field_docs"`
+	}{s.Slug, s.Fields, s.JoinFields, s.Blocks, s.BlocksSource, s.BlockFields, s.BlockSchemas,
+		s.RequiredPaths, s.FieldDocs}
 	b, err := json.Marshal(payload)
 	if err != nil {
 		// Field contains only JSON-safe types, so this cannot happen; hashing

@@ -32,6 +32,8 @@ type File struct {
 
 	// APIKey is not a legal key anywhere (§4.2); it is decoded only so the
 	// hard error can name it.
+	//nolint:gosec // G117: decode-only. Encode() clears it; see
+	// TestEncodeNeverEmitsAPIKey and TestAPIKeyInConfigIsFatal.
 	APIKey string `toml:"api_key,omitempty"`
 
 	// Path is where the file came from; it is what `pay config explain`
@@ -186,11 +188,27 @@ func (f *File) Save() error {
 }
 
 // Encode renders the file as TOML.
+//
+// APIKey is cleared first. The field exists only so a config.toml carrying the
+// forbidden `api_key` decodes and can be rejected by name (§4.2); it must never
+// travel in the other direction. Without this, any code path that set it would
+// make Encode write a credential into config.toml — exactly what §5.2 forbids
+// and what scripts/arch-lint.sh greps for. Encode operates on a copy, so the
+// caller's File is untouched.
 func (f *File) Encode() ([]byte, error) {
+	safe := *f
+	safe.APIKey = ""
+	for name, p := range safe.Profiles {
+		if p.APIKey != "" {
+			p.APIKey = ""
+			safe.Profiles[name] = p
+		}
+	}
 	var buf bytes.Buffer
 	enc := toml.NewEncoder(&buf)
 	enc.Indent = ""
-	if err := enc.Encode(f); err != nil {
+	//nolint:gosec // G117: safe.APIKey was just cleared above; see TestEncodeNeverEmitsAPIKey.
+	if err := enc.Encode(&safe); err != nil {
 		return nil, apierr.Wrap(err, apierr.CodeInternal, "cannot encode config: %v", err)
 	}
 	return buf.Bytes(), nil

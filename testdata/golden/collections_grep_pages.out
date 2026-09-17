@@ -1,0 +1,128 @@
+{
+  "ok": true,
+  "v": 1,
+  "command": "collections",
+  "data_kind": "capabilities",
+  "data": {
+    "collections": [
+      {
+        "slug": "crm-booking-pages",
+        "singular": "Crm Booking Page",
+        "plural": "Crm Booking Pages",
+        "kind": "content",
+        "internal": false,
+        "id_type": "number",
+        "reachability": "ok",
+        "ops": [
+          "read"
+        ],
+        "features": [
+          "trash",
+          "duplicate"
+        ],
+        "key_fields": [
+          "id",
+          "name",
+          "stats.countedAt",
+          "updatedAt",
+          "createdAt",
+          "deletedAt"
+        ],
+        "title_field": "name",
+        "fields_count": 57,
+        "total_docs": null,
+        "publishable": true,
+        "date_fields": [
+          "stats.countedAt",
+          "updatedAt",
+          "createdAt",
+          "deletedAt"
+        ]
+      },
+      {
+        "slug": "pages",
+        "singular": "Page",
+        "plural": "Pages",
+        "kind": "content",
+        "internal": false,
+        "id_type": "number",
+        "reachability": "ok",
+        "ops": [
+          "read",
+          "create",
+          "update",
+          "delete",
+          "versions"
+        ],
+        "features": [
+          "versions",
+          "drafts",
+          "duplicate"
+        ],
+        "key_fields": [
+          "id",
+          "title",
+          "publishedAt",
+          "updatedAt",
+          "createdAt",
+          "_status"
+        ],
+        "title_field": "title",
+        "fields_count": 26,
+        "total_docs": null,
+        "publishable": true,
+        "date_fields": [
+          "publishedAt",
+          "updatedAt",
+          "createdAt"
+        ]
+      }
+    ],
+    "count": 2,
+    "filters": {
+      "capability": "",
+      "grep": "pages",
+      "include_internal": false,
+      "kind": "",
+      "writable": false
+    },
+    "total": 50
+  },
+  "meta": {
+    "request_id": "<id>",
+    "cli_version": "<version>",
+    "profile": "default",
+    "base_url": "http://localhost:3900",
+    "api_path": "/api",
+    "auth_mode": "anonymous",
+    "payload_version": null,
+    "payload_version_source": "",
+    "locale": {
+      "requested": null,
+      "fallback": null
+    },
+    "date_field": null,
+    "since": null,
+    "until": null,
+    "duration_ms": 0,
+    "http_requests": 0,
+    "retries": 0,
+    "bytes": 0,
+    "cache": {
+      "discovery": "hit",
+      "age_s": 0,
+      "ttl_s": 600,
+      "fingerprint": "4b2e259e863d403780378cec88b4230bdd1376bc41ef0717ca2e246d977d0eb0",
+      "revalidated": false
+    },
+    "discovery_revision": "4b2e259e-c04adfc6",
+    "dry_run": false
+  },
+  "warnings": [
+    {
+      "code": "anonymous_session",
+      "message": "No credential resolved for profile \"default\"; running unauthenticated. Permissions, the collection list and field visibility are all reduced.",
+      "hint": "pay auth login --profile default --base-url http://localhost:3900"
+    }
+  ]
+}

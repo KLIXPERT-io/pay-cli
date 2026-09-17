@@ -384,7 +384,8 @@ create (§9.10.2), later winning.`,
 			if cfg.DryRun {
 				q, _ := p.Encode()
 				return emitDryRun(d, w, safety.CmdGlobalsUpdate, "POST",
-					client.URLFor(&payload.Request{Method: "POST", Path: path, Query: q}), body, 1, nil)
+					client.URLFor(&payload.Request{Method: "POST", Path: path, Query: q}), body, 1, nil,
+					warnings...)
 			}
 			if err := w.confirm(1); err != nil {
 				return nil, err

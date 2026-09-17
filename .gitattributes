@@ -1,0 +1,12 @@
+# Normalise to LF in the repository; let Git decide the working-tree form.
+* text=auto eol=lf
+
+# Golden files are byte-exact CLI output compared literally by
+# TestGoldenCommands. Any EOL translation makes every assertion fail on
+# Windows, so these are never converted.
+testdata/golden/** -text
+testdata/fixtures/** -text
+
+# Shell scripts must keep LF even on Windows checkouts.
+*.sh text eol=lf
+install.sh text eol=lf

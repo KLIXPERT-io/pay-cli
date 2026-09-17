@@ -2,6 +2,7 @@ package config
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -85,7 +86,7 @@ func TestPathsFor(t *testing.T) {
 			if p.Sources["config_dir"] != tc.wantConfigSrc {
 				t.Errorf("config dir source = %q, want %q", p.Sources["config_dir"], tc.wantConfigSrc)
 			}
-			if want := filepath.Join(p.ConfigDir, ConfigFileName); p.ConfigFile != want {
+			if want := joinFor(tc.goos, p.ConfigDir, ConfigFileName); p.ConfigFile != want {
 				t.Errorf("config file = %q, want %q", p.ConfigFile, want)
 			}
 		})
@@ -164,5 +165,43 @@ func TestEnvLookupTreatsEmptyAsUnset(t *testing.T) {
 	var nilEnv Env
 	if _, ok := nilEnv.Lookup("A"); ok {
 		t.Error("nil Env must be usable")
+	}
+}
+
+// TestPathsForIsHostIndependent pins the property that made CI red on Windows:
+// PathsFor takes goos as an argument, so its output must depend on that
+// argument and not on the separator of the machine running the test. Before
+// joinFor/cleanFor it used filepath, and every POSIX row of TestPathsFor
+// produced `\home\u\.config\pay` on the windows-latest runner.
+func TestPathsForIsHostIndependent(t *testing.T) {
+	for _, goos := range []string{"linux", "darwin"} {
+		t.Run(goos, func(t *testing.T) {
+			p := PathsFor(Env{"PAY_HOME": "/h"}, goos, "/home/u")
+			paths := map[string]string{
+				"ConfigDir":       p.ConfigDir,
+				"CacheDir":        p.CacheDir,
+				"StateDir":        p.StateDir,
+				"ConfigFile":      p.ConfigFile,
+				"CredentialsFile": p.CredentialsFile(),
+				"AuditFile":       p.AuditFile(),
+				"CacheRoot":       p.CacheRoot(),
+				"ScopeDir":        p.ScopeDir("abcd"),
+				"UpdateStateFile": p.UpdateStateFile(),
+			}
+			for name, got := range paths {
+				if strings.Contains(got, `\`) {
+					t.Errorf("%s = %q contains a backslash; goos=%q paths must be POSIX on every host", name, got, goos)
+				}
+				if !strings.HasPrefix(got, "/") {
+					t.Errorf("%s = %q is not rooted", name, got)
+				}
+			}
+		})
+	}
+
+	// And the windows rules must hold regardless of host too.
+	w := PathsFor(Env{"AppData": `C:\Users\u\AppData\Roaming`, "LocalAppData": `C:\Users\u\AppData\Local`}, "windows", `C:\Users\u`)
+	if !strings.HasPrefix(w.ConfigDir, `C:`) {
+		t.Errorf("windows ConfigDir = %q, want it under C:", w.ConfigDir)
 	}
 }

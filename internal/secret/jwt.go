@@ -55,13 +55,15 @@ func ParseJWT(token string) (JWT, error) {
 	}
 	payload, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(parts[1], "="))
 	if err != nil {
-		return j, nil
+		// An undecodable payload means the expiry is unknown, not that the
+		// token is unusable: only the server can reject it. Exp stays zero.
+		return j, nil //nolint:nilerr // unknown expiry is not a failure
 	}
 	var claims struct {
 		Exp float64 `json:"exp"`
 	}
 	if err := json.Unmarshal(payload, &claims); err != nil {
-		return j, nil
+		return j, nil //nolint:nilerr // same: no parseable exp claim, expiry unknown
 	}
 	if claims.Exp > 0 && claims.Exp < math.MaxInt64 {
 		sec, frac := math.Modf(claims.Exp)

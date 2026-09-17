@@ -166,6 +166,52 @@ The same applies to Homebrew, nix, asdf, mise, scoop, chocolatey, snap and flatp
 
 ---
 
+## Installing the agent skill
+
+PayCLI ships an agent skill that teaches an LLM coding agent how to drive the CLI safely:
+the JSON envelope, the exit-code table, the query mini-DSL and the Payload behaviours that
+produce confidently wrong answers when guessed. It lives in the repository at
+[`skills/pay/`](https://github.com/KLIXPERT-io/pay-cli/tree/main/skills/pay), and there are
+two ways to install it.
+
+**From the binary — offline, and the one the installers use:**
+
+```sh
+pay skills install
+```
+
+No network, no Node, no `git`: the skill is compiled into `pay` with `go:embed`, so this
+works on an air-gapped machine and always matches the binary you are running.
+`install.sh --with-skills` / `install.ps1 -WithSkills` simply run it for you.
+
+**With the [`skills`](https://github.com/anthropics/skills) CLI** — useful when you want
+the skill in an editor or agent before (or without) installing PayCLI itself:
+
+```sh
+npx skills add https://github.com/KLIXPERT-io/pay-cli/skills --skill pay
+```
+
+This reads `skills/pay/` straight out of the repository and drops `pay/SKILL.md` plus its
+`references/` into your agent's skill directory. Re-run it to pull updates.
+
+The two routes install the same bytes. `skills/` is a Go package that owns the `go:embed`
+of `skills/pay/`, so there is exactly one copy of the skill in the repository and the
+embedded tree cannot drift from the one you can read on GitHub.
+
+Only `pay skills install` can do the two things that need a running binary:
+
+| | `pay skills install` | `npx skills add` |
+|---|---|---|
+| works offline | yes | no |
+| writes `references/PROJECT.md` for the current project (`--with-project-context`) | yes | no |
+| records `.pay-skill.json`, so `pay skills status` reports staleness and drift | yes | no |
+| installs into every agent directory that already exists | yes | one at a time |
+| needs `pay` on `PATH` | yes | no |
+
+`pay skills install --help` covers `--global`, `--agent`, `--dir` and `--force`.
+
+---
+
 ## Where things live
 
 PayCLI follows the XDG base-directory spec on Unix and the standard app-data locations on

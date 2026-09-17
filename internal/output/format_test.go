@@ -8,8 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/KLIXPERT-io/pay-cli/internal/apierr"
 	"github.com/google/go-cmp/cmp"
+
+	"github.com/KLIXPERT-io/pay-cli/internal/apierr"
 )
 
 func TestParseFormat(t *testing.T) {

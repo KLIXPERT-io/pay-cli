@@ -206,6 +206,19 @@ func (rt *Runtime) RunDiscovery(ctx context.Context, opts DiscoverOptions) (*dis
 		DBAdapter:            firstNonEmpty(rt.Cfg.DBAdapter, scan.DBAdapter),
 		DBAdapterSource:      dbAdapterSource(rt.Cfg, scan),
 		ProjectBlockSlugs:    scan.BlockSlugs,
+		// The (slug, interfaceName) pairs are what turn a blocks field's
+		// GraphQL union members into blockTypes the REST API accepts (§7.10).
+		ProjectBlockInterfaces: scan.SlugByInterface,
+		// The blocks' own field declarations carry required-ness, which is
+		// unreachable from GraphQL for a block: Payload publishes no input
+		// type for one, so the NON_NULL trick §7.4 uses for a collection field
+		// has nothing to read.
+		ProjectBlockDecls: blockSourceDecls(scan),
+		// Per-field `admin: { description }` from the project's own collection
+		// and global configs. Payload publishes it nowhere in the API, so a
+		// project that wrote none simply has none (§7.10).
+		ProjectFieldDocs:     projectFieldDocs(scan),
+		ProjectFieldDocFiles: scan.FieldDocFiles,
 		Logger:               rt.Log,
 	}
 	if scan.BlockSlugFiles != nil {
@@ -429,6 +442,68 @@ func (rt *Runtime) shardFromState(slug string, kind cache.EntityKind) (*discover
 	}
 	rt.disc.shards[name] = &shard
 	return &shard, true
+}
+
+// blockSourceDecls converts §7.10's on-disk block declarations into the shape
+// internal/discovery consumes, keyed by slug.
+//
+// The conversion exists because internal/discovery must not depend on
+// internal/config: every project fact it needs arrives as a plain value, so the
+// pipeline stays testable without a filesystem.
+func blockSourceDecls(scan *config.ScanResult) map[string]discovery.BlockSourceDecl {
+	if scan == nil || len(scan.BlockDecls) == 0 {
+		return nil
+	}
+	out := make(map[string]discovery.BlockSourceDecl, len(scan.BlockDecls))
+	for _, d := range scan.BlockDecls {
+		if d.Slug == "" {
+			continue
+		}
+		fields := make([]discovery.BlockSourceField, 0, len(d.Fields))
+		for _, f := range d.Fields {
+			fields = append(fields, discovery.BlockSourceField{
+				Name: f.Name, Type: f.Type, Required: f.Required,
+				Description: f.Description, DescriptionKey: f.DescriptionKey,
+			})
+		}
+		out[d.Slug] = discovery.BlockSourceDecl{
+			File:     scan.SlugFile[d.Slug],
+			Fields:   fields,
+			Complete: d.FieldsComplete,
+			// The human half of §7.10: what the block is called and what it is
+			// FOR. Both exist only when the project's authors wrote them, and
+			// both travel with the key they were read from.
+			LabelSingular:  d.LabelSingular,
+			LabelPlural:    d.LabelPlural,
+			Description:    d.Description,
+			DescriptionKey: d.DescriptionKey,
+		}
+	}
+	return out
+}
+
+// projectFieldDocs converts §7.10's on-disk field documentation into the shape
+// internal/discovery consumes, for the same reason blockSourceDecls exists:
+// internal/discovery must not depend on internal/config, so every project fact
+// arrives as a plain value and the pipeline stays testable without a
+// filesystem.
+func projectFieldDocs(scan *config.ScanResult) map[string]map[string]discovery.FieldDoc {
+	if scan == nil || scan.FieldDocs == nil {
+		return nil
+	}
+	out := make(map[string]map[string]discovery.FieldDoc, len(scan.FieldDocs))
+	for slug, fields := range scan.FieldDocs {
+		entity := make(map[string]discovery.FieldDoc, len(fields))
+		for name, doc := range fields {
+			entity[name] = discovery.FieldDoc{
+				Description: doc.Description,
+				Key:         doc.Key,
+				Source:      discovery.SourceProjectSource,
+			}
+		}
+		out[slug] = entity
+	}
+	return out
 }
 
 func firstNonEmpty(values ...string) string {

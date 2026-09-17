@@ -148,7 +148,7 @@ func TestRequestIDsAreUniqueAndSortable(t *testing.T) {
 func TestNonJSONResponseIsNotParsed(t *testing.T) {
 	s := newStub(t, func(w http.ResponseWriter, _ *http.Request, _ int) {
 		w.Header().Set("Content-Type", "text/html")
-		w.WriteHeader(200)
+		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, `<!DOCTYPE html><html id="__next_error__">boom</html>`)
 	})
 	c, _ := newTestClient(t, s, nil)
@@ -256,7 +256,7 @@ func TestPerRequestTimeout(t *testing.T) {
 		case <-r.Context().Done():
 		case <-time.After(2 * time.Second):
 		}
-		w.WriteHeader(200)
+		w.WriteHeader(http.StatusOK)
 	})
 	c, _ := newTestClient(t, s, func(cfg *Config) { cfg.MaxRetries = 1 })
 	_, err := c.Do(context.Background(), &Request{Path: "/pages", Timeout: 20 * time.Millisecond})
@@ -304,7 +304,7 @@ func TestTruncatedBodyIsReportedNotSilentlyAccepted(t *testing.T) {
 	s := newStub(t, func(w http.ResponseWriter, _ *http.Request, _ int) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Content-Length", "500")
-		w.WriteHeader(200)
+		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, `{"docs":[{"id":1}`)
 		if f, ok := w.(http.Flusher); ok {
 			f.Flush()

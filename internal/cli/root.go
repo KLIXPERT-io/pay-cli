@@ -23,6 +23,7 @@ const (
 	GroupDiscovery = "discovery"
 	GroupRead      = "read"
 	GroupWrite     = "write"
+	GroupEdit      = "edit"
 	GroupFiles     = "files"
 	GroupAdmin     = "admin"
 	GroupOther     = "other"
@@ -32,6 +33,7 @@ var commandGroups = []*cobra.Group{
 	{ID: GroupDiscovery, Title: "Discovery — what can I do here?"},
 	{ID: GroupRead, Title: "Read"},
 	{ID: GroupWrite, Title: "Write"},
+	{ID: GroupEdit, Title: "Edit — local JSON transforms, built to be piped"},
 	{ID: GroupFiles, Title: "Files"},
 	{ID: GroupAdmin, Title: "Configuration and maintenance"},
 	{ID: GroupOther, Title: "Other"},
@@ -491,6 +493,17 @@ func maxArgs(n int, usage string) cobra.PositionalArgs {
 		if len(args) > n {
 			return apierr.New(apierr.CodeInvalidArgs,
 				"%s takes at most %d argument(s), got %d", cmd.CommandPath(), n, len(args)).
+				WithHint("usage: %s", usage)
+		}
+		return nil
+	}
+}
+
+func minArgs(n int, usage string) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		if len(args) < n {
+			return apierr.New(apierr.CodeInvalidArgs,
+				"%s takes at least %d argument(s), got %d", cmd.CommandPath(), n, len(args)).
 				WithHint("usage: %s", usage)
 		}
 		return nil

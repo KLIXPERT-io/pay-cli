@@ -1,7 +1,7 @@
 package output
 
 import (
-	"fmt"
+	"errors"
 	"io"
 
 	"github.com/KLIXPERT-io/pay-cli/internal/apierr"
@@ -83,7 +83,7 @@ var _ Renderer = (*Writer)(nil)
 // with format_unsupported (exit 5) instead of silently falling back to JSON.
 func (w *Writer) Render(env *Envelope) (int, error) {
 	if env == nil {
-		return apierr.ExitInternal, fmt.Errorf("output: nil envelope")
+		return apierr.ExitInternal, errors.New("output: nil envelope")
 	}
 	format := w.Format
 	if format == "" {
@@ -114,12 +114,10 @@ func (w *Writer) Render(env *Envelope) (int, error) {
 			// out as JSON regardless of what was asked for.
 			return w.renderErrorEnvelope(NewError(env.Command, err), FormatJSON)
 		}
-	} else {
+	} else if format != FormatJSONL {
 		// An error envelope is always JSON-shaped; csv/table/id cannot express
 		// it and raw has no body to print.
-		if format != FormatJSONL {
-			format = FormatJSON
-		}
+		format = FormatJSON
 	}
 
 	if !env.OK {

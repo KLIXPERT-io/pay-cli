@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -375,7 +376,11 @@ func (rt *Runtime) cacheChecks(r *doctorReport, m *discovery.Manifest, add func(
 		}
 		rows = append(rows, row)
 	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i]["scope"].(string) < rows[j]["scope"].(string) })
+	sort.Slice(rows, func(i, j int) bool {
+		a, _ := rows[i]["scope"].(string)
+		b, _ := rows[j]["scope"].(string)
+		return a < b
+	})
 	r.Cache["scopes"] = rows
 	r.Cache["bytes"] = bytes
 
@@ -567,9 +572,11 @@ func joinOr(list []string, fallback string) string {
 		return fallback
 	}
 	out := list[0]
+	var outSb570 strings.Builder
 	for _, s := range list[1:] {
-		out += ", " + s
+		outSb570.WriteString(", " + s)
 	}
+	out += outSb570.String()
 	return out
 }
 

@@ -55,6 +55,8 @@ func EnvSuffix(profile string) string {
 }
 
 // Environment variable names of §4.6.
+//
+//nolint:gosec // G101: these are environment variable NAMES, not secret values.
 const (
 	EnvAPIKey = "PAY_API_KEY"
 	EnvJWT    = "PAY_JWT"

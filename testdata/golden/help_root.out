@@ -1,0 +1,105 @@
+Drive any Payload CMS 3.x project through its REST API.
+
+PayCLI is built for LLM coding agents: every command prints one JSON envelope
+with a stable shape, a machine-readable error code and an exit code that maps to
+a class of failure. Run `pay explain` first — it answers "what can I do here?"
+in a single call, offline after the first discovery.
+
+SYNOPSIS
+  pay [flags]
+
+  Subcommands:
+    access         Show what this credential is permitted to do (GET /api/access).
+    apply          Write a piped, locally edited document back to Payload (PATCH)
+    audit          Inspect the local write-audit log
+    auth           Manage profiles and credentials (§5).
+    blocks         Edit a blocks field on a document read from stdin (local, no network)
+    cache          Inspect and manage the discovery cache
+    can            Answer one permission question with an exit code (0 permitted, 8 denied).
+    collections    List this project's collections with their ops, features and key fields.
+    completion     Print a shell completion script for pay.
+    config         Inspect and edit PayCLI's own configuration (§4).
+    count          Count the documents matching a filter (GET /api/{collection}/count)
+    create         Create one document (POST /api/{collection})
+    delete         Delete one document by id, or every document matching --where
+    describe       Print one entity's full field schema: types, operators, required, relations.
+    discover       Probe this Payload project and cache its schema (§7 discovery pipeline).
+    doctor         Diagnose this project, this profile and this machine in one JSON document.
+    download       Download the bytes of an upload document
+    duplicate      Copy one document
+    explain        Answer "what can I do here?" in one call — cache-backed and offline after the first run.
+    find           List documents in a collection (GET /api/{collection})
+    get            Fetch one document by id (GET /api/{collection}/{id})
+    globals        Read and write Payload globals
+    publish        Set _status=published on one document or every match
+    raw            Call any Payload endpoint PayCLI does not model
+    restore        Un-trash a soft-deleted document
+    skills         Install the PayCLI agent skill
+    unpublish      Set _status=draft on one document or every match
+    update         Update one document by id, or every document matching --where (PATCH)
+    update-self    Check for and install a newer pay binary
+    upload         Upload a file to an upload-enabled collection
+    version        Print the PayCLI build stamp (and, with --check, whether a newer release exists).
+    versions       Inspect, compare and restore document versions
+    whoami         Show the identity this credential resolves to (GET /api/{auth}/me).
+
+FLAGS
+    --accept-language ACCEPT-LANGUAGE Accept-Language sent to Payload (default en)
+    --api-key API-KEY            API key (prefer --api-key-stdin: argv is world-readable)
+    --api-key-file API-KEY-FILE  read the API key from a 0600 file
+    --api-key-stdin              read the API key from the first line of stdin
+    --api-path API-PATH          Payload routes.api prefix (default /api)
+    --auth-collection AUTH-COLLECTION auth collection slug; "auto" discovers it
+    --auth-header-scheme AUTH-HEADER-SCHEME JWT|Bearer — the scheme used for a token
+    --auth-mode AUTH-MODE        auto|api-key|jwt|anonymous
+    --base-url BASE-URL          Payload server origin, e.g. http://localhost:3000
+    --cache-ttl CACHE-TTL        override the discovery cache TTL for this run
+    --concurrency N              parallel requests (default 8, hard cap 32)
+    --config CONFIG              path to config.toml
+    --deadline DEADLINE          whole-command deadline (default 120s)
+    --dry-run                    print what would be sent and exit 0 without sending it
+    --errors-to ERRORS-TO        stdout|stderr — where the error envelope goes
+    --fallback-locale FALLBACK-LOCALE CODE|none|default
+    --graphql-path GRAPHQL-PATH  full GraphQL path; overrides --api-path + --graphql-route
+    --graphql-route GRAPHQL-ROUTE GraphQL route appended to --api-path (default /graphql)
+    -h, --help                   help for pay
+    --insecure-skip-verify       skip TLS verification (dev only)
+    --locale LOCALE              locale for localized fields
+    --log-format LOG-FORMAT      text|json
+    --log-level LOG-LEVEL        debug|info|warn|error
+    --max-retries N              retry budget for idempotent requests (default 3)
+    --no-audit                   do not write the audit log for this command
+    --no-cache                   ignore and do not write the discovery cache
+    --no-color                   accepted for compatibility; PayCLI never colours output
+    --no-raw                     omit Payload's raw response body from the envelope
+    --no-redact                  do not redact secrets in output (dangerous)
+    --output OUTPUT              json|jsonl|table|csv|id|raw (default json, never TTY-dependent)
+    --path PATH                  apply a three-form path expression to .data (§10.3; NOT jq)
+    --profile PROFILE            named profile to use
+    -q, --quiet                  suppress the human stderr summary
+    --refresh                    force re-discovery before running
+    --timeout TIMEOUT            per-request timeout (default 30s)
+    -v, --verbose                log every request at debug level
+    --version                    version for pay
+    --yes                        assume yes for every confirmation prompt
+
+OUTPUT
+  data_kind: op_result
+  Envelope: {"ok":true,"v":1,"command":"…","data_kind":"…","data":…,"meta":{…},"warnings":[]}
+
+EXIT CODES
+    0   success
+    1   internal — a PayCLI bug, a corrupt cache or an unwritable audit log
+  
+  Full table: pay explain --section exit_codes
+
+EXAMPLES
+  (none recorded for this command)
+
+COMMON MISTAKES
+  (none recorded for this command)
+
+SEE ALSO
+  pay explain    # what can I do here?
+  pay doctor     # why is this failing?
+

@@ -1,32 +1,31 @@
-// Package skills owns the agent-facing documentation that ships inside the
-// binary (§14) and installs it into an agent's skill directory.
+// Package skills installs the agent-facing documentation that ships inside the
+// binary (§14) into an agent's skill directory.
 //
-// The canonical source lives only at internal/skills/assets/pay/. There is no
-// top-level skills/ directory: go:embed cannot reach a parent directory, so a
-// second copy would inevitably drift from the binary it documents, and
-// `pay skills print` makes it unnecessary.
+// It does not own the skill's bytes. The canonical — and only — copy of the
+// skill lives at the repository root under skills/pay/, which is both the
+// layout `npx skills add .../skills --skill pay` expects and a Go package that
+// owns the //go:embed directive. This package imports it, so the tree that
+// ships inside `pay` is byte-for-byte the tree in the repository: one copy, no
+// sync step, nothing to drift (§1 conflict 18).
 package skills
 
 import (
 	"crypto/sha256"
-	"embed"
 	"encoding/hex"
 	"io/fs"
 	"path"
 	"regexp"
 	"sort"
 	"strings"
+
+	root "github.com/KLIXPERT-io/pay-cli/skills"
 )
-
-//go:embed all:assets
-var assets embed.FS
-
-// assetRoot is where the skill tree lives inside the embedded FS.
-const assetRoot = "assets/pay"
 
 const (
 	// Name is the skill's directory name and the name agents refer to it by.
-	Name = "pay"
+	// It is the root package's Dir, so the directory `pay skills install`
+	// creates and the directory the skill is stored in cannot disagree.
+	Name = root.Dir
 	// SkillFile is the entry point every agent reads first.
 	SkillFile = "SKILL.md"
 	// ReferenceDir holds the deep-dive documents.
@@ -51,15 +50,9 @@ type File struct {
 }
 
 // FS returns the embedded skill tree rooted at the skill directory, so
-// fs.ReadFile(skills.FS(), "SKILL.md") works.
-func FS() fs.FS {
-	sub, err := fs.Sub(assets, assetRoot)
-	if err != nil {
-		// Unreachable: assetRoot is embedded at build time.
-		panic("skills: embedded assets are missing: " + err.Error())
-	}
-	return sub
-}
+// fs.ReadFile(skills.FS(), "SKILL.md") works. It is the root skills package's
+// embedded copy of skills/pay/ — this package never embeds its own.
+func FS() fs.FS { return root.FS() }
 
 // Files returns every embedded document, sorted by path, with its digest.
 func Files() []File {

@@ -55,6 +55,13 @@ jobs:
 
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          # Pinned to v2 ON PURPOSE. cosign v3 removed --output-signature and
+          # --output-certificate from sign-blob (bundles only), and
+          # internal/update/verify.go verifies the detached
+          # checksums.txt.sig + checksums.txt.pem pair. Moving to v3 means
+          # migrating that verification path first.
+          cosign-release: v2.6.5
 
       - name: Install syft (for SBOMs)
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -270,7 +271,7 @@ func TestAnnotateRawError(t *testing.T) {
 	t.Run("a non-JSON response on a RELATIVE path is left alone", func(t *testing.T) {
 		t.Parallel()
 		htmlErr := apierr.New(apierr.CodeNonJSONResponse, "not JSON")
-		if err := annotateRawError(htmlErr, "pages", "/api"); err != error(htmlErr) {
+		if err := annotateRawError(htmlErr, "pages", "/api"); !errors.Is(err, error(htmlErr)) {
 			t.Fatalf("annotateRawError rewrote a relative-path non-JSON error")
 		}
 	})
@@ -278,7 +279,7 @@ func TestAnnotateRawError(t *testing.T) {
 	t.Run("relative path is left alone", func(t *testing.T) {
 		t.Parallel()
 		err := annotateRawError(notFound, "users/me", "/api")
-		if err != error(notFound) {
+		if !errors.Is(err, error(notFound)) {
 			t.Fatalf("annotateRawError rewrote a relative-path error")
 		}
 	})
@@ -286,7 +287,7 @@ func TestAnnotateRawError(t *testing.T) {
 	t.Run("already prefixed is left alone", func(t *testing.T) {
 		t.Parallel()
 		err := annotateRawError(notFound, "/api/nope", "/api")
-		if err != error(notFound) {
+		if !errors.Is(err, error(notFound)) {
 			t.Fatalf("annotateRawError rewrote an already-prefixed error")
 		}
 	})
@@ -294,7 +295,7 @@ func TestAnnotateRawError(t *testing.T) {
 	t.Run("unrelated code is left alone", func(t *testing.T) {
 		t.Parallel()
 		other := apierr.New(apierr.CodeServerError, "boom")
-		if err := annotateRawError(other, "/users/me", "/api"); err != error(other) {
+		if err := annotateRawError(other, "/users/me", "/api"); !errors.Is(err, error(other)) {
 			t.Fatalf("annotateRawError rewrote a non-404")
 		}
 	})

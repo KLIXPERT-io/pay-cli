@@ -95,6 +95,32 @@ type Options struct {
 	// filesystem, and ProjectBlockSlugFiles the absolute files they came from.
 	ProjectBlockSlugs     []string
 	ProjectBlockSlugFiles []string
+	// ProjectBlockInterfaces maps an `interfaceName:` literal found on the
+	// local filesystem to the `slug:` declared beside it in the same object
+	// (CallToActionBlock -> cta). It is the other half of §7.10: a blocks
+	// field's GraphQL union publishes interfaceNames, and only this map turns
+	// one into a blockType the REST API will accept. Empty is survivable —
+	// every union member then resolves through the interfaceName heuristic and
+	// is labelled as inferred — but it is never guessed at silently.
+	ProjectBlockInterfaces map[string]string
+	// ProjectBlockDecls are the block declarations read off disk, keyed by
+	// slug: each block's own `fields:` entries and whether the whole array was
+	// parseable. This is the ONLY source of a block field's required-ness —
+	// Payload generates no input type for a block type, so §7.4's NON_NULL
+	// trick cannot reach inside one. Absent for every plugin-provided block,
+	// which is why the answer stays tri-state.
+	ProjectBlockDecls map[string]BlockSourceDecl
+	// ProjectFieldDocs are the per-field `admin: { description: '…' }`
+	// instructions read from the project's own collection and global configs,
+	// keyed by entity slug and then by field name, with ProjectFieldDocFiles
+	// naming the file each entity's came from.
+	//
+	// Payload publishes admin.description nowhere in the API — it is admin-UI
+	// metadata, absent from both REST responses and GraphQL introspection — so
+	// the file on disk is the only source there is, and an entity whose config
+	// PayCLI cannot see (a plugin's collection lives in node_modules) has none.
+	ProjectFieldDocs     map[string]map[string]FieldDoc
+	ProjectFieldDocFiles map[string]string
 	// ProjectAuthSlugs are auth-collection slug literals from the project's
 	// own payload.config.ts, used only to widen Stage -1's candidate set.
 	ProjectAuthSlugs []string
@@ -373,6 +399,8 @@ func (d *Discoverer) Run(ctx context.Context) (*Result, error) {
 		Configured:         d.opt.ConfiguredBlocks,
 		ProjectSource:      d.opt.ProjectBlockSlugs,
 		ProjectSourceFiles: d.opt.ProjectBlockSlugFiles,
+		SlugByInterface:    d.opt.ProjectBlockInterfaces,
+		SourceDecls:        d.opt.ProjectBlockDecls,
 	}
 	idTypes := []string{}
 	sampleIDs := []string{}
@@ -535,10 +563,55 @@ func (d *Discoverer) probeNeedFor(r *row, schema *Schema) probeNeed {
 	return need
 }
 
+// applyFieldDocs attaches one entity's per-field documentation to its shard,
+// keyed by FIELD PATH.
+//
+// The scan supplies a flat name -> doc map for the entity's top-level `fields:`
+// array, and a top-level field's path IS its name, so the two are the same
+// key. A doc whose name matches no field of the live schema is dropped rather
+// than published: it is usually a field nested in a group or tab that the
+// scanner read at the wrong level, and inventing the path would attach an
+// instruction to a field that does not exist.
+//
+// It runs after the shard is built because it needs the finished field list to
+// do that check, and BEFORE Finalize so that the shard hash covers the docs and
+// the index entry's fields_sha256 still matches.
+func (d *Discoverer) applyFieldDocs(shard *Shard, slug string) {
+	applyFieldDocs(shard, slug, d.opt.ProjectFieldDocs, d.opt.ProjectFieldDocFiles)
+}
+
+// applyFieldDocs is the pure half, so the rule can be tested without a
+// Discoverer. It never calls Finalize: the caller owns the shard hash, and
+// mutating a shard after its hash is recorded is exactly the torn read the
+// cache reports on the next load.
+func applyFieldDocs(shard *Shard, slug string, docs map[string]map[string]FieldDoc, files map[string]string) {
+	if shard == nil {
+		return
+	}
+	entity, scanned := docs[slug]
+	if !scanned {
+		// No config for this entity on disk. Source stays "unknown", which is
+		// the honest answer for a plugin-provided collection.
+		shard.SetFieldDocs(nil, "", SourceUnknown)
+		return
+	}
+	known := map[string]bool{}
+	for _, f := range shard.Fields {
+		known[f.Path] = true
+	}
+	out := map[string]FieldDoc{}
+	for name, doc := range entity {
+		if doc.Description == "" || !known[name] {
+			continue
+		}
+		out[name] = FieldDoc{Description: doc.Description, Key: doc.Key, Source: SourceProjectSource}
+	}
+	shard.SetFieldDocs(out, files[slug], SourceProjectSource)
+}
+
 // buildCollection assembles one index entry and its field shard.
 func (d *Discoverer) buildCollection(ctx context.Context, m *Manifest, r *row, schema *Schema,
 	probe probeResult, blocks BlockSources, loc Localization) (*Collection, *Shard) {
-
 	e := r.entity
 	singular := ""
 	if e != nil {
@@ -586,6 +659,9 @@ func (d *Discoverer) buildCollection(ctx context.Context, m *Manifest, r *row, s
 	} else {
 		docs := d.sampleDocs(ctx, r.slug, sampleLimit, false)
 		if len(docs) > 0 {
+			// Without GraphQL there is no union to enumerate, so the sampled
+			// documents are the only per-field evidence there is.
+			blocks.Observed = ObservedBlockTypes(docs)
 			shard = buildShardFromDocs(m.Generation, r.slug, docs, blocks)
 			fieldsSource = SourceObserved
 		} else {
@@ -597,6 +673,17 @@ func (d *Discoverer) buildCollection(ctx context.Context, m *Manifest, r *row, s
 			}
 		}
 	}
+	// §7.10: every blocks field is resolved from ITS OWN GraphQL union, never
+	// from a project-wide bag of slugs. This runs after the shard exists so
+	// that the per-field answer, its provenance and the shard hash are written
+	// in one place for both the GraphQL and the REST-only path.
+	ResolveShardBlocks(shard, schema, blocks)
+	// The project's own per-field instructions, attached BEFORE Finalize: the
+	// index entry records this shard's hash immediately below, and a fact
+	// added after the hash is taken is a torn read on the next cache load.
+	d.applyFieldDocs(shard, r.slug)
+	shard.Finalize()
+
 	c.FieldsCount = len(shard.Fields)
 	c.FieldsSHA256 = shard.SHA256
 	c.FieldsShard = cache.ShardName(r.slug, cache.KindCollection)
@@ -622,21 +709,30 @@ func (d *Discoverer) buildCollection(ctx context.Context, m *Manifest, r *row, s
 	}
 
 	// §7.10: a required blocks field whose slugs are unresolvable makes the
-	// collection unpublishable, and the reason says so in plain words.
+	// collection unpublishable, and the reason says so in plain words. The
+	// verdict is per field: one blocks field resolving says nothing about the
+	// next one, which is exactly what a single entity-wide answer got wrong.
 	for _, f := range shard.Fields {
 		if f.PayloadType != TypeBlocks {
 			continue
 		}
-		if shard.Blocks == nil || len(shard.Blocks[f.Path]) == 0 {
+		bf, _ := shard.BlockFieldFor(f.Path)
+		switch {
+		case len(bf.Slugs) == 0:
 			code := LimBlockSlugsUnknownNoSource
-			if len(blocks.ProjectSource) > 0 || len(blocks.Configured) > 0 {
+			if len(blocks.ProjectSource) > 0 || len(blocks.Configured) > 0 || len(bf.InterfaceNames) > 0 {
 				code = LimBlockSlugsUnknown
 			}
-			m.AddLimitation(code, r.slug, f.Path, "")
+			m.AddLimitation(code, r.slug, f.Path, bf.Reason)
 			if f.Required != nil && *f.Required {
 				c.Publishable = false
 				c.PublishableReason = strPtr(UnresolvedBlocksReason(f.Path))
 			}
+		case len(bf.Unresolved) > 0 || bf.Source == SourceUnionInferred || bf.Source == SourceMixed:
+			// Partly answered is not the same as answered. The field still has
+			// a usable list, so the collection stays publishable, but the gap
+			// is stated rather than papered over.
+			m.AddLimitation(LimBlockSlugsUnknown, r.slug, f.Path, bf.Reason)
 		}
 	}
 	for _, f := range shard.Fields {
@@ -701,9 +797,13 @@ func (d *Discoverer) buildGlobal(m *Manifest, r *row, schema *Schema, blocks Blo
 	var shard *Shard
 	if obj != nil {
 		shard = buildShard(e, schema, buildShardOptions{Generation: m.Generation, Blocks: blocks})
+		ResolveShardBlocks(shard, schema, blocks)
+		d.applyFieldDocs(shard, r.slug)
+		shard.Finalize()
 		g.FieldsSource = SourceGraphQL
 	} else {
 		shard = NewShard(m.Generation, r.slug)
+		d.applyFieldDocs(shard, r.slug)
 		shard.Finalize()
 		g.FieldsSource = SourceUnknown
 		m.AddLimitation(LimFieldsUnavailable, r.slug, "", "no GraphQL schema for this global")
@@ -712,10 +812,11 @@ func (d *Discoverer) buildGlobal(m *Manifest, r *row, schema *Schema, blocks Blo
 	g.FieldsSHA256 = shard.SHA256
 	g.FieldsShard = cache.ShardName(r.slug, cache.KindGlobal)
 
-	if g.Reachability == ReachabilityAccessDenied {
+	switch g.Reachability {
+	case ReachabilityAccessDenied:
 		m.AddUnreachable(r.slug, kindGlobal, ReasonAccessDenied,
 			"present in the GraphQL schema, absent from /api/access")
-	} else if g.Reachability == ReachabilityGraphQLDisabled {
+	case ReachabilityGraphQLDisabled:
 		m.AddUnreachable(r.slug, kindGlobal, ReasonGraphQLDisabled,
 			"present in /api/access, absent from the GraphQL schema")
 	}
@@ -874,7 +975,6 @@ func permBool(v any) bool {
 // fillManifest writes the project-level sections.
 func (d *Discoverer) fillManifest(m *Manifest, view *accessView, identity *payload.Identity,
 	authSource string, mode modeOutcome, project projectProbes, loc Localization, now time.Time) {
-
 	m.Meta = ManifestMeta{
 		Scope:          d.opt.ScopeKey,
 		Profiles:       nonNilStrings(d.opt.Profiles),

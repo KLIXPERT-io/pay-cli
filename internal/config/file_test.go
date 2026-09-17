@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -157,8 +158,13 @@ func TestSaveIsAtomicAnd0600(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat: %v", err)
 	}
-	if perm := fi.Mode().Perm(); perm != FilePerm {
-		t.Errorf("mode = %04o, want %04o", perm, FilePerm)
+	// Windows has no Unix mode bits: os.Chmod only toggles the read-only
+	// attribute, so Perm() reports 0666 there. Confidentiality on Windows comes
+	// from the file living under %AppData%, not from the mode.
+	if runtime.GOOS != "windows" {
+		if perm := fi.Mode().Perm(); perm != FilePerm {
+			t.Errorf("mode = %04o, want %04o", perm, FilePerm)
+		}
 	}
 	entries, _ := os.ReadDir(filepath.Dir(path))
 	if len(entries) != 1 {
@@ -190,5 +196,32 @@ func TestProfileNames(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("ProfileNames() = %v, want %v", got, want)
 		}
+	}
+}
+
+// TestEncodeNeverEmitsAPIKey pins the other half of §4.2's rule. Load rejects a
+// config that *contains* api_key; this asserts PayCLI can never *write* one.
+// The File.APIKey field exists solely so a forbidden key decodes and can be
+// named in the error, and a toml:"api_key" tag on a populated field would
+// otherwise round-trip a credential straight into config.toml.
+func TestEncodeNeverEmitsAPIKey(t *testing.T) {
+	f := &File{
+		Path: "x", Kind: KindUser, DefaultProfile: "local",
+		APIKey:   "top-level-secret",
+		Profiles: map[string]Profile{"local": {BaseURL: "http://localhost:3900"}},
+	}
+	out, err := f.Encode()
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	if strings.Contains(string(out), "api_key") {
+		t.Errorf("Encode emitted an api_key key:\n%s", out)
+	}
+	if strings.Contains(string(out), "top-level-secret") {
+		t.Errorf("Encode leaked the credential value:\n%s", out)
+	}
+	// The receiver must not have been mutated.
+	if f.APIKey != "top-level-secret" {
+		t.Errorf("Encode mutated the receiver: APIKey = %q", f.APIKey)
 	}
 }

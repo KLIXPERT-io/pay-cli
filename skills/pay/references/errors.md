@@ -63,16 +63,52 @@ the bytes differ from the wire.
 | 1 | generic / internal | no | `internal`, `unknown`, `cache_corrupt`, `update_verification_failed`, `audit_write_failed` |
 | 2 | auth — *your credentials* | no | `auth_missing`, `auth_invalid`, `auth_required`, `auth_locked`, `auth_unverified_email`, `auth_insecure_permissions`, `auth_helper_failed` |
 | 3 | throttled / temporarily unavailable | **yes** | `rate_limited` (429), `doc_locked` (423), `server_busy` (503 with `Retry-After`) |
-| 4 | not found | no | `doc_not_found`, `route_not_found`, `version_not_found` |
-| 5 | validation / bad input | no | `validation_failed`, `query_path_invalid`, `invalid_args`, `invalid_where_syntax`, `invalid_sort_field`, `unknown_field`, `invalid_option`, `invalid_id`, `bad_request_body`, `where_required`, `file_missing`, `not_upload_collection`, `unsupported_operator`, `bulk_limit_exceeded`, `request_too_large`, `format_unsupported`, `invalid_path_expr` |
+| 4 | not found | no | `doc_not_found`, `route_not_found`, `version_not_found`, `selector_no_match` |
+| 5 | validation / bad input | no | `validation_failed`, `query_path_invalid`, `invalid_args`, `invalid_where_syntax`, `invalid_sort_field`, `unknown_field`, `invalid_option`, `invalid_id`, `bad_request_body`, `where_required`, `file_missing`, `not_upload_collection`, `unsupported_operator`, `bulk_limit_exceeded`, `request_too_large`, `format_unsupported`, `invalid_path_expr`, `selector_ambiguous`, `field_ambiguous`, `no_input`, `no_edits` |
 | 6 | network / server | **yes**, except 500 | `network_unreachable`, `dns_failure`, `tls_error`, `timeout`, `server_error` (500, **not** retried), `server_unavailable` (502/504), `non_json_response` |
 | **7** | **partial failure** | **never** | `partial_failure` |
 | 8 | access denied — identity valid, permission not | no | `access_denied`, `admin_access_denied` |
 | 9 | config / profile | no | `config_missing`, `config_secret_in_plaintext`, `profile_unknown`, `base_url_invalid`, `endpoint_not_payload`, `auth_collection_unknown` |
-| 10 | capability / discovery | no | `collection_unknown`, `global_unknown`, `feature_unavailable`, `operation_unsupported` (501), `discovery_failed`, `graphql_disabled`, `schema_stale` |
+| 10 | capability / discovery | no | `collection_unknown`, `global_unknown`, `feature_unavailable`, `operation_unsupported` (501), `discovery_failed`, `graphql_disabled`, `schema_stale`, `block_type_unknown` |
 | 11 | confirmation required | no | `confirmation_required` |
 
 `pay` never uses 125–128 or 130; those belong to the shell.
+
+### 3a. The edit-pipeline codes
+
+Six codes belong to `pay blocks` / `pay apply` (`recipes.md` §14). They are worth knowing
+apart because all six are **local** — nothing was sent, so nothing changed.
+
+| Code | Exit | Means | Do |
+|---|---|---|---|
+| `selector_no_match` | 4 | the selector addressed no row | the rows that exist are in `hint`, and `did_you_mean` offers the nearest real selectors |
+| `selector_ambiguous` | 5 | it matched several rows and the verb acts on one | `did_you_mean` lists every match ready to paste; or `rm --all` to mean all of them |
+| `field_ambiguous` | 5 | more than one blocks field, and no `--field` | pass `--field`; the candidates are in `did_you_mean` |
+| `no_input` | 5 | stdin was empty | these commands edit a document read from stdin: `pay get … \| pay blocks …` |
+| `no_edits` | 5 | `pay apply` got an envelope no transform touched | put a `pay blocks` stage in the pipe, or use `pay update <coll> <id> --data @-` to write the whole document |
+| `block_type_unknown` | 10 | this field accepts no such `blockType` | it is exit 10 because it is a fact about the *project*; `did_you_mean` comes from the field's own resolved slugs |
+
+`selector_no_match` is a **4**, not a 5: the selector is well formed and the document
+simply does not contain that row — the same distinction `doc_not_found` draws.
+
+### 3b. Warnings the edit pipeline raises
+
+Warnings never change `ok` or the exit code, and these five are the ones that decide
+whether a write is going to be correct.
+
+| Warning | Means |
+|---|---|
+| `populated_relationship` | a row carries a relationship the read expanded into a whole document; writing it back stores the expansion. Re-read at `--depth 0`. `paths` names `field[i].key` |
+| `blocks_field_inferred` | the field was chosen by looking at the document, not at a schema — run `pay discover --refresh`, or pass `--field` |
+| `local_validation_skipped` | no schema was available, so `blockType` was **not** checked; an unknown one will reach Payload, which drops the row and answers 201 |
+| `field_absent` | the piped document has no such field — usually a `--select` on the read that trimmed it |
+| `envelope_unwrapped` | `--data` was handed a whole PayCLI envelope and its `.data` was used as the body |
+| `apply_all_fields` | `--all-fields` widened the write past the fields the pipeline recorded |
+
+An `upstream_error` never appears as a warning: a stage whose stdin holds `ok:false`
+re-emits that error with **its** code and **its** exit status, so a failed `pay get` in the
+middle of a pipe surfaces as `doc_not_found` / exit 4 from the stage that could not run —
+not as a bad-input error against a selector that was right.
 
 ## 4. Exit 7 in detail — the one that damages data
 

@@ -240,7 +240,7 @@ func runUpload(ctx context.Context, d *Deps, f *uploadFlags, slug, source string
 	if cfg.DryRun {
 		preview := map[string]any{"file": filename, "content_type": contentType, "_payload": fields}
 		return emitDryRun(d, w, safety.CmdUpload, method,
-			client.URLFor(&payload.Request{Method: method, Path: path}), preview, 1, nil)
+			client.URLFor(&payload.Request{Method: method, Path: path}), preview, 1, nil, warnings...)
 	}
 	if err := w.confirm(1); err != nil {
 		return nil, err

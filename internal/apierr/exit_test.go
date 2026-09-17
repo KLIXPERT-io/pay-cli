@@ -73,13 +73,13 @@ func TestExitByClass(t *testing.T) {
 		{ExitInternal, []Code{CodeInternal, CodeUnknown, CodeCacheCorrupt, CodeUpdateVerificationFailed, CodeAuditWriteFailed}},
 		{ExitAuth, []Code{CodeAuthMissing, CodeAuthInvalid, CodeAuthRequired, CodeAuthLocked, CodeAuthUnverifiedEmail, CodeAuthInsecurePermissions, CodeAuthHelperFailed}},
 		{ExitThrottled, []Code{CodeRateLimited, CodeDocLocked, CodeServerBusy}},
-		{ExitNotFound, []Code{CodeDocNotFound, CodeRouteNotFound, CodeVersionNotFound}},
-		{ExitValidation, []Code{CodeValidationFailed, CodeQueryPathInvalid, CodeInvalidArgs, CodeInvalidWhereSyntax, CodeInvalidSortField, CodeUnknownField, CodeInvalidOption, CodeInvalidID, CodeBadRequestBody, CodeWhereRequired, CodeFileMissing, CodeNotUploadCollection, CodeUnsupportedOperator, CodeBulkLimitExceeded, CodeRequestTooLarge, CodeFormatUnsupported, CodeInvalidPathExpr}},
+		{ExitNotFound, []Code{CodeDocNotFound, CodeRouteNotFound, CodeVersionNotFound, CodeSelectorNoMatch}},
+		{ExitValidation, []Code{CodeValidationFailed, CodeQueryPathInvalid, CodeInvalidArgs, CodeInvalidWhereSyntax, CodeInvalidSortField, CodeUnknownField, CodeInvalidOption, CodeInvalidID, CodeBadRequestBody, CodeWhereRequired, CodeFileMissing, CodeNotUploadCollection, CodeUnsupportedOperator, CodeBulkLimitExceeded, CodeRequestTooLarge, CodeFormatUnsupported, CodeInvalidPathExpr, CodeSelectorAmbiguous, CodeFieldAmbiguous, CodeNoInput, CodeNoEdits}},
 		{ExitNetwork, []Code{CodeNetworkUnreachable, CodeDNSFailure, CodeTLSError, CodeTimeout, CodeServerError, CodeServerUnavailable, CodeNonJSONResponse}},
 		{ExitPartial, []Code{CodePartialFailure}},
 		{ExitAccessDenied, []Code{CodeAccessDenied, CodeAdminAccessDenied}},
 		{ExitConfig, []Code{CodeConfigMissing, CodeConfigSecretInPlaintext, CodeProfileUnknown, CodeBaseURLInvalid, CodeEndpointNotPayload, CodeAuthCollectionUnknown}},
-		{ExitCapability, []Code{CodeCollectionUnknown, CodeGlobalUnknown, CodeFeatureUnavailable, CodeOperationUnsupported, CodeDiscoveryFailed, CodeGraphQLDisabled, CodeSchemaStale}},
+		{ExitCapability, []Code{CodeCollectionUnknown, CodeGlobalUnknown, CodeFeatureUnavailable, CodeOperationUnsupported, CodeDiscoveryFailed, CodeGraphQLDisabled, CodeSchemaStale, CodeBlockTypeUnknown}},
 		{ExitConfirmationRequired, []Code{CodeConfirmationRequired}},
 	}
 	seen := 0

@@ -1,0 +1,183 @@
+{
+  "ok": true,
+  "v": 1,
+  "command": "explain",
+  "data_kind": "capabilities",
+  "data": {
+    "collection_slugs": [
+      "categories",
+      "crm-activities",
+      "crm-attachments",
+      "crm-audit-log",
+      "crm-availability-schedules",
+      "crm-booking-pages",
+      "crm-bookings",
+      "crm-campaign-events",
+      "crm-campaigns",
+      "crm-companies",
+      "crm-contact-signals",
+      "crm-contacts",
+      "crm-conversations",
+      "crm-deal-line-items",
+      "crm-drafts",
+      "crm-email-layouts",
+      "crm-flow-enrolments",
+      "crm-flows",
+      "crm-import-row-errors",
+      "crm-imports",
+      "crm-inboxes",
+      "crm-list-memberships",
+      "crm-lists",
+      "crm-locations",
+      "crm-message-events",
+      "crm-messages",
+      "crm-opportunities",
+      "crm-pipelines",
+      "crm-products",
+      "crm-provider-connections",
+      "crm-saved-views",
+      "crm-signal-definitions",
+      "crm-tags",
+      "crm-tasks",
+      "crm-templates",
+      "crm-workflow-runs",
+      "form-submissions",
+      "forms",
+      "media",
+      "pages",
+      "payload-folders",
+      "payload-jobs",
+      "payload-kv",
+      "payload-locked-documents",
+      "payload-migrations",
+      "payload-preferences",
+      "posts",
+      "redirects",
+      "search",
+      "users"
+    ],
+    "connection": {
+      "api_path": "/api",
+      "api_path_source": "default",
+      "auth_collection": "users",
+      "auth_mode": "api-key",
+      "base_url": "http://localhost:3900",
+      "can_access_admin": false,
+      "cli_version": "<version>",
+      "collections_total": 50,
+      "custom_endpoints": [],
+      "db_adapter": "postgres",
+      "db_adapter_source": "inferred",
+      "discovery_revision": "4b2e259e-c04adfc6",
+      "generated_at": "2026-09-16T12:00:00Z",
+      "globals_total": 5,
+      "graphql_mode": "ok",
+      "graphql_path": "/api/graphql",
+      "identity_verified": true,
+      "localization": {
+        "enabled": false,
+        "enabled_source": "graphql-arg-absent",
+        "locales": [],
+        "default": null,
+        "default_source": "unknown",
+        "locales_source": "graphql-arg-absent",
+        "fallback_default": null,
+        "locale_count": null
+      },
+      "payload_version": null,
+      "payload_version_source": "unknown",
+      "profile": "default"
+    },
+    "global_slugs": [
+      "crm-brand",
+      "crm-features",
+      "footer",
+      "header",
+      "payload-jobs-stats"
+    ],
+    "gotchas": [
+      {
+        "do": "pay auth test",
+        "id": "auth_200_with_null_user",
+        "text": "A wrong API key returns HTTP 200 with {\"user\":null}. Never read a status code as proof of auth."
+      },
+      {
+        "do": "pay whoami",
+        "id": "anonymous_reads_succeed",
+        "text": "Many projects allow unauthenticated reads, so a successful `pay find` proves nothing about your credential."
+      },
+      {
+        "do": "pay describe <collection> --path .sortable_paths[]",
+        "id": "unknown_sort_is_silent",
+        "text": "Payload silently ignores an unknown --sort field and returns 200, unsorted."
+      },
+      {
+        "do": "pay describe <collection> --path .fields[].path",
+        "id": "unknown_select_returns_only_id",
+        "text": "An unknown --select key returns 200 with only id, not an error."
+      },
+      {
+        "do": "pay count <collection>",
+        "id": "limit_zero_is_unlimited",
+        "text": "limit=0 means UNLIMITED in Payload, not \"no documents\". PayCLI rejects --limit 0 with exit 5."
+      },
+      {
+        "do": "pay find <collection> --published-only",
+        "id": "drafts_need_published_only",
+        "text": "A bare read does NOT exclude never-published documents; --draft is not the inverse of published."
+      },
+      {
+        "do": "pay delete <collection> --where '…' --dry-run",
+        "id": "bulk_writes_ignore_limit",
+        "text": "A bulk PATCH/DELETE with a where clause ignores limit entirely; the blast radius is everything that matches."
+      },
+      {
+        "do": "pay auth status --path .auth_collection --output id",
+        "id": "auth_header_carries_the_slug",
+        "text": "The API-key header is `Authorization: {authCollectionSlug} API-Key {key}` — the slug is required and project-specific."
+      },
+      {
+        "do": "pay find <collection> --where 'tags in a,b'",
+        "id": "postgres_operator_500s",
+        "text": "On Postgres the all/near/within/intersects operators return HTTP 500 rather than a validation error."
+      }
+    ]
+  },
+  "meta": {
+    "request_id": "<id>",
+    "cli_version": "<version>",
+    "profile": "default",
+    "base_url": "http://localhost:3900",
+    "api_path": "/api",
+    "auth_mode": "anonymous",
+    "payload_version": null,
+    "payload_version_source": "",
+    "locale": {
+      "requested": null,
+      "fallback": null
+    },
+    "date_field": null,
+    "since": null,
+    "until": null,
+    "duration_ms": 0,
+    "http_requests": 0,
+    "retries": 0,
+    "bytes": 3422,
+    "cache": {
+      "discovery": "hit",
+      "age_s": 0,
+      "ttl_s": 600,
+      "fingerprint": "4b2e259e863d403780378cec88b4230bdd1376bc41ef0717ca2e246d977d0eb0",
+      "revalidated": false
+    },
+    "discovery_revision": "4b2e259e-c04adfc6",
+    "dry_run": false
+  },
+  "warnings": [
+    {
+      "code": "anonymous_session",
+      "message": "No credential resolved for profile \"default\"; running unauthenticated. Permissions, the collection list and field visibility are all reduced.",
+      "hint": "pay auth login --profile default --base-url http://localhost:3900"
+    }
+  ]
+}

@@ -292,7 +292,7 @@ func (o Options) targets(root string) ([]target, []TargetResult, error) {
 					Agent:  a.Name,
 					Dir:    a.Dir(root),
 					Status: StatusSkipped,
-					Reason: fmt.Sprintf("%s does not exist; PayCLI never creates a directory for an agent that is not used here", a.HomeDir(root)),
+					Reason: a.HomeDir(root) + " does not exist; PayCLI never creates a directory for an agent that is not used here",
 				})
 				continue
 			}
@@ -418,7 +418,7 @@ func (o Options) installTo(t target, scope Scope, files []File) (TargetResult, [
 			skippedAny = true
 			warns = append(warns, output.Warning{
 				Code:    WarnFileModified,
-				Message: fmt.Sprintf("%s was edited since it was installed and was left alone.", dest),
+				Message: dest + " was edited since it was installed and was left alone.",
 				Paths:   []string{dest},
 				Hint:    "pass --force to overwrite it, or move your edits into a separate file.",
 			})
@@ -558,7 +558,7 @@ func Uninstall(opts Options) (*Result, error) {
 				res.Skipped = append(res.Skipped, tr)
 				res.Warnings = append(res.Warnings, output.Warning{
 					Code:    WarnFileModified,
-					Message: fmt.Sprintf("%s was not installed by pay and was left alone.", t.dir),
+					Message: t.dir + " was not installed by pay and was left alone.",
 					Paths:   []string{t.dir},
 					Hint:    "pass --force to remove it anyway.",
 				})
@@ -578,7 +578,7 @@ func Uninstall(opts Options) (*Result, error) {
 				tr.Files = append(tr.Files, FileResult{Path: rel, Status: StatusSkipped, Reason: "edited since install"})
 				res.Warnings = append(res.Warnings, output.Warning{
 					Code:    WarnFileModified,
-					Message: fmt.Sprintf("%s was edited since it was installed and was left in place.", dest),
+					Message: dest + " was edited since it was installed and was left in place.",
 					Paths:   []string{dest},
 					Hint:    "pass --force to remove it anyway.",
 				})

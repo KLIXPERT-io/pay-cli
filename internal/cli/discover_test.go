@@ -72,7 +72,7 @@ func mountAt(t *testing.T, prefix, upstream string) *mountedServer {
 		w.WriteHeader(resp.StatusCode)
 		_, _ = io.Copy(w, resp.Body)
 	}))
-	t.Cleanup(m.Server.Close)
+	t.Cleanup(m.Close)
 	return m
 }
 

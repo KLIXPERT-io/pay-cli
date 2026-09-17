@@ -45,11 +45,6 @@ func (w *writeData) register(cmd *cobra.Command) {
 	fl.StringArrayVar(&w.setJSON, "set-json", nil, "k=JSON field (repeatable, no coercion — the escape hatch)")
 }
 
-// empty reports whether the caller supplied no body at all.
-func (w *writeData) empty() bool {
-	return w == nil || (w.alt == "" && w.data == "" && w.dataFile == "" && len(w.set) == 0 && len(w.setJSON) == 0)
-}
-
 // build merges the data flags into one request body and applies §9.10.1's
 // typing and coercion. It performs no network I/O.
 func (w *writeData) build(d *Deps, t *collTarget, shard *discovery.Shard) (map[string]any, []output.Warning, error) {
@@ -72,6 +67,13 @@ func (w *writeData) build(d *Deps, t *collTarget, shard *discovery.Shard) (map[s
 		obj, err := decodeObject(raw.src, bytes)
 		if err != nil {
 			return nil, nil, err
+		}
+		obj, warn, err := unwrapEnvelopeBody(raw.src, obj)
+		if err != nil {
+			return nil, nil, err
+		}
+		if warn != nil {
+			warnings = append(warnings, *warn)
 		}
 		deepMerge(body, obj)
 	}
@@ -182,6 +184,43 @@ func jsonKindOf(v any) string {
 		return "an array"
 	}
 	return "a scalar"
+}
+
+// unwrapEnvelopeBody lets `--data @-` be handed a whole PayCLI envelope.
+//
+// `pay get pages 12 | pay update pages 12 --data @-` is the shape every caller
+// reaches for first, and before this it sent {"ok":true,"data":{…},"meta":{…}}
+// as the request body. Payload accepts that with a 201 and silently drops every
+// unknown key, so the write appeared to succeed and changed nothing — the exact
+// silent-wrong-answer §0 forbids.
+//
+// The detection is asEnvelope's: `ok`, `v`, `data_kind` and `meta` together,
+// four keys no Payload document carries because PayCLI invented three of them.
+// The unwrap is announced, never silent: the caller asked to send one thing and
+// PayCLI sent another, and that belongs in warnings[].
+func unwrapEnvelopeBody(flag string, obj map[string]any) (map[string]any, *output.Warning, error) {
+	if _, ok := asEnvelope(obj); !ok {
+		return obj, nil, nil
+	}
+	if ok, _ := obj["ok"].(bool); !ok {
+		// An error envelope has no document in it at all. Sending its `error`
+		// object as a request body would be nonsense, so this fails here with
+		// the upstream's own code rather than as a validation failure on the
+		// far side.
+		return nil, nil, upstreamError(obj)
+	}
+	data, ok := obj["data"].(map[string]any)
+	if !ok {
+		return nil, nil, apierr.New(apierr.CodeBadRequestBody,
+			"%s was given a PayCLI envelope whose data is %s, not one document", flag, jsonKindOf(obj["data"])).
+			WithHint("`pay get <collection> <id>` returns one document; `pay find` returns a list")
+	}
+	return data, &output.Warning{
+		Code: WarnEnvelopeUnwrapped,
+		Message: flag + " was given a whole PayCLI envelope; its .data was used as the request body " +
+			"(sending the envelope itself would have written ok/v/data_kind/meta as fields, which Payload drops silently)",
+		Hint: "for a block edit, prefer the pipeline: `pay get … | pay blocks … | pay apply`",
+	}, nil
 }
 
 // deepMerge merges src into dst. Objects merge recursively; arrays and scalars
@@ -438,7 +477,7 @@ func describeValue(v any) string {
 	case bool:
 		return fmt.Sprintf("the boolean %v", t)
 	case json.Number:
-		return fmt.Sprintf("the number %s", t.String())
+		return "the number " + t.String()
 	case nil:
 		return "null"
 	}
@@ -1229,7 +1268,7 @@ func runCreate(ctx context.Context, d *Deps, f *createFlags, slug string) (*outp
 		q, _ := p.Encode()
 		env, err := emitDryRun(d, w, safety.CmdCreate, "POST", client.URLFor(&payload.Request{
 			Method: "POST", Path: "/" + t.Slug, Query: q,
-		}), body, 1, nil)
+		}), body, 1, nil, warnings...)
 		if err != nil {
 			return nil, err
 		}
@@ -1289,7 +1328,18 @@ func statusOf(res *payload.WriteResult) int {
 }
 
 // emitDryRun builds §12.2's op_result envelope.
-func emitDryRun(d *Deps, w *writeOp, command, method, url string, body map[string]any, total int, ids []any) (*output.Envelope, error) {
+//
+// warnings are the ones the caller already produced BEFORE deciding to send —
+// §9.7's unknown-blockType warning above all, which exists precisely because
+// Payload answers 201 and silently discards the block. Every write verb built
+// those warnings and then dropped them on the one path whose entire job is to
+// show an agent what the write will do, so
+// `pay create pages --set-json 'layout=[{"blockType":"nonsense"}]' --dry-run`
+// printed nothing while the identical command without --dry-run warned.
+// Taking them here makes it impossible for a dry run to be quieter than the
+// write it previews.
+func emitDryRun(d *Deps, w *writeOp, command, method, url string, body map[string]any, total int, ids []any,
+	warnings ...output.Warning) (*output.Envelope, error) {
 	// A negative blast radius is a bug in the caller, not a preview:
 	// NewDryRun would quietly turn it into len(ids), i.e. would_affect: 0 for
 	// an unbounded write. Refuse rather than print a reassuring zero.
@@ -1317,5 +1367,8 @@ func emitDryRun(d *Deps, w *writeOp, command, method, url string, body map[strin
 	if warn := w.post(true, 0, total, 0, "", ""); warn != nil {
 		env.AddWarning(*warn)
 	}
+	// appendNewWarnings, not a bare append: a caller that already attached one
+	// of these itself must not make the preview say it twice.
+	env.Warnings = appendNewWarnings(env.Warnings, warnings...)
 	return env, nil
 }

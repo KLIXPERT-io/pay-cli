@@ -1025,3 +1025,58 @@ func equalStrings(a, b []string) bool {
 }
 
 var _ = strconv.Itoa
+
+// TestFieldDocsKeepTheIndexAndShardInAgreement is a regression test for a torn
+// read.
+//
+// The index entry records the shard's SHA256, and §7.10's per-field
+// documentation is attached to the shard. Attaching it AFTER Finalize changed
+// the shard's bytes without changing the recorded hash, and the next cache load
+// rejected the whole shard with `cache_unreadable: sha256 mismatch (torn read)`
+// followed by FIELDS_UNAVAILABLE — i.e. adding documentation silently deleted
+// the entire field schema of every documented collection.
+func TestFieldDocsKeepTheIndexAndShardInAgreement(t *testing.T) {
+	f := newFakeAPI()
+	d := newTestDiscoverer(t, f, func(o *Options) {
+		o.ProjectFieldDocs = map[string]map[string]FieldDoc{
+			"pages": {"title": {
+				Description: "Shown in listings. Keep it under 60 characters.",
+				Key:         "admin.description",
+			}},
+		}
+		o.ProjectFieldDocFiles = map[string]string{"pages": "/p/src/collections/Pages/index.ts"}
+	})
+	res, err := d.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	pages, ok := res.Manifest.Collection("pages")
+	if !ok {
+		t.Fatal("no pages collection")
+	}
+	shard := res.Shards["fields/pages.json"]
+	if shard == nil {
+		t.Fatal("no shard for pages")
+	}
+	// The documentation must have landed...
+	doc, documented := shard.FieldDocFor("title")
+	if !documented || doc.Key != "admin.description" || doc.Source != SourceProjectSource {
+		t.Fatalf("title doc = %+v (%v)", doc, documented)
+	}
+	if shard.FieldDocsFile != "/p/src/collections/Pages/index.ts" {
+		t.Errorf("field_docs_file = %q", shard.FieldDocsFile)
+	}
+	// ...and the hash the index published must still describe these bytes.
+	if shard.SHA256 != pages.FieldsSHA256 {
+		t.Errorf("index and shard disagree: %q vs %q — a fact was added after the hash was taken",
+			pages.FieldsSHA256, shard.SHA256)
+	}
+	if shard.SHA256 != HashShard(shard) {
+		t.Errorf("shard.SHA256 = %q, want %q: Finalize did not cover the field docs",
+			shard.SHA256, HashShard(shard))
+	}
+	// An entity with no config on disk keeps the honest unknown.
+	if users := res.Shards["fields/users.json"]; users != nil && users.FieldDocsSource != SourceUnknown {
+		t.Errorf("users field_docs_source = %q, want unknown", users.FieldDocsSource)
+	}
+}

@@ -101,6 +101,22 @@ const (
 	CmdRestore         = "restore"
 	CmdGlobalsUpdate   = "globals update"
 	CmdVersionsRestore = "versions restore"
+
+	// The `pay blocks` family edits a document that arrives on stdin and puts
+	// nothing on the wire, so every one of them is L0 — the same level as a
+	// read, and for the same reason: nothing it does can be wrong on the
+	// server. The write happens later, once, in `pay apply`.
+	CmdBlocksList   = "blocks ls"
+	CmdBlocksMove   = "blocks mv"
+	CmdBlocksRemove = "blocks rm"
+	CmdBlocksAdd    = "blocks add"
+	CmdBlocksCopy   = "blocks cp"
+	CmdBlocksSet    = "blocks set"
+
+	// CmdApply is the pipeline's write half: one PATCH, one document,
+	// addressed by the id the upstream envelope carries. It is exactly as
+	// risky as `pay update <id>` and is levelled with it.
+	CmdApply = "apply"
 )
 
 // readCommands is the §12.1 L0 row. `raw` is L0 only for a GET; the caller
@@ -111,6 +127,8 @@ var readCommands = map[string]bool{
 	CmdWhoami: true, CmdDownload: true, CmdDiscover: true, CmdDoctor: true,
 	CmdCache: true, CmdVersionsList: true, CmdVersionsGet: true,
 	CmdVersionsDiff: true, CmdGlobalsList: true, CmdGlobalsGet: true,
+	CmdBlocksList: true, CmdBlocksMove: true, CmdBlocksRemove: true,
+	CmdBlocksAdd: true, CmdBlocksCopy: true, CmdBlocksSet: true,
 }
 
 // Op is one operation about to be performed, described in the terms §12 cares
@@ -163,7 +181,7 @@ func (o Op) Level() Level {
 		return L3
 	}
 	switch cmd {
-	case CmdCreate, CmdUpload, CmdDuplicate, CmdUpdate, CmdPublish, CmdRestore:
+	case CmdCreate, CmdUpload, CmdDuplicate, CmdUpdate, CmdApply, CmdPublish, CmdRestore:
 		return L1
 	case CmdUnpublish, CmdGlobalsUpdate, CmdVersionsRestore:
 		return L2
@@ -215,7 +233,7 @@ func (o Op) Action() string {
 		return ActionCreate
 	case CmdUpload:
 		return ActionUpload
-	case CmdUpdate, CmdGlobalsUpdate:
+	case CmdUpdate, CmdApply, CmdGlobalsUpdate:
 		return ActionUpdate
 	case CmdPublish:
 		return ActionPublish

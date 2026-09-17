@@ -434,9 +434,8 @@ func preValidatePublish(ctx context.Context, client *payload.Client, t *collTarg
 // blocked ones, so an incomplete draft never poisons its batch-mates.
 func splitPublishable(ctx context.Context, client *payload.Client, t *collTarget, ids []any,
 	opts ...payload.Option) ([]any, []payload.BulkFailure, error) {
-
 	if t.Shard == nil || len(t.Shard.RequiredPaths) == 0 || len(ids) == 0 {
-		return ids, nil, nil
+		return ids, nil, nil //nolint:nilerr // documented above: a failed pre-check must not block the write
 	}
 	sel := append([]string{"id"}, t.Shard.RequiredPaths...)
 	var docs []payload.Doc
@@ -453,7 +452,7 @@ func splitPublishable(ctx context.Context, client *payload.Client, t *collTarget
 	if err != nil {
 		// The pre-check is an optimisation, not a gate: if it cannot run, send
 		// the write and let the server answer.
-		return ids, nil, nil
+		return ids, nil, nil //nolint:nilerr // deliberate: a failed pre-check must not block the write
 	}
 
 	missingByID := map[string][]string{}

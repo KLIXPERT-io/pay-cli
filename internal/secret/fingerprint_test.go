@@ -3,6 +3,8 @@ package secret
 import (
 	"strings"
 	"testing"
+
+	"github.com/KLIXPERT-io/pay-cli/internal/redact"
 )
 
 // TestFingerprintIsTheSpecFormula pins §4.4's formula with a value computed
@@ -57,8 +59,11 @@ func TestFingerprintIsHexAndOpaque(t *testing.T) {
 			t.Fatalf("non-hex character %q in %q", c, fp)
 		}
 	}
-	if Fingerprint(key) != Fingerprint(key) {
-		t.Fatal("Fingerprint is not deterministic")
+	// Pin the digest rather than compare the function to itself: secret.
+	// Fingerprint delegates to redact.Fingerprint, and the two must keep
+	// agreeing or cache scope keys and manifest identity diverge (§5, §8.1).
+	if got, want := Fingerprint(key), redact.Fingerprint(key); got != want {
+		t.Fatalf("secret.Fingerprint = %q, redact.Fingerprint = %q; they must agree", got, want)
 	}
 	if Fingerprint(key) == Fingerprint(key+"x") {
 		t.Fatal("distinct credentials collided")

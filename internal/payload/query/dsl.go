@@ -67,7 +67,7 @@ func isNumeric(s string) bool {
 	if strings.ContainsAny(lower, "xp_") || strings.Contains(lower, "inf") || strings.Contains(lower, "nan") {
 		return false
 	}
-	var n json.Number = json.Number(s)
+	var n = json.Number(s)
 	if _, err := n.Float64(); err != nil {
 		return false
 	}

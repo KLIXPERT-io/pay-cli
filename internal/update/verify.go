@@ -150,7 +150,7 @@ func VerifyChecksum(assetName string, artifact, checksums []byte) Verification {
 		return Verification{
 			Outcome: OutcomeUnverifiable,
 			Method:  "checksum",
-			Reason:  fmt.Sprintf("checksums.txt has no entry for %s", assetName),
+			Reason:  "checksums.txt has no entry for " + assetName,
 		}
 	case want != got:
 		return Verification{

@@ -72,7 +72,8 @@ func (s *Store) gcDue(now time.Time) bool {
 	if divisor == 1 {
 		return true
 	}
-	return rand.IntN(divisor) == 0
+	// Probabilistic GC sampling; nothing security-sensitive depends on it.
+	return rand.IntN(divisor) == 0 //nolint:gosec // G404: sampling, not a secret
 }
 
 func (s *Store) stampGC(now time.Time) {

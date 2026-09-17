@@ -69,7 +69,7 @@ func TestGetAndCount(t *testing.T) {
 		case "/api/pages/count":
 			_, _ = io.WriteString(w, `{"totalDocs":11}`)
 		default:
-			w.WriteHeader(404)
+			w.WriteHeader(http.StatusNotFound)
 			_, _ = io.WriteString(w, `{"errors":[{"message":"Not Found"}]}`)
 		}
 	})

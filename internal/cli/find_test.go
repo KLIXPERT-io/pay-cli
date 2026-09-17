@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -19,10 +18,8 @@ import (
 // fixtures
 // ---------------------------------------------------------------------------
 
-func boolp(v bool) *bool          { return &v }
-func strp(v string) *string       { return &v }
-func testNow() time.Time          { return time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC) }
-func testClock() func() time.Time { return testNow }
+func boolp(v bool) *bool    { return &v }
+func strp(v string) *string { return &v }
 
 // testField builds a shard field with the tri-state keys filled in.
 func testField(name, payloadType string, opts ...func(*discovery.Field)) discovery.Field {
