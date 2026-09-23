@@ -32,6 +32,8 @@ improving an `error.message` or `hint` are **not** breaking. Never branch on
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-09-23
+
 ### Added
 
 - **An edit pipeline for blocks: `pay blocks` + `pay apply`.** Reordering or dropping a block used to
@@ -130,7 +132,7 @@ improving an `error.message` or `hint` are **not** breaking. Never branch on
   an entity's top-level `fields:` array is read, so a field nested in a group, an array or
   a tab is reported as undocumented rather than given a guessed path.
 
-## [0.1.0] — unreleased
+## [0.1.0] — 2026-09-17
 
 First public release.
 
@@ -231,5 +233,6 @@ First public release.
 - `--verify-sort` and `--allow-write-probes` are opt-in because they cost extra requests
   and, in the second case, write to the project.
 
-[Unreleased]: https://github.com/KLIXPERT-io/pay-cli/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/KLIXPERT-io/pay-cli/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/KLIXPERT-io/pay-cli/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/KLIXPERT-io/pay-cli/releases/tag/v0.1.0
