@@ -90,7 +90,7 @@ arch_raw="$(uname -m)"
 case "$os_raw" in
   Linux)  os="linux" ;;
   Darwin) os="darwin" ;;
-  *) err "unsupported OS: $os_raw (use install.ps1 on Windows)" ;;
+  *) err "unsupported OS: $os_raw (pay ships for Linux and macOS only)" ;;
 esac
 
 case "$arch_raw" in
@@ -122,8 +122,8 @@ case "$VERSION" in v*) ;; *) VERSION="v$VERSION" ;; esac
 # goreleaser strips the leading v from .Version.
 ver_noV="${VERSION#v}"
 # FROZEN archive name — must match .goreleaser.yaml's name_template,
-# internal/update.archiveAssetName and install.ps1. scripts/arch-lint.sh
-# asserts all four agree.
+# and internal/update.archiveAssetName. scripts/arch-lint.sh asserts all
+# three agree.
 archive="${BIN}_${ver_noV}_${os}_${arch}.tar.gz"
 base_url="${PAY_DOWNLOAD_BASE:-https://github.com/${REPO}/releases/download/${VERSION}}"
 

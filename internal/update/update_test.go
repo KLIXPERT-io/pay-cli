@@ -21,7 +21,7 @@ import (
 
 // TestArchiveAssetNameIsFrozen guards §15's frozen template
 // "pay_{{ .Version }}_{{ .Os }}_{{ .Arch }}", which is duplicated in
-// .goreleaser.yaml, install.sh and install.ps1. Changing it after v0.1.0
+// .goreleaser.yaml and install.sh. Changing it after v0.1.0
 // permanently breaks self-update for every already-installed binary.
 func TestArchiveAssetNameIsFrozen(t *testing.T) {
 	want := fmt.Sprintf("pay_1.2.3_%s_%s%s", runtime.GOOS, runtime.GOARCH, ArchiveExt(runtime.GOOS))

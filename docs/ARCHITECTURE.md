@@ -262,7 +262,7 @@ pay-cli/
 ├── LICENSE                       # MIT
 ├── README.md  INSTALL.md  CHANGELOG.md
 ├── Makefile  .goreleaser.yaml  .golangci.yml  .editorconfig  .gitignore
-├── install.sh  install.ps1        # install.sh also prints the PATH advice of §18's binary_on_path
+├── install.sh                    # also prints the PATH advice of §18's binary_on_path
 ├── scripts/arch-lint.sh          # the §3.1 greps; `make lint`
 ├── docs/
 │   ├── GROUNDING.md              # probed facts (input)
@@ -5401,8 +5401,8 @@ Reuses gsc-cli's pipeline (`resolveBinary`/`EvalSymlinks`, `lookupChecksum`, `ex
    **Windows rename-self dance** (`os.Rename` over a running `.exe` fails, §19.13), specified so it is
    not reinvented: `MoveFileEx(current → pay.exe.old, MOVEFILE_REPLACE_EXISTING)` → move the new
    binary into the original path → best-effort `Remove("pay.exe.old")` on the *next* start, ignoring
-   `ERROR_SHARING_VIOLATION`. `update.auto = true` on Windows is therefore functional, not a silent
-   no-op. The windows-latest CI job named in §16.2 exercises it against a `t.TempDir()`.
+   `ERROR_SHARING_VIOLATION`. Windows is no longer a supported platform (§16.1 builds no archive for
+   it and §16.2 does not test it), so this path remains in the code but nothing exercises it.
 2. **`auto = false` by default** (§1 conflict 20).
 3. **Verify more than a checksum, with three outcomes — not two.** `checksums.txt` comes from the
    same origin as the artifact, so it proves nothing against a compromised release. Download
@@ -5434,7 +5434,7 @@ Reuses gsc-cli's pipeline (`resolveBinary`/`EvalSymlinks`, `lookupChecksum`, `ex
 
 **Frozen forever:** the archive name template `pay_{{ .Version }}_{{ .Os }}_{{ .Arch }}` is duplicated
 in three places (goreleaser `name_template`, `internal/update.archiveAssetName`,
-`install.sh`/`install.ps1`). Changing it after v0.1.0 permanently breaks self-update for every
+`install.sh`). Changing it after v0.1.0 permanently breaks self-update for every
 already-installed binary, because old binaries construct the old name. A unit test asserts
 `update.archiveAssetName("v1.2.3")` equals exactly what the template produces.
 
@@ -5454,8 +5454,8 @@ builds:
     main: ./cmd/pay
     binary: pay
     env: [CGO_ENABLED=0]
-    goos: [darwin, linux, windows]
-    goarch: [amd64, arm64]                             # keep windows/arm64; gsc-cli drops it
+    goos: [darwin, linux]                              # Windows is not a supported platform
+    goarch: [amd64, arm64]
     flags: [-trimpath]
     mod_timestamp: "{{ .CommitTimestamp }}"
     ldflags:
@@ -5465,7 +5465,6 @@ universal_binaries: [{replace: false}]
 archives:
   - id: default
     name_template: "pay_{{ .Version }}_{{ .Os }}_{{ .Arch }}"     # FROZEN, see §15
-    format_overrides: [{goos: windows, formats: [zip]}]
     files: [README.md, INSTALL.md, LICENSE]
 checksum: {name_template: checksums.txt}
 sboms: [{artifacts: archive}]
@@ -5483,8 +5482,8 @@ changelog: {use: github, sort: asc, groups: [Features, Fixes, Others],
 release: {github: {owner: KLIXPERT-io, name: pay-cli}, draft: false, prerelease: auto}
 ```
 
-gsc-cli's config omits `-trimpath`, `gomod.proxy`, SBOMs, signing, `main.commit`/`main.date`, and
-windows/arm64. All are one-line fixes with real downstream value.
+gsc-cli's config omits `-trimpath`, `gomod.proxy`, SBOMs, signing and `main.commit`/`main.date`.
+All are one-line fixes with real downstream value.
 
 ### 16.2 Workflows
 
@@ -5499,16 +5498,16 @@ major behind.
   * `lint` — `gofmt -l` must be empty, `go vet`, `go tool staticcheck`, golangci-lint,
     `go mod tidy && git diff --exit-code`, plus the `os.Stdout`/`os.Getenv`/`os.Exit`/`time.Now` grep
     from §3.1.
-  * `test` — matrix over ubuntu / macos / **windows**, `go test -race -shuffle=on -count=1 ./...`.
-    Windows matters because `lock_windows.go`, `platform_windows.go` and the `%LocalAppData%` paths are
-    otherwise never exercised.
+  * `test` — matrix over ubuntu / macos, `go test -race -shuffle=on -count=1 ./...`. Windows is not
+    a supported platform, so it is not in the matrix; `lock_windows.go`, `platform_windows.go` and the
+    `%LocalAppData%` paths remain in the code but nothing exercises them.
   * `build` — `goreleaser check` plus `release --snapshot --clean --skip=publish,sign,sbom`, so a
     release config that does not compile fails on the PR rather than on tag day.
 * **`live.yml`** — nightly + `workflow_dispatch`, Postgres + a Payload 3.x fixture app as service
   containers, runs `make test-live` and `make test-contract`. Guarded with
   `if: github.repository == 'KLIXPERT-io/pay-cli'` so forks do not fail.
 * **`release.yml`** — tag push + `workflow_call`, `permissions: {contents: write, id-token: write,
-  attestations: write}`, cosign + SBOM + provenance attestation over `dist/*.tar.gz`, `dist/*.zip`,
+  attestations: write}`, cosign + SBOM + provenance attestation over `dist/*.tar.gz` and
   `dist/checksums.txt`.
 * **`tag-and-release.yml`** — keeps gsc-cli's VERSION-file-drives-the-tag design (one file, one commit,
   one release) but **replaces `butlerlogic/action-autotag@1.1.2` with ~10 lines of inline shell**
@@ -5530,9 +5529,7 @@ optional `cosign verify-blob` when cosign is present; and a final JSON line
 when the install directory is not on the PATH of a non-interactive shell, and warns when another
 `pay` earlier on PATH shadows the installed one.
 
-`install.ps1` does real architecture detection (`[Environment]::Is64BitOperatingSystem` /
-`$env:PROCESSOR_ARCHITECTURE`) rather than gsc-cli's hardcoded `windows_amd64`, because
-windows/arm64 now ships.
+There is no Windows installer: Windows is not a supported platform.
 
 ### 16.4 Version embedding
 
@@ -5638,7 +5635,7 @@ Because `cli.Run(ctx, App{Args, Env, Stdin, Stdout, Stderr, Now, HTTP, Dirs}) in
 whole-command tests run **in-process** against the fixture server: set `Env` `PAY_BASE_URL` to
 `srv.URL`, capture stdout/stderr bytes and the int return, compare against
 `testdata/golden/<case>.{out,err,exit}`. `UPDATE_GOLDEN=1` rewrites them. No subprocess, so coverage
-works and Windows is free.
+works.
 
 ### 17.4 Makefile
 
@@ -5839,9 +5836,10 @@ These are accepted, not solved. Each has a mitigation that must be implemented.
     possible failure mode for a tool whose premise is adapting to any project. *Mitigation:*
     `live.yml` nightly.
 13. **Windows is the highest-risk platform** (no flock, `os.Rename` over a running `.exe`, unlinking an
-    open file fails outright, `%AppData%` vs `%LocalAppData%`). *Mitigation:* windows-latest in the CI
-    test matrix from day one; the §15.1 `MoveFileEx` rename-self dance; and §8.7's
-    rename-to-`.trash-<ulid>`-before-unlink GC, which is what makes lock-free cache reads safe there.
+    open file fails outright, `%AppData%` vs `%LocalAppData%`). *Mitigation:* it is not a supported
+    platform. No release archive or installer ships for it and CI does not test it. The Windows code
+    paths (the §15.1 `MoveFileEx` rename-self dance, §8.7's rename-to-`.trash-<ulid>`-before-unlink
+    GC) remain but are unexercised.
 14. **The shared dev instance is not exclusively owned.** During this spec's verification, probe
     documents from a sibling session were visible, and one page was deleted mid-test by another
     session. *Mitigation:* live tests namespace their fixtures and must not assume exclusive ownership

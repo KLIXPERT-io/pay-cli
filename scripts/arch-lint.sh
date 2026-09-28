@@ -250,12 +250,12 @@ if [ -d testdata ] || [ -d docs ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Rule 11 — §15: the archive name template is frozen in four places.
+# Rule 11 — §15: the archive name template is frozen in three places.
 #
 # Changing it after v0.1.0 permanently breaks self-update for every already
 # installed binary, because old binaries construct the old name.
 # ---------------------------------------------------------------------------
-rule "the frozen archive-name template agrees across goreleaser, install.sh, install.ps1 and internal/update"
+rule "the frozen archive-name template agrees across goreleaser, install.sh and internal/update"
 check_frozen() {
   local file="$1" needle="$2"
   [ -f "$file" ] || return 0
@@ -263,7 +263,6 @@ check_frozen() {
 }
 check_frozen .goreleaser.yaml 'pay_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
 check_frozen install.sh       '${BIN}_${ver_noV}_${os}_${arch}'
-check_frozen install.ps1      '${Bin}_${verNoV}_${os}_${arch}'
 check_frozen internal/update/update.go 'pay_%s_%s_%s'
 
 # ---------------------------------------------------------------------------

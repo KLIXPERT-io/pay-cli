@@ -70,10 +70,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Windows is not optional: lock_windows.go, platform_windows.go, the
-        # rename-self dance and the %LocalAppData% paths are otherwise never
-        # exercised by anything.
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # Windows is not a supported platform: no release archive is built for
+        # it, so testing on it would only guard code nobody ships. The
+        # *_windows.go files are left in place but are untested.
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: actions/setup-go@v7.0.0
@@ -140,11 +140,3 @@ jobs:
           # step is "this script has a bug", not "this script has an opinion".
           shellcheck --severity=error -s sh   install.sh
           shellcheck --severity=error -s bash scripts/arch-lint.sh
-
-      - name: install.ps1 parses
-        shell: pwsh
-        run: |
-          $errors = $null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            "$PWD/install.ps1", [ref]$null, [ref]$errors) | Out-Null
-          if ($errors.Count -gt 0) { $errors; exit 1 }

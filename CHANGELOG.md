@@ -32,6 +32,13 @@ improving an `error.message` or `hint` are **not** breaking. Never branch on
 
 ## [Unreleased]
 
+### Removed
+
+- **Windows is no longer a supported platform.** Releases stop shipping the
+  `windows_amd64` and `windows_arm64` zips, `install.ps1` is gone, and CI no longer tests on
+  Windows. 0.3.0 is the last release with Windows binaries: a Windows install of it will not
+  find an update with `pay update-self`. Use WSL and `install.sh` instead.
+
 ## [0.3.0] — 2026-09-28
 
 ### Added

@@ -24,15 +24,11 @@
 curl -fsSL https://raw.githubusercontent.com/KLIXPERT-io/pay-cli/main/install.sh | sh
 ```
 
-**Windows (PowerShell 5.1+)**
+Windows is not supported: no release archive is built for it.
 
-```powershell
-irm https://raw.githubusercontent.com/KLIXPERT-io/pay-cli/main/install.ps1 | iex
-```
+The installer will:
 
-Both installers:
-
-1. detect your OS and CPU architecture (including `windows/arm64` and Apple Silicon),
+1. detect your OS and CPU architecture (including Apple Silicon),
 2. resolve the latest release tag from the GitHub API,
 3. download the archive **and** `checksums.txt`,
 4. **verify the SHA-256 and refuse to install on a mismatch**,
@@ -42,8 +38,7 @@ Both installers:
    fix that for an agent's non-interactive shell as well (see
    [`pay: not found` after installing](#pay-not-found-after-installing)).
 
-The default install directory is **`$HOME/.local/bin`** on Unix and
-`%LOCALAPPDATA%\Programs\pay` on Windows. That is deliberate: agents rarely have `sudo`,
+The default install directory is **`$HOME/.local/bin`**. That is deliberate: agents rarely have `sudo`,
 and a user-writable install is a precondition for `pay update-self` working at all.
 
 ---
@@ -69,13 +64,6 @@ curl -fsSL .../install.sh | sh -s -- --version v0.1.0 --dir /usr/local/bin --wit
 per IP**, and shared CI egress addresses exhaust that constantly. Without a token, a CI
 install fails intermittently with "could not resolve the latest release tag".
 
-PowerShell takes the same options as parameters:
-
-```powershell
-irm https://raw.githubusercontent.com/KLIXPERT-io/pay-cli/main/install.ps1 -OutFile install.ps1
-.\install.ps1 -Version v0.1.0 -Dir C:\tools\pay -WithSkills
-```
-
 ---
 
 ## Manual download
@@ -88,8 +76,6 @@ pay_<version>_darwin_amd64.tar.gz
 pay_<version>_darwin_arm64.tar.gz
 pay_<version>_linux_amd64.tar.gz
 pay_<version>_linux_arm64.tar.gz
-pay_<version>_windows_amd64.zip
-pay_<version>_windows_arm64.zip
 checksums.txt
 checksums.txt.sig
 checksums.txt.pem
@@ -98,8 +84,8 @@ checksums.txt.pem
 
 > The archive name template is **frozen**. An already-installed binary constructs this
 > exact name to find its own update, so it cannot change without breaking self-update for
-> every existing install. A CI check asserts that GoReleaser, `install.sh`, `install.ps1`
-> and `internal/update` all agree on it.
+> every existing install. A CI check asserts that GoReleaser, `install.sh` and
+> `internal/update` all agree on it.
 
 ```sh
 VERSION=0.1.0
@@ -185,7 +171,7 @@ pay skills install
 
 No network, no Node, no `git`: the skill is compiled into `pay` with `go:embed`, so this
 works on an air-gapped machine and always matches the binary you are running.
-`install.sh --with-skills` / `install.ps1 -WithSkills` simply run it for you.
+`install.sh --with-skills` simply runs it for you.
 
 **With the [`skills`](https://github.com/anthropics/skills) CLI** — useful when you want
 the skill in an editor or agent before (or without) installing PayCLI itself:
@@ -217,15 +203,15 @@ Only `pay skills install` can do the two things that need a running binary:
 
 ## Where things live
 
-PayCLI follows the XDG base-directory spec on Unix and the standard app-data locations on
-Windows. `pay config paths` prints the resolved set, and `pay config paths --output json`
+PayCLI follows the XDG base-directory spec on Linux and the standard locations on macOS.
+`pay config paths` prints the resolved set, and `pay config paths --output json`
 gives you all eight as a map.
 
-| | Linux / BSD | macOS | Windows |
-|---|---|---|---|
-| config | `~/.config/pay` | `~/Library/Application Support/pay` | `%AppData%\pay` |
-| cache | `~/.cache/pay` | `~/Library/Caches/pay` | `%LocalAppData%\pay\cache` |
-| state | `~/.local/state/pay` | `~/Library/Application Support/pay` | `%LocalAppData%\pay\state` |
+| | Linux / BSD | macOS |
+|---|---|---|
+| config | `~/.config/pay` | `~/Library/Application Support/pay` |
+| cache | `~/.cache/pay` | `~/Library/Caches/pay` |
+| state | `~/.local/state/pay` | `~/Library/Application Support/pay` |
 
 Inside them:
 
@@ -286,10 +272,6 @@ With that set, a `pay` invocation that finds a recorded pending version spawns a
 **detached child** to perform the swap and returns immediately. Zero network in the
 foreground, no chance of a fast command blocking on a download. The swapped binary takes
 effect on the next invocation.
-
-On Windows the running `.exe` cannot be renamed over, so the swap moves it to
-`pay.exe.old` first and the next start sweeps it. This is functional on Windows, not a
-silent no-op.
 
 ### The three verification outcomes
 

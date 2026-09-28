@@ -28,11 +28,6 @@ indent_size = 2
 indent_style = space
 indent_size = 2
 
-[*.ps1]
-end_of_line = crlf
-indent_style = space
-indent_size = 4
-
 [testdata/golden/**]
 # Golden files are compared byte for byte (§17.3). No editor may touch them.
 insert_final_newline = false

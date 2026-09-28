@@ -169,11 +169,11 @@ func TestUpdateHint(t *testing.T) {
 	}
 }
 
-// §15's frozen archive-name template is duplicated in goreleaser, install.sh,
-// install.ps1 and internal/update. Changing it after v0.1.0 permanently breaks
+// §15's frozen archive-name template is duplicated in goreleaser, install.sh
+// and internal/update. Changing it after v0.1.0 permanently breaks
 // self-update for every already-installed binary, so it is pinned here as well
 // as in internal/update: this is the copy the release machinery in this
-// assignment (.goreleaser.yaml, install.sh, install.ps1) must agree with.
+// assignment (.goreleaser.yaml, install.sh) must agree with.
 func TestFrozenAssetNameTemplate(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -188,7 +188,7 @@ func TestFrozenAssetNameTemplate(t *testing.T) {
 		got := update.AssetName(tc.version, tc.goos, tc.goarch)
 		if got != tc.want {
 			t.Fatalf("update.AssetName(%q, %q, %q) = %q, want %q — "+
-				"the archive name is FROZEN and is duplicated in .goreleaser.yaml, install.sh and install.ps1",
+				"the archive name is FROZEN and is duplicated in .goreleaser.yaml and install.sh",
 				tc.version, tc.goos, tc.goarch, got, tc.want)
 		}
 	}
@@ -203,7 +203,6 @@ func TestReleaseMachineryAgreesWithTheFrozenTemplate(t *testing.T) {
 	files := map[string]string{
 		".goreleaser.yaml": `pay_{{ .Version }}_{{ .Os }}_{{ .Arch }}`,
 		"install.sh":       `${BIN}_${ver_noV}_${os}_${arch}`,
-		"install.ps1":      `${Bin}_${verNoV}_${os}_${arch}`,
 	}
 	for name, want := range files {
 		data, err := os.ReadFile(filepath.Join(root, name))

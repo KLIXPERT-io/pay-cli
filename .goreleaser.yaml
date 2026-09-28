@@ -25,9 +25,8 @@ builds:
     binary: pay
     env:
       - CGO_ENABLED=0
-    goos: [darwin, linux, windows]
-    # windows/arm64 is kept: Windows on ARM is a real target now, and
-    # install.ps1 does real architecture detection rather than assuming amd64.
+    # No windows: it is not a supported platform, and CI does not test it.
+    goos: [darwin, linux]
     goarch: [amd64, arm64]
     flags:
       - -trimpath
@@ -48,12 +47,9 @@ archives:
     # FROZEN. §15 depends on this exact template: an already-installed binary
     # constructs this name to find its own update, so changing it after v0.1.0
     # permanently breaks self-update for every existing install. It is
-    # duplicated in internal/update.archiveAssetName, install.sh and
-    # install.ps1, and scripts/arch-lint.sh asserts all four agree.
+    # duplicated in internal/update.archiveAssetName and install.sh, and
+    # scripts/arch-lint.sh asserts all three agree.
     name_template: "pay_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    format_overrides:
-      - goos: windows
-        formats: [zip]
     # An explicit list, not GoReleaser's default glob set. It matters most for
     # skills/: that tree is the agent skill's single source of truth (§14) and
     # it is already compiled into the binary by //go:embed, so shipping the
@@ -131,10 +127,6 @@ release:
     curl -fsSL https://raw.githubusercontent.com/KLIXPERT-io/pay-cli/main/install.sh | sh
     ```
 
-    ```powershell
-    irm https://raw.githubusercontent.com/KLIXPERT-io/pay-cli/main/install.ps1 | iex
-    ```
-
     Already installed? `pay update-self --apply`.
 
     Every archive is checksummed in `checksums.txt`, which is signed with
@@ -146,7 +138,7 @@ release:
 # ---------------------------------------------------------------------------
 # NOT ENABLED FOR v0.1.0.
 #
-# v0.1.0 ships binaries plus install.sh / install.ps1 only. The two blocks
+# v0.1.0 ships binaries plus install.sh only. The two blocks
 # below are kept, configured and reviewed so that turning them on later is a
 # one-commit change rather than a design exercise — but each needs
 # infrastructure that does not exist yet:
