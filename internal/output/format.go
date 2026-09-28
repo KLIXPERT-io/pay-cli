@@ -50,7 +50,7 @@ func ParseFormat(s string) (Format, error) {
 	return "", apierr.New(apierr.CodeInvalidOption,
 		"%q is not a valid --output format. Valid values: %s.", s, strings.Join(names, ", ")).
 		WithDidYouMean(apierr.DidYouMean(s, names)...).
-		WithHint("The default is json, which is the format agents should use. `pay explain --section output` describes each one.")
+		WithHint("The default is json, which is the format agents should use; the message lists every valid value.")
 }
 
 // supportedKinds is the explicit format/command compatibility matrix (§10.3).

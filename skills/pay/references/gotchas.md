@@ -83,32 +83,28 @@ and a success message. A whole `layout` array can disappear while the response s
 
 Read `warnings[]` on every write. `--no-echo-check` disables the comparison.
 
-Block `blockType` slugs are **not** a plain API read: GraphQL publishes a blocks field's
-union as interfaceNames (`CallToActionBlock`) while the REST API only accepts the slug
-(`cta`), and the pairing lives in the project source (`src/blocks/*/config.ts`). `pay`
-resolves them **per field** — `pages.layout` and `forms.fields` share nothing — and labels
-every slug with where it came from:
+Block `blockType` slugs are **not** a plain API read. GraphQL publishes a blocks field's
+union as interfaceNames (`CallToActionBlock`) while REST only accepts the slug (`cta`),
+and in production GraphQL introspection is usually disabled altogether (§13). `pay`
+therefore learns block slugs from the documents themselves — the **block census** — and
+merges declared facts when it has them, labelling every fact with its source
+(`observed-census`, `graphql`, `project-source`, `configured`, `census-matched`):
 
 ```bash
-pay describe pages --field layout --path .block_types        # the writable slugs
-pay describe pages --field layout --path .block_type_sources # project-source | inferred-from-interface-name | …
+pay blocks types pages                                        # slugs per field path, with counts
+pay blocks schema cta --collection pages                      # what is inside one
+pay describe pages --field layout --path .block_type_sources  # where each declared slug came from
 ```
 
-An `inferred-from-interface-name` slug was derived from the GraphQL type name because no
-project source declared it (every plugin block, since `node_modules` is never scanned). It
-is usable, not confirmed. When nothing can resolve a field's slugs, `pay` says so in plain
-words and prints how to pin them, rather than guessing.
-
-**What is inside a block** is a separate question: `pay describe <coll> --block <slug>`
-prints that block type's own fields, and `--blocks-detail` inlines every one of them.
-Required-ness inside a block is tri-state and is `null` more often than elsewhere, because
-Payload generates no input type for a block type — see `recipes.md` §13.
-
-`pay blocks add` turns the dropped-blockType case into a **local** failure —
-`block_type_unknown`, exit 10, with `did_you_mean` — whenever the project has been
-discovered. Without a schema it passes the slug through and warns
-`local_validation_skipped`, because refusing a slug PayCLI merely failed to discover would
-be a wrong answer PayCLI produced itself.
+A list learned from documents (`authoritative: false`) is "what exists today", not
+"everything allowed": it never blocks a write. `pay blocks add` refuses a slug
+(`block_type_unknown`, exit 10) only when the accepted list is authoritative. Otherwise
+`pay blocks validate` and every write warn `unknown_block_type` (never seen anywhere — the
+row would be dropped) or `block_type_not_observed_here`, and `unknown_field` for a key
+never seen on that type (Payload drops unknown keys too). These warnings are real
+signals, not noise: a block type deployed since the last census is re-checked
+automatically, and `pay blocks learn <collection>` rebuilds the census on demand. With no
+census cached a write says `blocks_unchecked` once instead of guessing.
 
 ---
 
@@ -143,8 +139,11 @@ Two more traps in the pipe itself:
 * **`--draft` has to match on both ends.** A read *without* `--draft` returns the
   **published** document, so `pay get … | … | pay apply --draft` saves published content
   as a new draft and discards the real one. Use it on both ends, or on neither.
+* **Nested rows need a real path.** `--field layout.blocks` is wrong (layout is an array);
+  name the row: `--field 'layout[id:6ab8…].blocks'`, copied from
+  `pay blocks ls --recursive` or `pay outline`.
 
-Full walkthrough in `recipes.md` §14.
+Full walkthrough in `blocks.md` §5.
 
 ---
 
@@ -276,7 +275,80 @@ confidently wrong answer.
 
 ---
 
-## 13. The rule that outranks the rest
+## 13. GraphQL introspection is off in production
+
+Payload 3 disables GraphQL introspection when `NODE_ENV=production`
+(`graphQL.disableIntrospectionInProduction`, default `true`). GraphQL still answers
+queries, so this is easy to miss. Discovery then falls back to REST samples:
+
+* the field list comes from three sampled documents — a field that was `null` there has
+  no type;
+* required flags are unknown;
+* block slugs and block schemas are not published at all.
+
+`pay doctor` reports it (check `graphql`, value `introspection_disabled`) and names the
+config switch. Until the app enables it, use the block census
+(`pay blocks types | schema | example | new | validate`) instead of `pay describe` for
+anything about blocks, and never infer "optional" from `required: null`.
+
+---
+
+## 14. A write can publish or unpublish without saying so
+
+Payload merges an update into the **newest version** and, without `?draft=true`, stores
+the result as the live row, including that version's `_status`. Verified consequences:
+
+| Wrong | What happens | Right |
+|---|---|---|
+| `pay update pages 16 --set slug=x` on a published page with a pending draft | the draft's content goes live AND `_status` becomes `draft` — the page drops offline | PayCLI refuses (`invalid_args`, exit 5): say `--draft`, `--publish` or `--unpublish` |
+| `pay update pages 16 --data-file export.json --draft` where the export has `_status: "published"` | Payload publishes despite `?draft=true` | PayCLI removes `_status` with `--draft` and warns `body_publishes`; without a flag it warns that the write publishes |
+| `pay get pages 16` (no `--draft`) piped to `pay apply --draft` | published content is saved as the new draft; the real draft is lost | `--draft` on both ends |
+| `pay update pages --where … --set …` over pages with pending drafts | the live rows are rewritten; pending drafts are superseded | `--draft`, or write them one by one (the dry run warns `pending_draft_superseded`) |
+
+`pay diff pages 16 --draft-vs-published` shows what a pending draft holds; every dry run
+shows `data.diff` (and `data.diff.published` when the live row would change too).
+
+---
+
+## 15. Nested block restructures leave `{}` rows (Postgres)
+
+Changing the `blockType` of a NESTED row (bento → grid inside a group), or removing a
+nested container, leaves the old nested rows in the database. They read back as `{}`
+entries in `pay get` (the stored row) — not in `pay get --draft`, not in the write's echo.
+Top-level swaps in `layout` are clean.
+
+The old workaround (permanently delete the page and recreate it) changes the id and
+breaks every relationship and link to it. Instead:
+
+```bash
+pay update pages 16 --data-file layout.json --reset-nested --dry-run   # orphan_risk + the plan
+pay update pages 16 --reset-nested                                     # repair a page that has {} rows
+pay publish pages 16 --reset-nested                                    # publish a restructured draft
+```
+
+Signals: `orphan_risk` (dry run), `orphan_rows` (after a write), `empty_rows` (on read),
+`empty_row` in `pay outline` and `pay blocks validate`. Details: `blocks.md` §8.
+
+---
+
+## 16. Rich text is JSON, and a string is silently accepted
+
+A `richText` field holds a Lexical editor state. Payload does **not** reject a string in
+it: it stores the string, and the admin editor can no longer open the field. Two ways
+agents get there:
+
+* writing Markdown or text straight into the field — use `--set-md content=@body.md`,
+  which converts to the editor state (`richtext.md`);
+* writing back a document read with `--richtext md|text` — PayCLI refuses it
+  (`richtext_rendered`, exit 5).
+
+The reverse also bites: `--set-md` on a plain **text** field would store an editor state
+as JSON text; PayCLI refuses when it can tell and warns `stored_as_string` when the echo
+shows it happened.
+
+---
+
+## 17. The rule that outranks the rest
 
 > **Never branch on `error.message` — it is translated.** Payload runs its error strings
 > through i18n, so the same failure reads differently on a German project, and a proxy

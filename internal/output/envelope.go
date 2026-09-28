@@ -131,7 +131,9 @@ type Target struct {
 }
 
 // Page is present iff data_kind == "doc_list" (§10.1). Truncated is the one
-// boolean that requires no arithmetic.
+// boolean that requires no arithmetic: true means more matching documents
+// exist than this envelope holds (another page on a paginated read, or --all
+// stopped at --max).
 type Page struct {
 	Limit       int  `json:"limit"`
 	Page        int  `json:"page"`
@@ -289,7 +291,56 @@ type Meta struct {
 	Cache             *CacheMeta `json:"cache,omitempty"`
 	DiscoveryRevision string     `json:"discovery_revision,omitempty"`
 	DryRun            bool       `json:"dry_run"`
+	// Backups lists the §12.8 backup files this invocation wrote before it
+	// changed or removed a document. Absent when nothing was backed up —
+	// backups are off, or the command changed no existing document.
+	Backups []string `json:"backups,omitempty"`
+	// RichText records that --richtext md|text rendered the rich text of the
+	// data for reading. Absent when rich text is the stored Lexical JSON (the
+	// default). Its presence is what `pay apply` and `--data @-` refuse: a
+	// rendered document must never be written back.
+	RichText *RichTextMeta `json:"richtext,omitempty"`
+	// ResetNested reports a --reset-nested write (§10.2.1): the carrier
+	// phases sent before the requested body, the block tables they cleared
+	// and whether the stored row read back clean. Absent on every other
+	// command.
+	ResetNested any `json:"reset_nested,omitempty"`
+	// Upsert is what `pay upsert` decided (F6): absent on every other command.
+	Upsert *UpsertMeta `json:"upsert,omitempty"`
+	// RestoredFrom is the backup file `pay backups restore` wrote back
+	// (§12.8.8); absent on every other command.
+	RestoredFrom string `json:"restored_from,omitempty"`
 }
+
+// UpsertMeta is meta.upsert.
+type UpsertMeta struct {
+	// Action is created | updated | unchanged after a real run, and the
+	// plan vocabulary create | update | unchanged under --dry-run (nothing
+	// happened yet).
+	Action string `json:"action"`
+	// MatchedBy is the --match fields and the values taken from the body.
+	MatchedBy map[string]any `json:"matched_by"`
+	// ID is the matched (or created) document's id; null for a dry-run create.
+	ID any `json:"id"`
+	// Forced is true when --force wrote a body that changed nothing.
+	Forced bool `json:"forced,omitempty"`
+}
+
+// RichTextMeta is meta.richtext.
+type RichTextMeta struct {
+	// Format is what every editor state was replaced by: "md" or "text".
+	Format string `json:"format"`
+	// Rendered counts the editor states replaced.
+	Rendered int `json:"rendered"`
+	// Paths are the replaced values' paths (`content`, `layout[2].richText`,
+	// `[0].content` in a list), at most MaxRichTextPaths of them.
+	Paths []string `json:"paths"`
+	// PathsTruncated reports that Paths was capped.
+	PathsTruncated bool `json:"paths_truncated,omitempty"`
+}
+
+// MaxRichTextPaths caps meta.richtext.paths.
+const MaxRichTextPaths = 100
 
 // New builds a success envelope. Warnings is always an array, never null.
 func New(command string, kind DataKind, data any) *Envelope {

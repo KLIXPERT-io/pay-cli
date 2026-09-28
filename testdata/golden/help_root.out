@@ -13,7 +13,8 @@ SYNOPSIS
     apply          Write a piped, locally edited document back to Payload (PATCH)
     audit          Inspect the local write-audit log
     auth           Manage profiles and credentials (§5).
-    blocks         Edit a blocks field on a document read from stdin (local, no network)
+    backups        List, inspect, restore and prune the automatic pre-write backups
+    blocks         Edit a blocks field on a document read from stdin; learn the site's block types (types/schema/new)
     cache          Inspect and manage the discovery cache
     can            Answer one permission question with an exit code (0 permitted, 8 denied).
     collections    List this project's collections with their ops, features and key fields.
@@ -23,22 +24,29 @@ SYNOPSIS
     create         Create one document (POST /api/{collection})
     delete         Delete one document by id, or every document matching --where
     describe       Print one entity's full field schema: types, operators, required, relations.
+    diff           Structural diff: two documents, a write body vs the server, or draft vs published
     discover       Probe this Payload project and cache its schema (§7 discovery pipeline).
     doctor         Diagnose this project, this profile and this machine in one JSON document.
     download       Download the bytes of an upload document
     duplicate      Copy one document
     explain        Answer "what can I do here?" in one call — cache-backed and offline after the first run.
     find           List documents in a collection (GET /api/{collection})
-    get            Fetch one document by id (GET /api/{collection}/{id})
+    get            Fetch one document by id or slug (GET /api/{collection}/{id})
     globals        Read and write Payload globals
-    publish        Set _status=published on one document or every match
+    lexical        Convert rich text between Lexical JSON and Markdown (local, no network)
+    outline        Print a document's block structure: every row, its --field, selector and summary
+    plan           Show what `pay sync` would do with a set of manifest files (read-only)
+    publish        Set _status=published on one or more documents, or every match
     raw            Call any Payload endpoint PayCLI does not model
     restore        Un-trash a soft-deleted document
     skills         Install the PayCLI agent skill
-    unpublish      Set _status=draft on one document or every match
+    sync           Make the server match a set of manifest files: create, update or leave each item
+    unpublish      Set _status=draft on one or more documents, or every match
     update         Update one document by id, or every document matching --where (PATCH)
     update-self    Check for and install a newer pay binary
     upload         Upload a file to an upload-enabled collection
+    upsert         Create the document --match does not find, or update the one it does (idempotent)
+    url            Print a document's frontend URL; --preview also mints a draft-preview cookie
     version        Print the PayCLI build stamp (and, with --check, whether a newer release exists).
     versions       Inspect, compare and restore document versions
     whoami         Show the identity this credential resolves to (GET /api/{auth}/me).
@@ -52,6 +60,7 @@ FLAGS
     --auth-collection AUTH-COLLECTION auth collection slug; "auto" discovers it
     --auth-header-scheme AUTH-HEADER-SCHEME JWT|Bearer — the scheme used for a token
     --auth-mode AUTH-MODE        auto|api-key|jwt|anonymous
+    --backup-dir BACKUP-DIR      back up every document a write changes into this directory first (§12.8)
     --base-url BASE-URL          Payload server origin, e.g. http://localhost:3000
     --cache-ttl CACHE-TTL        override the discovery cache TTL for this run
     --concurrency N              parallel requests (default 8, hard cap 32)
@@ -69,6 +78,7 @@ FLAGS
     --log-level LOG-LEVEL        debug|info|warn|error
     --max-retries N              retry budget for idempotent requests (default 3)
     --no-audit                   do not write the audit log for this command
+    --no-backup                  skip the automatic pre-write backup for this command
     --no-cache                   ignore and do not write the discovery cache
     --no-color                   accepted for compatibility; PayCLI never colours output
     --no-raw                     omit Payload's raw response body from the envelope

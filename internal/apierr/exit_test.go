@@ -70,16 +70,16 @@ func TestExitByClass(t *testing.T) {
 		exit  int
 		codes []Code
 	}{
-		{ExitInternal, []Code{CodeInternal, CodeUnknown, CodeCacheCorrupt, CodeUpdateVerificationFailed, CodeAuditWriteFailed}},
+		{ExitInternal, []Code{CodeInternal, CodeUnknown, CodeCacheCorrupt, CodeUpdateVerificationFailed, CodeAuditWriteFailed, CodeBackupFailed}},
 		{ExitAuth, []Code{CodeAuthMissing, CodeAuthInvalid, CodeAuthRequired, CodeAuthLocked, CodeAuthUnverifiedEmail, CodeAuthInsecurePermissions, CodeAuthHelperFailed}},
 		{ExitThrottled, []Code{CodeRateLimited, CodeDocLocked, CodeServerBusy}},
-		{ExitNotFound, []Code{CodeDocNotFound, CodeRouteNotFound, CodeVersionNotFound, CodeSelectorNoMatch}},
-		{ExitValidation, []Code{CodeValidationFailed, CodeQueryPathInvalid, CodeInvalidArgs, CodeInvalidWhereSyntax, CodeInvalidSortField, CodeUnknownField, CodeInvalidOption, CodeInvalidID, CodeBadRequestBody, CodeWhereRequired, CodeFileMissing, CodeNotUploadCollection, CodeUnsupportedOperator, CodeBulkLimitExceeded, CodeRequestTooLarge, CodeFormatUnsupported, CodeInvalidPathExpr, CodeSelectorAmbiguous, CodeFieldAmbiguous, CodeNoInput, CodeNoEdits}},
+		{ExitNotFound, []Code{CodeDocNotFound, CodeRouteNotFound, CodeVersionNotFound, CodeSelectorNoMatch, CodeNotPublished, CodeRefUnresolved}},
+		{ExitValidation, []Code{CodeValidationFailed, CodeQueryPathInvalid, CodeInvalidArgs, CodeInvalidWhereSyntax, CodeInvalidSortField, CodeUnknownField, CodeInvalidOption, CodeInvalidID, CodeBadRequestBody, CodeWhereRequired, CodeFileMissing, CodeNotUploadCollection, CodeUnsupportedOperator, CodeBulkLimitExceeded, CodeRequestTooLarge, CodeFormatUnsupported, CodeInvalidPathExpr, CodeSelectorAmbiguous, CodeFieldAmbiguous, CodeNoInput, CodeNoEdits, CodeNotRichText, CodeRichTextRendered, CodeBackupTargetMismatch, CodeSlugAmbiguous, CodeMatchAmbiguous, CodeRefAmbiguous, CodeRefCycle, CodeManifestInvalid}},
 		{ExitNetwork, []Code{CodeNetworkUnreachable, CodeDNSFailure, CodeTLSError, CodeTimeout, CodeServerError, CodeServerUnavailable, CodeNonJSONResponse}},
 		{ExitPartial, []Code{CodePartialFailure}},
-		{ExitAccessDenied, []Code{CodeAccessDenied, CodeAdminAccessDenied}},
-		{ExitConfig, []Code{CodeConfigMissing, CodeConfigSecretInPlaintext, CodeProfileUnknown, CodeBaseURLInvalid, CodeEndpointNotPayload, CodeAuthCollectionUnknown}},
-		{ExitCapability, []Code{CodeCollectionUnknown, CodeGlobalUnknown, CodeFeatureUnavailable, CodeOperationUnsupported, CodeDiscoveryFailed, CodeGraphQLDisabled, CodeSchemaStale, CodeBlockTypeUnknown}},
+		{ExitAccessDenied, []Code{CodeAccessDenied, CodeAdminAccessDenied, CodePreviewDenied}},
+		{ExitConfig, []Code{CodeConfigMissing, CodeConfigSecretInPlaintext, CodeProfileUnknown, CodeBaseURLInvalid, CodeEndpointNotPayload, CodeAuthCollectionUnknown, CodePreviewSecretMissing}},
+		{ExitCapability, []Code{CodeCollectionUnknown, CodeGlobalUnknown, CodeFeatureUnavailable, CodeOperationUnsupported, CodeDiscoveryFailed, CodeGraphQLDisabled, CodeSchemaStale, CodeBlockTypeUnknown, CodePreviewFailed}},
 		{ExitConfirmationRequired, []Code{CodeConfirmationRequired}},
 	}
 	seen := 0

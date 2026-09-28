@@ -770,6 +770,20 @@ func (l *fileLock) release() {
 // §7.8.3 forbids apiKey/hash/salt/sessions from ever reaching a manifest, and
 // this is the single choke point where that can be enforced.
 func canonicalJSON(v any) ([]byte, error) {
+	decoded, err := decodeCanonical(v)
+	if err != nil {
+		return nil, err
+	}
+	data, err := encodeCanonical(decoded)
+	if err != nil {
+		return nil, err
+	}
+	return redact.JSON(data).Data, nil
+}
+
+// decodeCanonical turns any value into its generic JSON form (map[string]any,
+// []any, json.Number, …), which is what gives canonicalJSON its key order.
+func decodeCanonical(v any) (any, error) {
 	var raw []byte
 	switch t := v.(type) {
 	case nil:
@@ -795,7 +809,11 @@ func canonicalJSON(v any) ([]byte, error) {
 	if dec.More() {
 		return nil, errors.New("cache: trailing data after JSON value")
 	}
+	return decoded, nil
+}
 
+// encodeCanonical renders a decoded value as pretty-printed, key-sorted JSON.
+func encodeCanonical(decoded any) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
@@ -803,7 +821,7 @@ func canonicalJSON(v any) ([]byte, error) {
 	if err := enc.Encode(decoded); err != nil {
 		return nil, err
 	}
-	return redact.JSON(buf.Bytes()).Data, nil
+	return buf.Bytes(), nil
 }
 
 // verifyManifestBytes asserts the index we are about to publish describes the

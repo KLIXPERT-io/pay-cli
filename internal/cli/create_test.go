@@ -276,7 +276,7 @@ func TestBlockTypeWarnings(t *testing.T) {
 
 	t.Run("an unknown slug warns", func(t *testing.T) {
 		body := map[string]any{"layout": []any{map[string]any{"blockType": "nope"}}}
-		got := blockTypeWarnings(testTarget(), shard, body)
+		got := blockTypeWarnings(nil, testTarget(), shard, body)
 		if len(got) != 1 || got[0].Code != warnUnknownBlockType {
 			t.Fatalf("warnings = %+v", got)
 		}
@@ -287,17 +287,34 @@ func TestBlockTypeWarnings(t *testing.T) {
 
 	t.Run("a known slug is silent", func(t *testing.T) {
 		body := map[string]any{"layout": []any{map[string]any{"blockType": "cta"}}}
-		if got := blockTypeWarnings(testTarget(), shard, body); len(got) != 0 {
+		if got := blockTypeWarnings(nil, testTarget(), shard, body); len(got) != 0 {
 			t.Fatalf("warnings = %+v", got)
 		}
 	})
 
-	t.Run("unresolvable slugs warn on every value", func(t *testing.T) {
+	// The regression this replaced: with no declared list and no census,
+	// every blockType used to warn unknown_block_type on every write, so the
+	// warning was noise and agents learned to ignore it. Now the body gets ONE
+	// blocks_unchecked warning naming the command that makes the check
+	// possible, and no claim that cta is unknown.
+	t.Run("no knowledge at all is one blocks_unchecked, never unknown_block_type", func(t *testing.T) {
 		s := pagesShard()
 		s.Blocks = nil
-		body := map[string]any{"layout": []any{map[string]any{"blockType": "cta"}}}
-		got := blockTypeWarnings(testTarget(), s, body)
-		if len(got) != 1 {
+		body := map[string]any{"layout": []any{
+			map[string]any{"blockType": "cta"}, map[string]any{"blockType": "hero"}}}
+		got := blockTypeWarnings(nil, testTarget(), s, body)
+		if len(got) != 1 || got[0].Code != warnBlocksUnchecked {
+			t.Fatalf("warnings = %+v", got)
+		}
+		if got[0].Hint != "pay blocks learn pages" {
+			t.Fatalf("hint = %q", got[0].Hint)
+		}
+	})
+
+	t.Run("a body without block rows is not checked at all", func(t *testing.T) {
+		s := pagesShard()
+		s.Blocks = nil
+		if got := blockTypeWarnings(nil, testTarget(), s, map[string]any{"title": "x"}); len(got) != 0 {
 			t.Fatalf("warnings = %+v", got)
 		}
 	})

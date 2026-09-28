@@ -9,9 +9,11 @@
 // the moved row is lifted out, and a row is addressed by a position the caller
 // read from a stale listing.
 //
-// Nothing here performs I/O, reads the clock or knows what a Payload document
-// is. A [Selector] is parsed from a string and matched against a []any; every
-// mutation returns a NEW slice and never aliases the input. That makes each
+// Nothing here performs I/O, reads the clock or consults a schema. A [Selector]
+// is parsed from a string and matched against a []any; a [Path] (path.go)
+// reaches an array at any depth of a decoded document — through a group's
+// rows, a grid inside the group — using only the document's own shape; every
+// mutation returns a NEW value and never aliases the input. That makes each
 // rule below a table test, and it keeps the index arithmetic — the part that is
 // actually hard — in one place instead of in six command files.
 package rows
@@ -515,7 +517,14 @@ func Copy(list []any, src int, a Anchor) ([]any, int, error) {
 }
 
 // Set applies a field patch to the row at idx and returns the new array. Keys
-// are dotted paths into the row; a nil value in patch deletes the key.
+// are paths into the row in the [ParsePath] grammar — `blockName`,
+// `link.url`, `links.0.label`, `links[id:6ab8…].label`. A value in patch is
+// written as given (nil writes null); every key in unset is cleared
+// ([ClearPath]), never deleted.
+//
+// A path that passes through an array addresses one of its rows and never
+// replaces the array: before this rule `--set links.0.label=Buy` turned the
+// `links` array into an object with a key "0", which Payload then dropped.
 func Set(list []any, idx int, patch map[string]any, unset []string) ([]any, error) {
 	if idx < 0 || idx >= len(list) {
 		return nil, fmt.Errorf("index %d is outside 0..%d", idx, len(list)-1)
@@ -525,10 +534,14 @@ func Set(list []any, idx int, patch map[string]any, unset []string) ([]any, erro
 		return nil, fmt.Errorf("row %d is not an object, so it has no fields to set", idx)
 	}
 	for _, key := range sortedKeys(patch) {
-		setPath(row, key, patch[key])
+		if err := SetPath(row, key, patch[key]); err != nil {
+			return nil, err
+		}
 	}
 	for _, key := range unset {
-		unsetPath(row, key)
+		if err := ClearPath(row, key); err != nil {
+			return nil, err
+		}
 	}
 	out := clone(list)
 	out[idx] = row
@@ -546,59 +559,246 @@ func sortedKeys(m map[string]any) []string {
 	return out
 }
 
-// setPath assigns a dotted path, creating intermediate objects. An intermediate
-// that exists and is not an object is replaced, because the alternative is to
-// fail on a path the caller can see is right in the schema.
-func setPath(obj map[string]any, key string, value any) {
-	parts := strings.Split(key, ".")
-	cur := obj
-	for i, p := range parts {
-		if i == len(parts)-1 {
-			cur[p] = value
-			return
-		}
-		next, ok := cur[p].(map[string]any)
-		if !ok {
-			next = map[string]any{}
-			cur[p] = next
-		}
-		cur = next
+// SetPath assigns a path inside obj, in place. obj must be the caller's own
+// copy.
+//
+// An object key that is absent or null is created as an object (a group the
+// row has not filled yet). An intermediate scalar is replaced by an object,
+// because the alternative is to fail on a path the caller can see is right in
+// the schema. An ARRAY is never replaced: the next step must address one of
+// its rows, and a selector that addresses none is a *NoMatchError — creating
+// an array row out of thin air is `pay blocks add --field …`'s job.
+func SetPath(obj map[string]any, key string, value any) error {
+	p, err := ParsePath(key)
+	if err != nil {
+		return err
 	}
+	return setSteps(obj, p, 0, value, Location{})
 }
 
-// unsetPath deletes a dotted path. A path that does not exist is not an error:
-// `--unset` states a desired end state, and it is already true.
-func unsetPath(obj map[string]any, key string) {
-	parts := strings.Split(key, ".")
-	cur := obj
-	for i, p := range parts {
-		if i == len(parts)-1 {
-			delete(cur, p)
-			return
-		}
-		next, ok := cur[p].(map[string]any)
-		if !ok {
-			return
-		}
-		cur = next
+func setSteps(obj map[string]any, p Path, i int, value any, trail Location) error {
+	step := p.Steps[i]
+	if step.Bracket {
+		return &PathError{Kind: PathRowOnObject, Path: p.Raw, At: trail, Rest: p.Steps[i:], Container: obj,
+			Have:   sortedKeysOf(obj),
+			Detail: fmt.Sprintf("it is an object, and %s addresses a row of an array", step)}
 	}
+	here := trail.With(Hop{Key: step.Text})
+	if i == len(p.Steps)-1 {
+		obj[step.Text] = value
+		return nil
+	}
+	next := p.Steps[i+1]
+	switch cur := obj[step.Text].(type) {
+	case map[string]any:
+		return setSteps(cur, p, i+1, value, here)
+	case []any:
+		return setInArray(cur, p, i+1, value, here)
+	case nil:
+		if next.looksLikeRow() {
+			return &PathError{Kind: PathAbsent, Path: p.Raw, At: here, Rest: p.Steps[i+1:],
+				Null: obj[step.Text] == nil && hasKey(obj, step.Text), Container: obj, Have: sortedKeysOf(obj)}
+		}
+	default:
+		if next.looksLikeRow() {
+			return &PathError{Kind: PathNotContainer, Path: p.Raw, At: here, Rest: p.Steps[i+1:], Container: cur,
+				Detail: fmt.Sprintf("it is %s and has no rows", jsonKind(cur))}
+		}
+	}
+	sub := map[string]any{}
+	obj[step.Text] = sub
+	return setSteps(sub, p, i+1, value, here)
 }
 
-// StripIDs removes every `id` key from a value, at every depth. Exported
-// because `pay blocks add` needs it for a row pasted out of another document.
+// setInArray handles a step that addresses a row of list. The row is edited in
+// place: the whole row was deep-copied by Set before any step ran.
+func setInArray(list []any, p Path, i int, value any, trail Location) error {
+	sel, err := p.Steps[i].selector()
+	if err != nil {
+		return &PathError{Kind: PathKeyOnArray, Path: p.Raw, At: trail, Rest: p.Steps[i:], Container: list,
+			Detail: fmt.Sprintf("it is an array, so %q must be a row selector (%s)", p.Steps[i].Text, SelectorGrammar)}
+	}
+	idx, err := ResolveOne(list, sel, trail.String())
+	if err != nil {
+		return err
+	}
+	here := trail.With(Hop{Row: true, Index: idx})
+	if i == len(p.Steps)-1 {
+		list[idx] = value
+		return nil
+	}
+	row, ok := list[idx].(map[string]any)
+	if !ok {
+		return &PathError{Kind: PathNotContainer, Path: p.Raw, At: here, Rest: p.Steps[i+1:], Container: list[idx],
+			Detail: fmt.Sprintf("it is %s and has no fields", jsonKind(list[idx]))}
+	}
+	return setSteps(row, p, i+1, value, here)
+}
+
+func hasKey(obj map[string]any, k string) bool {
+	_, ok := obj[k]
+	return ok
+}
+
+// ClearPath clears a path inside obj, in place: the value becomes what makes
+// Payload store "empty" (ClearedValue). It does NOT delete the key. Payload
+// matches a row by its id and keeps the stored value of every key the row
+// omits, so a deleted key is written back unchanged — `pay blocks set --unset
+// blockName | pay apply` used to answer 2xx and change nothing.
+//
+// A key that does not exist is not an error: `--unset` states a desired end
+// state, and it is already true. A row selector that addresses no row IS an
+// error, because that is a typo in the path rather than a state, and a row
+// cannot be cleared — removing one is `pay blocks rm --field …`.
+func ClearPath(obj map[string]any, key string) error {
+	p, err := ParsePath(key)
+	if err != nil {
+		return err
+	}
+	var cur any = obj
+	var trail Location
+	for i, step := range p.Steps {
+		last := i == len(p.Steps)-1
+		switch c := cur.(type) {
+		case map[string]any:
+			if step.Bracket {
+				return &PathError{Kind: PathRowOnObject, Path: p.Raw, At: trail, Rest: p.Steps[i:], Container: c,
+					Have:   sortedKeysOf(c),
+					Detail: fmt.Sprintf("it is an object, and %s addresses a row of an array", step)}
+			}
+			if last {
+				if v, ok := c[step.Text]; ok {
+					c[step.Text] = ClearedValue(v)
+				}
+				return nil
+			}
+			trail = trail.With(Hop{Key: step.Text})
+			cur = c[step.Text]
+		case []any:
+			sel, err := step.selector()
+			if err != nil {
+				return &PathError{Kind: PathKeyOnArray, Path: p.Raw, At: trail, Rest: p.Steps[i:], Container: c,
+					Detail: fmt.Sprintf("it is an array, so %q must be a row selector (%s)", step.Text, SelectorGrammar)}
+			}
+			idx, err := ResolveOne(c, sel, trail.String())
+			if err != nil {
+				return err
+			}
+			if last {
+				return &PathError{Kind: PathNotContainer, Path: p.Raw, At: trail, Container: c,
+					Detail: "--unset clears a field, and " + step.String() + " is a whole row; remove rows with `pay blocks rm`"}
+			}
+			trail = trail.With(Hop{Row: true, Index: idx})
+			cur = c[idx]
+		default:
+			// Absent, null or a scalar: nothing below it exists to delete.
+			return nil
+		}
+	}
+	return nil
+}
+
+// ClearedValue is the value that clears a field holding v, verified against
+// Payload 3.87 (Postgres) on localhost:
+//
+//   - an array, blocks or hasMany field: [] (null answers 500);
+//   - a named group (a plain object): every sub-field cleared, because null
+//     answers 500 and {} keeps every stored sub-field;
+//   - anything else — a scalar, a rich-text editor state, a relationship or
+//     upload value (an id, a populated document, a {relationTo, value}): null.
+func ClearedValue(v any) any {
+	switch t := v.(type) {
+	case []any:
+		return []any{}
+	case map[string]any:
+		if IsEditorState(t) || isPopulatedDoc(t) || isRelationValue(t) {
+			return nil
+		}
+		out := make(map[string]any, len(t))
+		for k, sub := range t {
+			out[k] = ClearedValue(sub)
+		}
+		return out
+	}
+	return nil
+}
+
+// StripIDs removes the server-generated row ids from a row: the row's own
+// `id` and the `id` of every row of every array nested inside it, at every
+// depth. Exported because `pay blocks add` needs it for a row pasted out of
+// another document, and `pay blocks new --from-example` for a real instance.
+//
+// Only ROW ids are stripped — the ids Payload matches rows by, which a copy
+// must not reuse. Two other kinds of `id` are references and are kept, exactly
+// as the admin UI's "duplicate row" keeps them:
+//
+//   - a relationship or upload value (an expanded document: `id` plus
+//     `createdAt`/`updatedAt`, or a polymorphic `{relationTo, value}`), whose
+//     `id` IS the reference — on klixpert stage a Lexical block's upload field
+//     reads back populated even at depth 0, and stripping its `id` left an
+//     object that names no upload at all;
+//   - anything inside a Lexical editor state: a block node's `fields.id`, a
+//     link or upload node's `id`. Payload's lexical hooks key their node map by
+//     those ids and skip a node that has none, and the upload validator reads
+//     `value.id`. They are scoped to their own rich-text value, so a copy that
+//     keeps them does not collide with the original.
+//
+// A group object (a map under a key) has no id of its own; its arrays are
+// walked like the row's.
 func StripIDs(v any) any {
 	switch t := v.(type) {
 	case map[string]any:
+		if IsEditorState(t) || isPopulatedDoc(t) || isRelationValue(t) {
+			return v
+		}
 		delete(t, KeyID)
-		for _, sub := range t {
-			StripIDs(sub)
-		}
+		stripNested(t)
 	case []any:
-		for _, sub := range t {
-			StripIDs(sub)
-		}
+		stripRowList(t)
 	}
 	return v
+}
+
+// stripNested strips the row ids below a row or group object, without
+// touching the object's own keys.
+func stripNested(obj map[string]any) {
+	for _, sub := range obj {
+		switch c := sub.(type) {
+		case []any:
+			stripRowList(c)
+		case map[string]any:
+			if IsEditorState(c) || isPopulatedDoc(c) || isRelationValue(c) {
+				continue
+			}
+			// A group: it has no id, and an `id` key on a plain object that
+			// is not an array element is not a row id either.
+			stripNested(c)
+		}
+	}
+}
+
+// stripRowList strips the id of every row of list. An element that is a
+// relationship value (a hasMany relationship read at depth > 0, or a
+// polymorphic ref) is a reference, not a row, and is left alone.
+func stripRowList(list []any) {
+	for _, el := range list {
+		m, ok := el.(map[string]any)
+		if !ok || IsEditorState(m) || isPopulatedDoc(m) || isRelationValue(m) {
+			continue
+		}
+		delete(m, KeyID)
+		stripNested(m)
+	}
+}
+
+// isRelationValue reports a polymorphic relationship value
+// `{relationTo, value}` (its value may be an id or an expanded document).
+func isRelationValue(m map[string]any) bool {
+	if _, ok := m["relationTo"].(string); !ok {
+		return false
+	}
+	_, ok := m["value"]
+	return ok && len(m) == 2
 }
 
 // deepCopy clones a decoded-JSON value. Scalars are immutable and are returned

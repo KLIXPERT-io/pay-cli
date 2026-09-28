@@ -434,12 +434,39 @@ func TestBlocksSet(t *testing.T) {
 		t.Errorf("links = %v", row["links"])
 	}
 	if _, ok := row["blockName"]; ok {
-		t.Error("--unset left the key behind")
+		t.Error("--unset created a key the row did not have")
 	}
 	// The other rows are untouched.
 	other, _ := list[0].(map[string]any)
 	if other["blockName"] != "Top CTA" {
 		t.Errorf("set touched another row: %v", other)
+	}
+}
+
+// Regression: --unset deleted the key, and Payload keeps the stored value of a
+// key a row omits (it matches the row by id), so `blocks set --unset
+// blockName | apply` answered 2xx and changed nothing (localhost page 106).
+func TestBlocksSetUnsetWritesTheClearingValue(t *testing.T) {
+	r := cliRun(t, invocation{
+		Args:  []string{"blocks", "set", "id:a1", "--unset", "blockName", "--unset", "richText"},
+		Stdin: pageEnvelope(t, pageDoc),
+	})
+	if r.Code != 0 {
+		t.Fatalf("exit %d: %s", r.Code, r.Stdout)
+	}
+	list, _ := r.data(t)["layout"].([]any)
+	row, _ := list[0].(map[string]any)
+	if v, ok := row["blockName"]; !ok || v != nil {
+		t.Errorf("blockName = %#v (present %v), want null so Payload clears it", v, ok)
+	}
+	if _, ok := row["richText"]; ok {
+		t.Error("clearing a key the row does not have created it")
+	}
+	for _, key := range []string{"blockType", "id"} {
+		r := cliRun(t, invocation{Args: []string{"blocks", "set", "id:a1", "--unset", key}, Stdin: pageEnvelope(t, pageDoc)})
+		if got := r.code(t); got != "invalid_args" {
+			t.Errorf("--unset %s: code = %q, want invalid_args", key, got)
+		}
 	}
 }
 

@@ -24,6 +24,22 @@ type DryRunResult struct {
 	SampleIDs   []any         `json:"sample_ids"`
 	Truncated   bool          `json:"truncated"`
 	Request     DryRunRequest `json:"request"`
+	// WouldBackup is §12.8's preview: which backup files the real run would
+	// write before sending the request. Absent when backups are off or the
+	// write changes no existing document. The command layer fills it; this
+	// package only carries it.
+	WouldBackup any `json:"would_backup,omitempty"`
+	// Diff is F7's preview of what the write changes in each document it
+	// targets (changes + summary, from internal/docdiff). The command layer
+	// fills it; absent when the write targets no existing document or the
+	// current state could not be read.
+	Diff any `json:"diff,omitempty"`
+	// ResetNested is the --reset-nested plan (§10.2.1): the carrier phases
+	// the real run would write before the requested body.
+	ResetNested any `json:"reset_nested,omitempty"`
+	// Steps lists every request of a write the real run sends as several
+	// (a two-step `pay backups restore`), in order; Request is the last one.
+	Steps any `json:"steps,omitempty"`
 }
 
 // NewDryRun builds the result. The URL always passes through redact.URL, and

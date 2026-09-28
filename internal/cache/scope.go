@@ -21,6 +21,7 @@ import (
 //	$CACHE/v1/<scope>/fields/<slug>.json    one field shard per entity (§7.8.2)
 //	$CACHE/v1/<scope>/fields/_global_<slug>.json
 //	$CACHE/v1/<scope>/graphql/<Type>.json   per-type raw introspection
+//	$CACHE/v1/<scope>/census.json          §7.10c block census (aggregate, no documents)
 //	$CACHE/v1/<scope>/.lock
 const (
 	// Epoch is the cache-format epoch. A directory under any other vN is
@@ -31,6 +32,7 @@ const (
 	fileLockName       = ".lock"
 	fileAuthResolution = "auth-resolution.json"
 	fileGCStamp        = ".gc-stamp"
+	fileCensus         = "census.json"
 	dirFields          = "fields"
 	dirGraphQL         = "graphql"
 

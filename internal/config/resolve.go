@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -54,7 +55,16 @@ const (
 	// SourceDerivedGraphQL is §4.2's visible coupling between api_path and
 	// graphql_route.
 	SourceDerivedGraphQL = "derived:api_path+graphql_route"
+	// SourceDerivedSiteURL is F9's default: the site is served from the same
+	// origin as the API, which is how Payload 3 (one Next.js app) ships.
+	SourceDerivedSiteURL = "derived:base_url"
 )
+
+// DefaultPreviewPath is the Payload website template's preview route
+// (src/app/(frontend)/next/preview/route.ts): it checks previewSecret against
+// PREVIEW_SECRET, authenticates the caller with payload.auth(), enables Next.js
+// draft mode and redirects to path.
+const DefaultPreviewPath = "/next/preview?path={path}&previewSecret={secret}"
 
 // Flags carries §9.1's root persistent flags. Every field is empty/nil unless
 // the flag was actually changed, which is how "flag" wins §4.5's first slot
@@ -98,6 +108,10 @@ type Flags struct {
 
 	LogLevel  string
 	LogFormat string
+
+	// BackupDir is --backup-dir; NoBackup is --no-backup (§12.8).
+	BackupDir string
+	NoBackup  *bool
 }
 
 // Input is everything Resolve is allowed to see. No file handles, no clock, no
@@ -108,7 +122,16 @@ type Input struct {
 	Env     Env
 	Project *File
 	User    *File
+	// WorkDir is the directory a relative --backup-dir or PAY_BACKUP_DIR is
+	// resolved against (§12.8). It is data, not a syscall: the caller passes
+	// the working directory it already knows, so Resolve stays pure.
+	WorkDir string
 }
+
+// DefaultCensusMaxDocs mirrors discovery.DefaultCensusMaxDocs (§7.10c): how
+// many documents per collection the block census reads. internal/config must
+// not import internal/discovery, so the number is repeated here.
+const DefaultCensusMaxDocs = 500
 
 // Resolved is the effective configuration for one command invocation.
 //
@@ -147,6 +170,8 @@ type Resolved struct {
 	MaxRetries  int
 	Concurrency int
 	MaxBulk     int
+	// CensusMaxDocs is the block census's per-collection document cap.
+	CensusMaxDocs int
 
 	Redact             bool
 	ConfirmWrites      bool
@@ -173,6 +198,14 @@ type Resolved struct {
 	UpdateAuto    bool
 	UpdateChannel string
 
+	// BackupDir is the root of §12.8's automatic pre-write backups, always
+	// absolute once resolved (a relative config value is anchored to the file
+	// that set it). "" means backups are off. NoBackup is --no-backup /
+	// PAY_NO_BACKUP: it suppresses writing without forgetting the directory,
+	// so `pay backups list` still works under it.
+	BackupDir string
+	NoBackup  bool
+
 	// Optional pins (§4.2). An empty value means "not configured"; the
 	// matching *Source entry says so explicitly.
 	IDType          string
@@ -182,6 +215,15 @@ type Resolved struct {
 	EchoCheckIgnore []string
 	CustomEndpoints []string
 	Blocks          map[string][]string
+
+	// Frontend URLs and draft preview (F9). SiteURL is never empty when
+	// BaseURL is set: it defaults to BaseURL's origin (Sources["site_url"] =
+	// "derived:base_url"). PreviewPath defaults to the Payload website
+	// template's route. URLPaths is merged per key across the layers.
+	SiteURL          string
+	URLPaths         map[string]string
+	PreviewPath      string
+	PreviewSecretEnv string
 
 	// ConcurrencyClamped is true when the requested concurrency exceeded
 	// MaxConcurrency and was lowered.
@@ -226,7 +268,9 @@ func Resolve(in Input) (*Resolved, error) {
 	r.resolveToggles()
 	r.resolveCache()
 	r.resolveLoggingAndUpdate()
+	r.resolveBackups()
 	r.resolvePins()
+	r.resolveSite()
 	r.collectFileWarnings()
 	if r.err != nil {
 		return nil, r.err
@@ -454,6 +498,8 @@ func (r *res) resolveLimits() {
 	// --max-docs", so the two are one setting with two names.
 	r.out.MaxDocs = r.defaultsInt("max_docs", []string{"PAY_MAX_DOCS"}, r.in.Flags.MaxDocs,
 		func(d *Defaults) *int { return d.MaxBulk }, r.out.MaxBulk)
+	r.out.CensusMaxDocs = r.defaultsInt("census_max_docs", []string{"PAY_CENSUS_MAX_DOCS"}, nil,
+		func(d *Defaults) *int { return d.CensusMaxDocs }, DefaultCensusMaxDocs)
 	r.out.MaxRetries = r.defaultsInt("max_retries", []string{"PAY_MAX_RETRIES"}, r.in.Flags.MaxRetries,
 		func(d *Defaults) *int { return d.MaxRetries }, DefaultMaxRetries)
 	r.out.Concurrency = r.defaultsInt("concurrency", []string{"PAY_CONCURRENCY"}, r.in.Flags.Concurrency,
@@ -470,7 +516,8 @@ func (r *res) resolveLimits() {
 		r.out.Concurrency = 1
 	}
 	for key, v := range map[string]int{"depth": r.out.Depth, "limit": r.out.Limit,
-		"max_retries": r.out.MaxRetries, "max_docs": r.out.MaxDocs, "max_bulk": r.out.MaxBulk} {
+		"max_retries": r.out.MaxRetries, "max_docs": r.out.MaxDocs, "max_bulk": r.out.MaxBulk,
+		"census_max_docs": r.out.CensusMaxDocs} {
 		if v < 0 {
 			r.fail(apierr.New(apierr.CodeInvalidOption, "%s must not be negative, got %d", key, v))
 		}
@@ -567,6 +614,72 @@ func (r *res) resolveLoggingAndUpdate() {
 		func(f *File) string { return f.Update.Channel }, DefaultUpdateChannel)
 }
 
+// ---------------------------------------------------------------- backups ---
+
+// resolveBackups implements §12.8's backup_dir chain: --backup-dir ->
+// PAY_BACKUP_DIR -> project pay.toml -> user config.toml -> off.
+//
+// A relative value is anchored where it was written: a config file's value
+// against that file's own directory (so a committed pay.toml means the same
+// folder from any subdirectory), a flag or environment value against the
+// working directory. A leading "~/" expands to $HOME, because TOML does not
+// run a shell and `backup_dir = "~/pay-backups"` is what people write.
+func (r *res) resolveBackups() {
+	r.out.NoBackup = r.simpleBool("no_backup", "PAY_NO_BACKUP", r.in.Flags.NoBackup, false)
+
+	raw, anchor, source := "", r.in.WorkDir, SourceDefault
+	switch {
+	case r.in.Flags.BackupDir != "":
+		raw, source = r.in.Flags.BackupDir, SourceFlag
+	default:
+		if v, ok := r.in.Env.Lookup("PAY_BACKUP_DIR"); ok {
+			raw, source = v, "env:PAY_BACKUP_DIR"
+			break
+		}
+		for _, f := range r.fileLayers() {
+			if v := strings.TrimSpace(f.BackupDir); v != "" {
+				raw, source = v, f.Source()
+				anchor = ""
+				if f.Path != "" {
+					anchor = filepath.Dir(f.Path)
+				}
+				break
+			}
+		}
+	}
+	r.out.Sources["backup_dir"] = source
+	if raw == "" {
+		return
+	}
+	r.out.BackupDir = anchorPath(strings.TrimSpace(raw), anchor, r.home())
+}
+
+// home is the user's home directory as the environment snapshot reports it.
+func (r *res) home() string {
+	for _, name := range []string{"HOME", "USERPROFILE"} {
+		if v, ok := r.in.Env.Lookup(name); ok {
+			return v
+		}
+	}
+	return ""
+}
+
+// anchorPath makes p absolute: "~/" expands to home, and anything else that
+// is still relative is joined onto anchor. With no anchor the value is only
+// cleaned — Resolve never asks the OS for a working directory (§3.1).
+func anchorPath(p, anchor, home string) string {
+	switch {
+	case p == "~" && home != "":
+		p = home
+	case (strings.HasPrefix(p, "~/") || strings.HasPrefix(p, `~\`)) && home != "":
+		p = filepath.Join(home, p[2:])
+	}
+	if !filepath.IsAbs(p) && anchor != "" {
+		p = filepath.Join(anchor, p)
+	}
+	return filepath.Clean(p)
+}
+
 // ------------------------------------------------------------------- pins ---
 
 func (r *res) resolvePins() {
@@ -606,6 +719,80 @@ func (r *res) resolvePins() {
 		r.out.Blocks = blocks
 		r.out.Sources["blocks"] = r.profileLayerSource(func(p *Profile) bool { return len(p.Blocks) > 0 })
 	}
+}
+
+// ------------------------------------------------------------------- site ---
+
+// resolveSite resolves F9's frontend settings. site_url follows the full §4.5
+// chain (flag-less: env PAY_SITE_URL, then the profile layers) and defaults to
+// base_url's origin; url_paths merges per collection with the project layer
+// winning, exactly like blocks.
+func (r *res) resolveSite() {
+	raw := r.profileString("site_url", []string{"PAY_SITE_URL"},
+		func(p *Profile) string { return p.SiteURL }, "")
+	switch {
+	case raw != "":
+		site, err := splitSiteURL(raw)
+		if err != nil {
+			r.fail(err)
+		} else {
+			r.out.SiteURL = site
+		}
+	case r.out.BaseURL != "":
+		if u, err := url.Parse(r.out.BaseURL); err == nil {
+			r.out.SiteURL = u.Scheme + "://" + u.Host
+			r.out.Sources["site_url"] = SourceDerivedSiteURL
+		}
+	}
+
+	r.out.PreviewPath = r.profileString("preview_path", nil,
+		func(p *Profile) string { return p.PreviewPath }, DefaultPreviewPath)
+	if !strings.HasPrefix(r.out.PreviewPath, "/") {
+		r.fail(apierr.New(apierr.CodeInvalidOption,
+			"profiles.%s.preview_path must be a path on the site that starts with \"/\"", r.out.Profile).
+			WithHint("pay config unset profiles.%s.preview_path restores the Payload website template's route", r.out.Profile))
+	}
+	r.out.PreviewSecretEnv = r.profileString("preview_secret_env", nil,
+		func(p *Profile) string { return p.PreviewSecretEnv }, "")
+
+	paths := map[string]string{}
+	for _, p := range []*Profile{r.userProfile, r.projectProfile} { // later wins
+		if p == nil {
+			continue
+		}
+		for coll, tmpl := range p.URLPaths {
+			paths[coll] = tmpl
+		}
+	}
+	for coll, tmpl := range paths {
+		if !strings.HasPrefix(tmpl, "/") {
+			r.fail(apierr.New(apierr.CodeInvalidOption,
+				"profiles.%s.url_paths.%s must start with \"/\", got %q", r.out.Profile, coll, tmpl).
+				WithHint("example: pay config set profiles.%s.url_paths.%s '/%s/{slug}'", r.out.Profile, coll, coll))
+		}
+	}
+	if len(paths) > 0 {
+		r.out.URLPaths = paths
+		r.out.Sources["url_paths"] = r.profileLayerSource(func(p *Profile) bool { return len(p.URLPaths) > 0 })
+	}
+}
+
+// splitSiteURL validates site_url: an absolute http(s) origin, optionally with
+// a base path (a Next.js basePath), never with credentials, a query or a
+// fragment.
+func splitSiteURL(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	u, err := url.Parse(trimmed)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return "", apierr.New(apierr.CodeInvalidOption,
+			"site_url %q must be an absolute http(s) URL such as https://www.example.com", redact.URL(trimmed))
+	}
+	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return "", apierr.New(apierr.CodeInvalidOption,
+			"site_url %q must not carry credentials, a query string or a fragment", redact.URL(trimmed))
+	}
+	u.Path = strings.TrimSuffix(u.Path, "/")
+	return u.String(), nil
 }
 
 func (r *res) collectFileWarnings() {
@@ -1048,6 +1235,7 @@ func (r *Resolved) Explain() map[string]Setting {
 	add("limit", r.Limit)
 	add("max_docs", r.MaxDocs)
 	add("max_bulk", r.MaxBulk)
+	add("census_max_docs", r.CensusMaxDocs)
 	add("max_retries", r.MaxRetries)
 	add("concurrency", r.Concurrency)
 	add("timeout", r.Timeout.String())
@@ -1067,6 +1255,8 @@ func (r *Resolved) Explain() map[string]Setting {
 	add("log_format", r.LogFormat)
 	add("update_auto", r.UpdateAuto)
 	add("update_channel", r.UpdateChannel)
+	add("backup_dir", r.BackupDir)
+	add("no_backup", r.NoBackup)
 	add("id_type", r.IDType)
 	add("locales", r.Locales)
 	add("payload_version", r.PayloadVersion)
@@ -1074,6 +1264,10 @@ func (r *Resolved) Explain() map[string]Setting {
 	add("echo_check_ignore", r.EchoCheckIgnore)
 	add("custom_endpoints", r.CustomEndpoints)
 	add("blocks", r.Blocks)
+	add("site_url", redact.URL(r.SiteURL))
+	add("url_paths", r.URLPaths)
+	add("preview_path", r.PreviewPath)
+	add("preview_secret_env", r.PreviewSecretEnv)
 
 	if len(r.Headers) > 0 {
 		masked := make(map[string]string, len(r.Headers))

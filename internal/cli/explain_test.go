@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/KLIXPERT-io/pay-cli/internal/discovery"
 )
 
 // seeded runs a command against the recorded manifest with no network at all:
@@ -333,4 +335,49 @@ func fieldKeyNames(m map[string]any) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// Every gotcha's `do` must be a command this binary has, with flags it
+// accepts: it is the first thing an agent runs after reading the gotcha.
+// The manifest enables every conditional gotcha.
+func TestGotchasNameRealCommands(t *testing.T) {
+	var m discovery.Manifest
+	on := true
+	m.Capabilities.Localization.Enabled = &on
+	m.Source.DBAdapter = discovery.DBPostgres
+	m.Capabilities.GraphQL.Mode = discovery.GraphQLModeIntrospectionDisabled
+	root := newRootCommand(&Runtime{})
+	ids := map[string]bool{}
+	for _, g := range gotchas(&m) {
+		ids[g["id"]] = true
+		words := strings.Fields(g["do"])
+		if len(words) < 2 || words[0] != "pay" {
+			t.Errorf("%s: do = %q", g["id"], g["do"])
+			continue
+		}
+		var path, flags []string
+		for _, w := range words[1:] {
+			switch {
+			case strings.HasPrefix(w, "--"):
+				flags = append(flags, strings.SplitN(strings.TrimPrefix(w, "--"), "=", 2)[0])
+			case len(flags) == 0 && !strings.ContainsAny(w, "<'.") && !strings.HasPrefix(w, "-"):
+				path = append(path, w)
+			}
+		}
+		cmd, _, err := root.Find(path)
+		if err != nil || cmd == nil || cmd == root {
+			t.Errorf("%s: %q does not resolve to a command", g["id"], g["do"])
+			continue
+		}
+		for _, f := range flags {
+			if cmd.Flags().Lookup(f) == nil && cmd.InheritedFlags().Lookup(f) == nil {
+				t.Errorf("%s: `%s` has no --%s", g["id"], cmd.CommandPath(), f)
+			}
+		}
+	}
+	for _, id := range []string{"unknown_fields_dropped", "introspection_disabled", "nested_block_type_change_orphans"} {
+		if !ids[id] {
+			t.Errorf("gotcha %s missing", id)
+		}
+	}
 }

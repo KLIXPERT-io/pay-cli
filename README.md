@@ -22,6 +22,14 @@ it is the set of design constraints:
   silently unsorted data** from Payload. PayCLI rejects it with `invalid_sort_field`,
   exit 5, and the list of fields that do work. Same for unknown collections, unknown
   `--select` keys, bad enum values and uncastable ids.
+* **It shows a write before it makes it.** Every `--dry-run` of a write to an existing
+  document carries a structural diff of what would change, and every document a write
+  changes can be backed up automatically first. A save that would silently take a live
+  page offline is refused until you say `--draft`, `--publish` or `--unpublish`.
+* **It learns the content model from the content.** Where the project hides its schema
+  (GraphQL introspection is off in production by default), a block census learns every
+  block type, its fields and its typical values from the documents themselves, so an
+  agent can build and validate a block row without reading the app's source.
 * **It is never a dead end.** `pay raw` reaches any endpoint PayCLI does not model —
   custom collection endpoints, `POST /api/graphql`, plugin routes — with auth, retry,
   redaction, audit and write-safety intact.
@@ -244,6 +252,13 @@ real slugs. It never contains a credential, and `base_url` is redacted. Files yo
 Not using a skills-aware agent? `pay skills print --output raw > SKILL.md` gives you the
 same document.
 
+**Make sure the agent can find `pay`.** Agents run commands in non-interactive shells,
+which usually read neither `~/.bashrc` nor `~/.profile`. A PATH entry you added there works
+in your terminal, but the agent gets "command not found". Run `pay doctor` from the agent's
+shell. Its `binary_on_path` check prints the exact fix. The simplest fix is a link from a
+directory that is already on the agent's PATH:
+[INSTALL.md](./INSTALL.md#pay-not-found-after-installing).
+
 ---
 
 ## Quick tour
@@ -271,9 +286,11 @@ pay find pages --where 'slug equals home'
 pay find pages --where '_status equals published' --where 'title contains guide'
 pay find pages --or 'title contains guide' --or 'title contains tutorial'
 pay find posts --since 7d --date-field updatedAt
-pay find crm-contacts --q 'acme' --q-fields name,email
+pay find crm-contacts --q 'acme'
 pay get pages 16
 pay get pages 16 --depth 1 --select title,hero
+pay get pages --slug about                   # 0 matches: doc_not_found; 2+: slug_ambiguous
+pay get pages 16 --published-only            # the live state; not_published (exit 4) if none
 pay count pages
 ```
 
@@ -304,8 +321,9 @@ pay find pages --draft              # draft versions where they exist
 ```sh
 pay versions list pages --id 16
 pay versions get pages <versionId>
-pay versions diff pages <vA> <vB>
+pay versions diff pages <vA> <vB>            # rows matched by id, rich text as text
 pay versions restore pages <versionId> --yes
+pay diff pages 16 --draft-vs-published      # what publishing would take live
 
 pay globals list
 pay globals get header
@@ -323,6 +341,7 @@ pay create posts --set title='Hello world' --set slug=hello-world --draft
 pay create posts --data-file ./post.json
 pay update pages 16 --set title='New title' --yes
 pay update pages 16 --publish --yes
+pay publish pages 38 39 40                      # one PATCH per id; exit 7 names the ids that failed
 pay delete pages 16 --yes                       # soft delete when trash is enabled
 pay delete pages 16 --permanent --yes           # irreversible; says so
 pay restore pages 16 --yes                      # un-trash
@@ -347,6 +366,154 @@ count and the two ways forward. `--all` is the explicit "yes, everything that ma
 > update, not just the fields you sent. A validation error can therefore name a field you
 > never touched. PayCLI marks which is which: `error.fields[].sent` is `true` for the
 > fields your command supplied and `false` for pre-existing invalid data.
+
+> **The pending-draft rule.** Payload merges an update into the *newest* version and, without
+> `?draft`, stores the result as the live row, draft `_status` included. So a plain save of a
+> published page that has a pending draft would publish the draft's changes **and** take the
+> page offline. PayCLI refuses that write (`invalid_args`, exit 5) and asks you to choose:
+> `--draft` (edit the draft, the live page is untouched), `--publish` (publish the draft with
+> your change) or `--unpublish` (take it offline deliberately). Under `--draft`, a
+> `_status: "published"` in the body is removed rather than obeyed (`body_publishes`), and
+> `--draft --publish` together is `invalid_args`.
+
+### Blocks
+
+Payload's blocks fields hold most of a page. With GraphQL introspection disabled (the
+production default) the API does not tell you which block types exist or what is inside
+them. PayCLI's **block census** learns this from the documents themselves. The first run
+reads each collection's documents (500 by default); the result is cached for 24 hours.
+
+```sh
+pay blocks types pages                           # which block types appear where, and how often
+pay blocks types pages --field 'layout[].blocks' # one level down: what sits inside a group
+pay blocks schema grid --collection pages        # fields, kinds, observed values, required-ness
+pay blocks example grid --collection pages --n 2 # real rows, row ids stripped
+pay blocks new hero --collection pages --set title='New page'   # a ready-to-edit row
+pay blocks learn pages                           # rebuild after a deploy; reports what changed
+```
+
+Editing is a pipe: read one document, transform it locally, write back **only the fields you
+touched**. The transforms (`ls`, `mv`, `rm`, `add`, `cp`, `set`) need no network, and they work
+at any depth:
+
+```sh
+pay get pages 47 --draft --depth 0 | pay blocks ls --recursive       # every row, with its --field and selector
+pay get pages 47 --draft --depth 0 \
+  | pay blocks mv last --first --field 'layout[type:group[0]].blocks' \
+  | pay apply --draft --dry-run                                     # data.diff shows exactly one move
+pay get pages 47 --draft --depth 0 \
+  | pay blocks add text --template --set heading=Ablauf --after first \
+  | pay blocks validate                                             # exit 5 on {} rows, missing blockType, …
+```
+
+`pay outline` is the quickest way to read a page's structure. It prints one line per row at
+any depth, with a summary of each row and flags for broken rows:
+
+```sh
+pay outline pages --slug home --draft --output table
+pay outline pages 47 --draft --path '.counts.flagged'   # {} when nothing is wrong
+```
+
+> **Orphan rows (Postgres).** Changing the type of a *nested* block (a bento inside a group
+> becomes a grid) leaves the old nested rows in the database. They read back as `{}` rows.
+> PayCLI predicts this on a dry run (`orphan_risk`), detects it after a write (`orphan_rows`)
+> and on read (`empty_rows`). `--reset-nested` makes the write clean and keeps the document
+> id. `pay update pages 47 --reset-nested` with no body repairs a page that already has
+> orphan rows.
+
+### Rich text as Markdown
+
+Payload stores rich text as Lexical JSON. PayCLI converts it in both directions, in the
+shape Payload stores:
+
+```sh
+pay update posts 3 --set-md content=@body.md --draft           # Markdown into a richText field
+pay create posts --set title=Launch --set slug=launch --set-md content=@launch.md --draft
+pay get posts 3 --richtext md                                  # every rich-text value as Markdown
+pay get pages 47 --draft --depth 0 | pay lexical text -o -     # what does this page say?
+pay lexical from-md body.md --as content | pay update posts 3 --data @- --draft
+```
+
+The Markdown dialect adds `[text](pay:pages/47)` for internal links, `{target=_blank}`,
+`![media:40]()` for uploads, and `<!-- lexical:… -->` placeholders that carry every other
+node losslessly. A `--richtext md|text` read is for reading only: every write refuses it
+(`richtext_rendered`), because Payload would store the string.
+
+### Diffs and dry runs
+
+```sh
+pay diff pages 16 --data-file page-16.json     # what would this write change? nothing is sent
+pay diff pages 16 --set title='New title'
+pay diff pages 50 58                           # two documents
+pay diff --left before.json --right after.json # two files, offline
+pay update pages 16 --data-file page-16.json --draft --dry-run   # data.diff: the same change list
+```
+
+`data.identical` and `data.summary.fields` answer "does this touch only what I meant?".
+`changes[]` lists `add`, `remove`, `change` and `move` with paths like
+`layout[2].blocks[1].title`, and rich text appears as text. The exit code is 0 whether or
+not the sides differ. Every `--dry-run` of `update`, `apply`, `globals update`, `publish`,
+`unpublish`, `backups restore` and `versions restore` includes this diff, at the cost of one
+or two extra GETs.
+
+### Backups
+
+Name a directory once and every write that changes or removes an existing document saves
+it there first:
+
+```sh
+export PAY_BACKUP_DIR=~/pay-backups          # or backup_dir = ".pay-backups" in ./pay.toml
+pay update pages 16 --set title='New' --draft   # meta.backups lists the file it wrote
+pay backups list --collection pages --id 16
+pay backups restore <file> --dry-run         # the exact PATCH, with its diff
+pay backups restore <file> --yes
+pay backups prune --older-than 30d --dry-run
+```
+
+A backup that cannot be written aborts the write (`backup_failed`, exit 1). `--no-backup` or
+`PAY_NO_BACKUP=1` skips the backup, deliberately. `pay backups restore --recreate` brings
+back a permanently deleted document; Payload assigns it a new id.
+
+### Idempotent migrations: upsert, plan, sync
+
+```sh
+pay upsert pages --data-file about.json      # created | updated | unchanged, matched on slug
+pay upsert crm-contacts --match email --data-file contact.json
+pay plan ./content                           # what sync would do, per item, with diffs
+pay sync ./content --dry-run
+pay sync ./content --yes                     # exit 7 is safe to re-run: only what differs is written
+```
+
+A manifest is a JSON file holding one item or an array of items. A saved `pay get … --depth 0`
+envelope also counts as a manifest:
+
+```json
+[{"key": "about", "collection": "pages", "status": "draft",
+  "data": {"title": "About", "slug": "about"}},
+ {"collection": "pages", "status": "draft",
+  "data": {"title": "Team", "slug": "team", "parent": {"$ref": "@about"}}}]
+```
+
+`{"$ref": "pages", "slug": "about"}` works in **any** write body, and PayCLI resolves it to
+the id before the request. `{"$ref": "@key"}` refers to another item of the same plan, and
+`sync` creates items in dependency order.
+
+### Frontend URLs and draft preview
+
+```sh
+pay url pages 47                   # {url, path, path_source, status, has_unpublished_changes}
+pay url pages --slug about --draft # where the newest draft will live
+pay url pages 47 --preview         # draft-preview handshake; saves the cookie to a 0600 file
+```
+
+The path comes from nested-docs breadcrumbs, then from a `url_paths` template
+(`pay config set profiles.<p>.url_paths.posts '/posts/{slug}'`), then from the slug. The
+host is `site_url`, which defaults to the Payload origin. `--preview` works with the Payload
+website template's `/next/preview` route. It needs the site's preview secret, from
+`PAY_PREVIEW_SECRET`, a variable named by `preview_secret_env`, or
+`pay auth preview-secret --stdin`. It returns ready-made commands that load the cookie into
+agent-browser or curl, so you can look at a draft without publishing it. PayCLI never prints
+the secret or the cookie value.
 
 ### Files
 
@@ -385,7 +552,7 @@ other command. `DELETE` still needs `--yes`.
 ### Maintenance
 
 ```sh
-pay doctor                       # connection, auth, cache, audit log, skill, clock
+pay doctor                       # connection, auth, cache, audit log, backups, block census, PATH, skill, clock
 pay cache info                   # freshness of this profile's discovery
 pay cache ls                     # every cached scope and why they are separate
 pay cache warm                   # run discovery now, so the next command is local
@@ -487,8 +654,8 @@ This is not jq. Pipe the envelope to jq when you want jq.
 | `1` | internal | a PayCLI bug, a corrupt cache, an unwritable audit log | `internal`, `cache_corrupt`, `audit_write_failed` |
 | `2` | auth | the credential is missing, wrong, expired or locked | `auth_missing`, `auth_invalid`, `auth_required` |
 | `3` | throttled | back off and retry | `rate_limited`, `doc_locked`, `server_busy` |
-| `4` | not found | the document, route or version does not exist | `doc_not_found`, `route_not_found` |
-| `5` | validation | **your input is wrong** — fix it and retry | `validation_failed`, `invalid_sort_field`, `unknown_field`, `invalid_args` |
+| `4` | not found | the document, route or version does not exist | `doc_not_found`, `route_not_found`, `selector_no_match` |
+| `5` | validation | **your input is wrong** — fix it and retry | `validation_failed`, `invalid_sort_field`, `unknown_field`, `invalid_args`, `slug_ambiguous` |
 | `6` | network | DNS, TLS, timeout, or the server is down | `timeout`, `network_unreachable`, `server_error` |
 | **`7`** | **partial** | **some items succeeded and some failed** | `partial_failure` |
 | `8` | access denied | authenticated, but not permitted | `access_denied` |
@@ -534,8 +701,26 @@ Common environment variables:
 | `PAY_NO_UPDATE` | disable every self-update network call |
 | `PAY_UPDATE_STRICT` | refuse an unverifiable release |
 | `PAY_YES` | assume `--yes` (use with care) |
+| `PAY_BACKUP_DIR` | turn on pre-write backups into this directory |
+| `PAY_NO_BACKUP` | skip the pre-write backup |
+| `PAY_CENSUS_MAX_DOCS` | documents per collection the block census reads (default 500) |
+| `PAY_SITE_URL` | the site's origin for `pay url` (default: the Payload origin) |
+| `PAY_PREVIEW_SECRET`, `PAY_PREVIEW_SECRET_<PROFILE>` | the site's preview secret, for `pay url --preview` |
 
 Full list: [INSTALL.md](./INSTALL.md) and `pay explain --section connection`.
+
+Config-file keys for the same features (`pay config set KEY VALUE` writes them):
+
+| Key | Where | Effect |
+|---|---|---|
+| `backup_dir` | top level of `config.toml` / `pay.toml` | backup directory; a relative path is relative to that file |
+| `census_max_docs` | `[defaults]` | documents per collection the block census reads |
+| `site_url` | `[profiles.<p>]` | the site's origin, when it is not the Payload origin |
+| `url_paths.<collection>` | `[profiles.<p>]` | the site path of a collection, e.g. `"/posts/{slug}"` |
+| `preview_path` | `[profiles.<p>]` | the site's preview route (default `/next/preview?path={path}&previewSecret={secret}`) |
+| `preview_secret_env` | `[profiles.<p>]` | the name of an environment variable that holds the preview secret |
+
+The preview secret itself, like an API key, is refused in any config file.
 
 ---
 

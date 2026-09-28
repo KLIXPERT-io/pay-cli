@@ -398,6 +398,21 @@ func (c *Client) WithCredential(mode, collection, credential string) *Client {
 // the §6.2 length check and for error messages, where it is redacted first.
 func (c *Client) URLFor(req *Request) string {
 	var b strings.Builder
+	if req.URL != "" {
+		// A site route (F9): the URL is already absolute and carries its own
+		// origin. The query, if any, is appended rather than substituted so a
+		// template that already has a query string keeps it.
+		b.WriteString(req.URL)
+		if req.Query != "" {
+			if strings.Contains(req.URL, "?") {
+				b.WriteString("&")
+			} else {
+				b.WriteString("?")
+			}
+			b.WriteString(req.Query)
+		}
+		return b.String()
+	}
 	b.WriteString(c.base.Scheme)
 	b.WriteString("://")
 	b.WriteString(c.base.Host)
@@ -420,6 +435,23 @@ type Request struct {
 	// Path is relative to APIPath unless Absolute is set.
 	Path     string
 	Absolute bool
+	// URL, when set, is an absolute http(s) URL that replaces base_url +
+	// api_path + Path entirely. It exists for the SITE's own routes (F9's
+	// draft-preview handshake), which live outside the REST prefix and may
+	// live on another origin. A URL whose scheme://host[:port] differs from
+	// base_url's is sent WITHOUT the Authorization header and without the
+	// profile's configured headers: a credential never crosses an origin, the
+	// same rule §6's CheckRedirect enforces for redirects.
+	URL string
+	// NoRedirect returns a 3xx response to the caller instead of following
+	// it. The preview handshake needs the redirect's own Set-Cookie headers,
+	// which a followed redirect would discard.
+	NoRedirect bool
+	// Secrets are literal values this request carries (a preview secret in a
+	// query string or path segment). They are scrubbed, in every encoding,
+	// from every URL derived from the request — Response.URL, error.http.url
+	// and the -v debug line — on top of §5.3's structural rules.
+	Secrets []string
 	// Query is an already-encoded query string (see internal/payload/query).
 	Query string
 
@@ -523,7 +555,7 @@ func (c *Client) logRequest(req *Request, plan *requestPlan, requestID string,
 	}
 	attrs := []any{
 		"method", plan.method,
-		logging.URL("url", plan.url),
+		logging.URL("url", plan.shownURL()),
 		"status", status,
 		"duration_ms", took.Milliseconds(),
 		"attempt", attempt,

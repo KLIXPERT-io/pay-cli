@@ -137,9 +137,19 @@
         "text": "The API-key header is `Authorization: {authCollectionSlug} API-Key {key}` — the slug is required and project-specific."
       },
       {
+        "do": "pay blocks validate --collection <collection> --data-file body.json",
+        "id": "unknown_fields_dropped",
+        "text": "Payload silently drops unknown fields, unknown keys inside block rows and rows whose blockType it does not know, and still answers 200: a typo never errors, it just never reaches the document. Writes report it afterwards as input_silently_dropped; validate a body before sending it."
+      },
+      {
         "do": "pay find <collection> --where 'tags in a,b'",
         "id": "postgres_operator_500s",
         "text": "On Postgres the all/near/within/intersects operators return HTTP 500 rather than a validation error."
+      },
+      {
+        "do": "pay update <collection> <id> --data-file body.json --reset-nested",
+        "id": "nested_block_type_change_orphans",
+        "text": "On Postgres, changing a block's type (or removing a row that holds nested blocks) at a NESTED path such as layout[2].blocks[1] leaves orphan rows that read back as {} entries; top-level swaps in layout are clean. `pay outline` shows them; --reset-nested writes the change without leaving them (and repairs a document that has them) while keeping the document id."
       }
     ]
   },
@@ -162,7 +172,7 @@
     "duration_ms": 0,
     "http_requests": 0,
     "retries": 0,
-    "bytes": 3422,
+    "bytes": 4338,
     "cache": {
       "discovery": "hit",
       "age_s": 0,

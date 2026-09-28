@@ -66,6 +66,12 @@ const (
 	SelectorID
 	// SelectorBulk — --where / --ids: an unbounded set.
 	SelectorBulk
+	// SelectorIDs — several ids named explicitly on the command line
+	// (`pay publish pages 38 39 40`). Each document is written on its own, so
+	// the level is the per-document one (publish L1, unpublish L2) rather
+	// than L3: the blast radius is exactly what the caller typed, not what a
+	// filter happens to match.
+	SelectorIDs
 )
 
 // Canonical command names. These are the strings PayCLI uses in the envelope's
@@ -101,6 +107,9 @@ const (
 	CmdRestore         = "restore"
 	CmdGlobalsUpdate   = "globals update"
 	CmdVersionsRestore = "versions restore"
+	// CmdURL is `pay url` (F9). The --preview handshake GETs a site route that
+	// issues a draft-mode cookie; it changes no content, so it is L0.
+	CmdURL = "url"
 
 	// The `pay blocks` family edits a document that arrives on stdin and puts
 	// nothing on the wire, so every one of them is L0 — the same level as a
@@ -113,10 +122,58 @@ const (
 	CmdBlocksCopy   = "blocks cp"
 	CmdBlocksSet    = "blocks set"
 
+	// The block catalog (§7.10c) reads documents to learn what blocks exist,
+	// never writes one, and reads nothing from stdin except `validate`'s
+	// document. All six are L0.
+	CmdBlocksTypes    = "blocks types"
+	CmdBlocksSchema   = "blocks schema"
+	CmdBlocksExample  = "blocks example"
+	CmdBlocksNew      = "blocks new"
+	CmdBlocksValidate = "blocks validate"
+	CmdBlocksLearn    = "blocks learn"
+
+	// The `pay lexical` family converts rich text between Lexical JSON and
+	// Markdown on the local machine. Nothing it does reaches the server.
+	CmdLexicalFromMD = "lexical from-md"
+	CmdLexicalToMD   = "lexical to-md"
+	CmdLexicalText   = "lexical text"
+
 	// CmdApply is the pipeline's write half: one PATCH, one document,
 	// addressed by the id the upstream envelope carries. It is exactly as
 	// risky as `pay update <id>` and is levelled with it.
 	CmdApply = "apply"
+
+	// CmdBackupsRestore writes a §12.8 backup file back to the server: it
+	// overwrites the current document wholesale (or re-creates a deleted
+	// one), so it is levelled with `versions restore`. CmdBackupsPrune deletes
+	// local backup files — the safety net itself — and is L2 for the same
+	// reason a permanent delete is.
+	CmdBackupsRestore = "backups restore"
+	CmdBackupsPrune   = "backups prune"
+)
+
+// CmdDiff compares two documents (§9.14). Even its write-body form only
+// computes what a PATCH would store; nothing but GETs is ever sent.
+const CmdDiff = "diff"
+
+// CmdOutline prints a document's block structure (§9.13). It reads one
+// document (a GET, plus one lookup for --slug) or a piped one; it never writes.
+const CmdOutline = "outline"
+
+// F6: idempotent writes.
+const (
+	// CmdUpsert creates the document its --match fields do not find, or
+	// updates the one they do. It writes exactly one document, so it is
+	// levelled with create/update (L1).
+	CmdUpsert = "upsert"
+	// CmdPlan reads a manifest directory and the server and reports what a
+	// sync would do. It never writes: L0.
+	CmdPlan = "plan"
+	// CmdSync executes a plan: several documents (and globals) in one
+	// invocation. It is L2 — it prompts on a TTY and requires --yes in a
+	// non-TTY — because it can touch a global and many documents at once,
+	// while every item is still a scoped, backed-up, audited write.
+	CmdSync = "sync"
 )
 
 // readCommands is the §12.1 L0 row. `raw` is L0 only for a GET; the caller
@@ -126,9 +183,13 @@ var readCommands = map[string]bool{
 	CmdCollections: true, CmdExplain: true, CmdAccess: true, CmdCan: true,
 	CmdWhoami: true, CmdDownload: true, CmdDiscover: true, CmdDoctor: true,
 	CmdCache: true, CmdVersionsList: true, CmdVersionsGet: true,
-	CmdVersionsDiff: true, CmdGlobalsList: true, CmdGlobalsGet: true,
+	CmdVersionsDiff: true, CmdGlobalsList: true, CmdGlobalsGet: true, CmdURL: true,
 	CmdBlocksList: true, CmdBlocksMove: true, CmdBlocksRemove: true,
 	CmdBlocksAdd: true, CmdBlocksCopy: true, CmdBlocksSet: true,
+	CmdBlocksTypes: true, CmdBlocksSchema: true, CmdBlocksExample: true,
+	CmdBlocksNew: true, CmdBlocksValidate: true, CmdBlocksLearn: true,
+	CmdLexicalFromMD: true, CmdLexicalToMD: true, CmdLexicalText: true,
+	CmdDiff: true, CmdOutline: true, CmdPlan: true,
 }
 
 // Op is one operation about to be performed, described in the terms §12 cares
@@ -181,9 +242,9 @@ func (o Op) Level() Level {
 		return L3
 	}
 	switch cmd {
-	case CmdCreate, CmdUpload, CmdDuplicate, CmdUpdate, CmdApply, CmdPublish, CmdRestore:
+	case CmdCreate, CmdUpload, CmdDuplicate, CmdUpdate, CmdApply, CmdPublish, CmdRestore, CmdUpsert:
 		return L1
-	case CmdUnpublish, CmdGlobalsUpdate, CmdVersionsRestore:
+	case CmdUnpublish, CmdGlobalsUpdate, CmdVersionsRestore, CmdBackupsRestore, CmdBackupsPrune, CmdSync:
 		return L2
 	case CmdDelete:
 		if o.Permanent || o.HardDelete || !o.TrashEnabled {
@@ -219,6 +280,8 @@ const (
 	ActionUpload         = "upload"
 	ActionRestoreVersion = "restore_version"
 	ActionRaw            = "raw"
+	// ActionRestoreBackup is `pay backups restore` (§12.8).
+	ActionRestoreBackup = "restore_backup"
 )
 
 // Action is the audit Event.Action for this operation.
@@ -243,6 +306,8 @@ func (o Op) Action() string {
 		return ActionRestore
 	case CmdVersionsRestore:
 		return ActionRestoreVersion
+	case CmdBackupsRestore:
+		return ActionRestoreBackup
 	case CmdDelete:
 		if o.Permanent || o.HardDelete || !o.TrashEnabled {
 			return ActionDelete
@@ -250,6 +315,14 @@ func (o Op) Action() string {
 		return ActionTrash
 	case CmdRaw:
 		return ActionRaw
+	case CmdUpsert, CmdSync:
+		// Both issue ordinary creates and updates; the audit record keeps the
+		// command name (which invocation did it) and says which write it was.
+		// A create is the only write addressed by no id.
+		if o.Selector == SelectorNone && !o.Global {
+			return ActionCreate
+		}
+		return ActionUpdate
 	}
 	return strings.TrimSpace(strings.ToLower(o.Command))
 }

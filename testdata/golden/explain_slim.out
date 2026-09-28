@@ -94,7 +94,7 @@
         "meaning": "success"
       },
       {
-        "codes_total": 5,
+        "codes_total": 6,
         "exit": 1,
         "meaning": "internal — a PayCLI bug, a corrupt cache or an unwritable audit log"
       },
@@ -109,12 +109,12 @@
         "meaning": "throttled — rate limited, document locked or server busy (retriable)"
       },
       {
-        "codes_total": 4,
+        "codes_total": 6,
         "exit": 4,
         "meaning": "not found — document, route or version does not exist"
       },
       {
-        "codes_total": 21,
+        "codes_total": 29,
         "exit": 5,
         "meaning": "validation / bad input — the request was never worth sending"
       },
@@ -129,17 +129,17 @@
         "meaning": "partial — some items in a bulk operation failed; see .error.failures"
       },
       {
-        "codes_total": 2,
+        "codes_total": 3,
         "exit": 8,
         "meaning": "access denied — authenticated but not permitted"
       },
       {
-        "codes_total": 6,
+        "codes_total": 7,
         "exit": 9,
         "meaning": "configuration — no base_url, unknown profile, secret in plaintext"
       },
       {
-        "codes_total": 8,
+        "codes_total": 9,
         "exit": 10,
         "meaning": "capability — this project does not support the operation"
       },

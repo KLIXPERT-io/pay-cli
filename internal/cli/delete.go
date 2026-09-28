@@ -236,7 +236,8 @@ func runDelete(ctx context.Context, cmd *cobra.Command, d *Deps, f *deleteFlags,
 func runDeleteOne(ctx context.Context, d *Deps, client *payload.Client, f *deleteFlags,
 	t *collTarget, id string, p query.Params, softDelete, trashEnabled bool) (*output.Envelope, error) {
 	cfg := d.cfg()
-	if e := d.checkID(t, t.Slug, id); e != nil {
+	id, e := d.canonicalID(t, t.Slug, id)
+	if e != nil {
 		return nil, e
 	}
 	op := safety.Op{
@@ -251,7 +252,8 @@ func runDeleteOne(ctx context.Context, d *Deps, client *payload.Client, f *delet
 		method = "PATCH"
 		body = map[string]any{trashField(t.Shard): d.now().UTC().Format(time.RFC3339)}
 	}
-	w := d.newWriteOp(op, t.Slug, method, path).withIDs([]any{id})
+	w := d.newWriteOp(op, t.Slug, method, path).withIDs([]any{id}).
+		withBackup(ctx, BackupTarget{Collection: t, Params: p})
 
 	if cfg.DryRun {
 		q, _ := p.Encode()
@@ -349,7 +351,8 @@ func runBulkDelete(ctx context.Context, cmd *cobra.Command, d *Deps, client *pay
 		method = "PATCH"
 		body = map[string]any{trashField(t.Shard): d.now().UTC().Format(time.RFC3339)}
 	}
-	w := d.newWriteOp(op, t.Slug, method, "/"+t.Slug).withWhere(where)
+	w := d.newWriteOp(op, t.Slug, method, "/"+t.Slug).withWhere(where).
+		withBackup(ctx, BackupTarget{Collection: t, Params: p})
 	classify := payload.WithClassify(classifyFor(t, cfg, payload.SentPaths(body)))
 
 	// All three §12.3 phases share ONE scope. `--permanent` sends trash=true,
@@ -478,6 +481,18 @@ func runUnsafeDelete(ctx context.Context, d *Deps, client *payload.Client, w *wr
 	classify payload.Option) (*output.Envelope, error) {
 	cfg := d.cfg()
 	warn := unsafePassthroughWarning(n)
+	// §12.8: the passthrough DELETE never resolves ids, so the backup has to
+	// resolve them itself — only when backups are on, so nobody else pays for
+	// the extra reads. The server re-evaluates the filter at delete time; a
+	// document that starts matching in between is deleted without a backup,
+	// which is the same TOCTOU window the advisory count already discloses.
+	if d.BackupsEnabled() {
+		ids, err := client.ResolveIDsScoped(ctx, t.Slug, scope, n, classify, payload.WithKnownRoute())
+		if err != nil {
+			return nil, backupFailed(err, d.RT.backupStore().Root, "resolving the ids to back up before the passthrough delete")
+		}
+		w = w.withIDs(ids)
+	}
 	if cfg.DryRun {
 		// The URL mirrors what DeleteWhereUnsafe actually puts on the wire —
 		// p (trash, locale, overrideLock) with the filter attached — rather

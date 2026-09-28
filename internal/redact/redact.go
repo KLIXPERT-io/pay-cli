@@ -61,6 +61,10 @@ var jwtLike = regexp.MustCompile(`^eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Z
 // explains why a stored token stopped working.
 var nonSecretKeys = map[string]struct{}{
 	"token_exp": {}, "tokenexp": {}, "token_expiry": {}, "token_expires_at": {},
+	// F9's config key holds the NAME of the environment variable that carries
+	// the preview secret (e.g. "PREVIEW_SECRET"), exactly like api_key_env.
+	// Masking it made `pay config explain` hide where the secret comes from.
+	"preview_secret_env": {},
 }
 
 // Key reports whether a JSON object key (or a query-parameter name) names a
@@ -183,7 +187,7 @@ func (s Scrubber) redactValue(v any, path string, paths *[]string) any {
 		out := make(map[string]any, len(t))
 		for k, val := range t {
 			p := join(path, k)
-			if Key(k) {
+			if Key(k) && val != nil {
 				out[k] = Mask
 				*paths = append(*paths, p)
 				continue
@@ -208,6 +212,94 @@ func (s Scrubber) redactValue(v any, path string, paths *[]string) any {
 	}
 }
 
+// --- stored documents (§12.8 backups) -------------------------------------
+
+// storedCredentialKeys are masked at any depth of a stored document: Payload
+// auth fields whose names say "credential" and nothing else.
+var storedCredentialKeys = map[string]struct{}{
+	"apikey":                  {},
+	"apikeyindex":             {},
+	"resetpasswordtoken":      {},
+	"resetpasswordexpiration": {},
+	"_verificationtoken":      {},
+}
+
+// storedAuthKeys are masked only inside an auth document (see StoredDoc):
+// "hash", "salt", "password" and "sessions" are also perfectly ordinary
+// content field names (an events collection's sessions, a content hash).
+var storedAuthKeys = map[string]struct{}{
+	"hash":     {},
+	"salt":     {},
+	"password": {},
+	"sessions": {},
+}
+
+// StoredDoc redacts a document PayCLI keeps on disk in order to write it back
+// later (a §12.8 backup). It is deliberately narrower than Value, whose §5.3
+// rules exist for output a human or an LLM reads: every value masked here is
+// a value a restore can never bring back, so only credentials are masked —
+//
+//   - apiKey, apiKeyIndex, resetPasswordToken(/Expiration), _verificationToken
+//     at any depth;
+//   - hash, salt, password, sessions inside an auth document: the top-level
+//     object when authRoot is true (the collection has auth), and any nested
+//     object that carries "email" or "username" (a user populated into a
+//     relationship, which Payload does even at depth 0);
+//   - any string containing one of the Scrubber's literal secrets (the
+//     resolved API key, the preview secret).
+//
+// The §5.3 heuristics — keys matching (?i)token|secret, JWT-shaped strings —
+// are NOT applied: they match content (designTokens, an embed token) far more
+// often than credentials in a document body, and a backup that silently lost
+// that content could not undo the write it was taken for.
+func (s Scrubber) StoredDoc(v any, authRoot bool) (any, []string) {
+	var paths []string
+	out := s.storedValue(v, "", authRoot, &paths)
+	sort.Strings(paths)
+	return out, paths
+}
+
+func (s Scrubber) storedValue(v any, path string, auth bool, paths *[]string) any {
+	switch t := v.(type) {
+	case map[string]any:
+		if !auth {
+			_, hasEmail := t["email"]
+			_, hasUsername := t["username"]
+			auth = hasEmail || hasUsername
+		}
+		out := make(map[string]any, len(t))
+		for k, val := range t {
+			p := join(path, k)
+			lower := strings.ToLower(k)
+			_, cred := storedCredentialKeys[lower]
+			_, authKey := storedAuthKeys[lower]
+			if (cred || (auth && authKey)) && val != nil {
+				out[k] = Mask
+				*paths = append(*paths, p)
+				continue
+			}
+			// Auth-ness does not inherit: a user's nested objects are
+			// judged on their own keys.
+			out[k] = s.storedValue(val, p, false, paths)
+		}
+		return out
+	case []any:
+		out := make([]any, len(t))
+		for i, val := range t {
+			out[i] = s.storedValue(val, fmt.Sprintf("%s[%d]", path, i), false, paths)
+		}
+		return out
+	case string:
+		if s.containsLiteral(t) {
+			*paths = append(*paths, path)
+			return Mask
+		}
+		return t
+	default:
+		return v
+	}
+}
+
 // --- text patterns -------------------------------------------------------
 
 var (
@@ -220,9 +312,12 @@ var (
 	textHeaderLine = regexp.MustCompile(
 		`(?i)\b(authorization|proxy-authorization|cookie|set-cookie|x-api-key|api[_-]?key)(["']?\s*:\s*)[^\r\n]*`)
 	// name=value / "name": value where the name is a secret name. The optional
-	// quote in group 2 lets this match JSON-ish text as well as flags.
+	// quote in group 2 lets this match JSON-ish text as well as flags. A value
+	// that is already the mask is matched as exactly the mask (alternation is
+	// leftmost-first), so a second pass never swallows the punctuation after
+	// it: "previewSecret=<redacted>: …" keeps its ':'.
 	textAssignment = regexp.MustCompile(
-		`(?i)\b(apikey|api[_-]?key|password|[a-z0-9_-]*token|[a-z0-9_-]*secret)(["']?\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s,;&")']+)`)
+		`(?i)\b(apikey|api[_-]?key|password|[a-z0-9_-]*token|[a-z0-9_-]*secret)(["']?\s*[:=]\s*)("[^"]*"|'[^']*'|<redacted>|[^\s,;&")']+)`)
 )
 
 func (s Scrubber) replaceLiterals(in string) string {
@@ -306,8 +401,10 @@ func (s Scrubber) walk(dec *json.Decoder, b []byte, path string, spans *[]span, 
 					// Redaction must be idempotent: a value that is already the
 					// mask has nothing left to hide, and re-recording it would
 					// report Changed (and a warning) on a body no pass will
-					// alter again.
-					if !alreadyMasked(b, start, end) {
+					// alter again. A null hides nothing either — and masking it
+					// turned null into the string "<redacted>" in every
+					// document a get → edit → write loop sent back.
+					if !alreadyMasked(b, start, end) && string(bytes.TrimSpace(raw)) != "null" {
 						*spans = append(*spans, span{start: start, end: end})
 						*paths = append(*paths, p)
 					}

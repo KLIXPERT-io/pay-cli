@@ -551,6 +551,22 @@ func gotchas(m *discovery.Manifest) []map[string]string {
 			"text": "The API-key header is `Authorization: {authCollectionSlug} API-Key {key}` — the slug is required and project-specific.",
 			"do":   "pay auth status --path .auth_collection --output id",
 		},
+		{
+			"id": "unknown_fields_dropped",
+			"text": "Payload silently drops unknown fields, unknown keys inside block rows and rows whose blockType it does not know, " +
+				"and still answers 200: a typo never errors, it just never reaches the document. " +
+				"Writes report it afterwards as input_silently_dropped; validate a body before sending it.",
+			"do": "pay blocks validate --collection <collection> --data-file body.json",
+		},
+	}
+	if m.Capabilities.GraphQL.Mode == discovery.GraphQLModeIntrospectionDisabled {
+		out = append(out, map[string]string{
+			"id": "introspection_disabled",
+			"text": "GraphQL introspection is disabled here (Payload's production default), so `pay describe` knows only " +
+				"REST-observed fields: no block slugs, no block schemas, no required flags. " +
+				"The block census learns them from real documents instead.",
+			"do": "pay blocks types <collection>",
+		})
 	}
 	if m.Capabilities.Localization.Enabled != nil && *m.Capabilities.Localization.Enabled {
 		out = append(out, map[string]string{
@@ -564,6 +580,13 @@ func gotchas(m *discovery.Manifest) []map[string]string {
 			"id":   "postgres_operator_500s",
 			"text": "On Postgres the all/near/within/intersects operators return HTTP 500 rather than a validation error.",
 			"do":   "pay find <collection> --where 'tags in a,b'",
+		})
+		out = append(out, map[string]string{
+			"id": "nested_block_type_change_orphans",
+			"text": "On Postgres, changing a block's type (or removing a row that holds nested blocks) at a NESTED path such as " +
+				"layout[2].blocks[1] leaves orphan rows that read back as {} entries; top-level swaps in layout are clean. " +
+				"`pay outline` shows them; --reset-nested writes the change without leaving them (and repairs a document that has them) while keeping the document id.",
+			"do": "pay update <collection> <id> --data-file body.json --reset-nested",
 		})
 	}
 	return out

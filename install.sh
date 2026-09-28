@@ -204,10 +204,32 @@ if [ "$WITH_SKILLS" -eq 1 ]; then
   "$install_path" skills install || printf 'note: pay skills install failed; run it manually.\n' >&2
 fi
 
+# The same advice `pay doctor` gives (check binary_on_path). Agents drive pay
+# from NON-interactive shells, which usually read neither ~/.bashrc nor
+# ~/.profile, so a PATH entry added only there works in your terminal and is
+# "command not found" in the agent's shell.
 case ":$PATH:" in
-  *":$TARGET_DIR:"*) ;;
-  *) printf '\nNote: %s is not on your $PATH. Add it with:\n  export PATH="%s:$PATH"\n' \
-       "$TARGET_DIR" "$TARGET_DIR" ;;
+  *":$TARGET_DIR:"*)
+    found="$(command -v "$BIN" 2>/dev/null || true)"
+    if [ -n "$found" ] && [ "$found" != "$install_path" ]; then
+      printf '\nNote: the first %s on $PATH is %s, not %s; remove or update it, or call %s by its absolute path.\n' \
+        "$BIN" "$found" "$install_path" "$install_path"
+    fi
+    ;;
+  *)
+    link_dir="/usr/local/bin"
+    case ":$PATH:" in
+      *":$HOME/.local/bin:"*) [ "$HOME/.local/bin" != "$TARGET_DIR" ] && link_dir="$HOME/.local/bin" ;;
+      *":$HOME/bin:"*) [ "$HOME/bin" != "$TARGET_DIR" ] && link_dir="$HOME/bin" ;;
+    esac
+    printf '\nNote: %s is not on $PATH, so `%s` is "command not found" in this shell.\n' "$TARGET_DIR" "$BIN"
+    printf 'Agent shells are usually non-interactive and do not read ~/.bashrc or ~/.profile.\n'
+    printf 'Fix it one of these ways:\n'
+    printf '  ln -sf %s %s/%s          # a directory already on $PATH (sudo if needed)\n' "$install_path" "$link_dir" "$BIN"
+    printf '  export PATH="%s:$PATH"   # in the agent'"'"'s own environment (Claude Code: "env" in settings.json),\n' "$TARGET_DIR"
+    printf '                                  # and in ~/.profile plus ~/.zshenv for your own shells\n'
+    printf 'Until then call %s by its absolute path. `pay doctor` re-checks this (binary_on_path).\n' "$install_path"
+    ;;
 esac
 
 if [ "${PAY_INSTALL_JSON:-}" = "1" ]; then

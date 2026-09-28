@@ -10,6 +10,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/KLIXPERT-io/pay-cli/internal/apierr"
+	"github.com/KLIXPERT-io/pay-cli/internal/discovery"
+	"github.com/KLIXPERT-io/pay-cli/internal/orphans"
 	"github.com/KLIXPERT-io/pay-cli/internal/output"
 	"github.com/KLIXPERT-io/pay-cli/internal/payload"
 	"github.com/KLIXPERT-io/pay-cli/internal/payload/query"
@@ -178,6 +180,11 @@ func bulkEnvelope(command, verbPast string, t *collTarget, res *payload.BulkResu
 		failed = append(failed, map[string]any{"id": e.ID})
 		failedIDs = append(failedIDs, e.ID)
 		f := apierr.Failure{ID: e.ID, Code: apierr.CodeValidationFailed, Message: e.Message}
+		if e.Code != "" && e.Code.Known() {
+			// A per-document write carries its own classified code: a 404
+			// is doc_not_found, not a validation failure.
+			f.Code = e.Code
+		}
 		if strings.TrimSpace(e.Message) == serverErrorMessage {
 			f.Code = apierr.CodeServerError
 			f.Message = serverErrorMessage + " (Payload withheld the real message because the sub-error's isPublic is false; set debug: true in payload.config.ts to see it)"
@@ -337,7 +344,10 @@ func echoWarnings(slug string, body map[string]any, doc payload.Doc, sel []strin
 		return nil
 	}
 	narrowed, unchecked := narrowEchoBody(body, sel)
-	out := echoDiff(slug, narrowed, doc, cfg)
+	// {} rows are orphans (§10.2.1, reported as orphan_rows by the caller);
+	// left in, the leaf diff pairs the body's rows with them by index and
+	// reports the real rows as dropped input.
+	out := echoDiff(slug, narrowed, payload.Doc(orphans.WithoutEmptyRows(map[string]any(doc))), cfg)
 	if len(unchecked) > 0 {
 		out = append(out, output.Warning{
 			Code: warnEchoCheckNarrowed,
@@ -377,6 +387,11 @@ type updateFlags struct {
 	perDoc   bool
 	failFast bool
 	limit    int
+
+	// resetNested is §10.2.1's --reset-nested: carrier phases before the
+	// write so the Postgres adapter clears every nested block table the
+	// write itself would skip.
+	resetNested bool
 }
 
 func init() { Register(newUpdateCmd) }
@@ -411,7 +426,7 @@ enforces --max-docs, resolves the exact ids and then writes them in chunks of
 	fl.BoolVar(&f.draft, "draft", false, "save as a draft, skipping required-field validation")
 	fl.BoolVar(&f.autosave, "autosave", false, "mark the write as an autosave")
 	fl.BoolVar(&f.publish, "publish", false, "also set _status=published")
-	fl.BoolVar(&f.unpublish, "unpublish", false, "also set _status=draft")
+	fl.BoolVar(&f.unpublish, "unpublish", false, "also set _status=draft, taking the live document offline (not with --draft)")
 	fl.BoolVar(&f.overrideLock, "override-lock", false, "ignore an existing document lock")
 	fl.IntVar(&f.depth, "depth", 0, "relationship expansion depth of the echoed document")
 	fl.StringSliceVar(&f.selectF, "select", nil, "return only these fields")
@@ -422,6 +437,8 @@ enforces --max-docs, resolves the exact ids and then writes them in chunks of
 	fl.BoolVar(&f.perDoc, "per-doc", false, "issue one PATCH per document instead of one bulk call")
 	fl.BoolVar(&f.failFast, "fail-fast", false, "stop at the first per-document failure")
 	fl.IntVar(&f.limit, "limit", 0, "not valid on a bulk write — use --max-docs")
+	fl.BoolVar(&f.resetNested, "reset-nested", false,
+		"remove nested block rows the write would leave behind (orphans), keeping the document id; with no body it repairs the stored row")
 
 	SetHelp(cmd, updateHelp())
 	return cmd
@@ -431,7 +448,8 @@ enforces --max-docs, resolves the exact ids and then writes them in chunks of
 func updateHelp() *Help {
 	return &Help{
 		Synopsis: []string{
-			"pay update <collection> <id>  [--set k=v ...] [--set-json k=JSON ...] [--publish|--unpublish|--draft]",
+			"pay update <collection> <id>  [--set k=v ...] [--set-json k=JSON ...] [--set-md k=@file.md ...] [--publish|--unpublish|--draft] [--reset-nested]",
+			"pay update <collection> <id> --reset-nested [--dry-run]     # repair {} rows (orphans), same id",
 			"pay update <collection> --where 'PATH OP VALUE' [--max-docs N|--all] --set k=v --yes",
 		},
 		Collections: true,
@@ -446,10 +464,13 @@ func updateHelp() *Help {
 			"or":       {Grammar: "PATH OP VALUE", Operators: WhereOperatorAliases(), Repeatable: true},
 			"set":      {Grammar: "key=value  (dotted keys nest: meta.title=…)", Repeatable: true},
 			"set-json": {Grammar: "key=JSON", Repeatable: true},
+			"set-md":   {Grammar: setMDGrammar, Repeatable: true, Note: setMDBodyNote},
 			"depth":    {Min: intPtr(0), Max: intPtr(10)},
 			"max-docs": {Min: intPtr(1), Note: "blast-radius cap; default 100, --all lifts it"},
 			"limit":    {Note: "NOT valid on a bulk write — it is page size; use --max-docs"},
 			"per-doc":  {Note: "one PATCH per id; slower, but a failure names the exact document"},
+			"reset-nested": {Note: "one document only; carrier phases so Payload's Postgres adapter clears nested block tables " +
+				"the write would skip; sends 2+ requests (see meta.reset_nested)"},
 		},
 		Output: OutputSpec{
 			Kind:     output.KindDoc,
@@ -463,6 +484,8 @@ func updateHelp() *Help {
 				Cmd: "pay update pages 16 --set title='Launch day'"},
 			{Why: "nested JSON rather than a dotted key",
 				Cmd: "pay update posts 1 --set-json meta='{\"title\":\"SEO title\"}'"},
+			{Why: "replace a richText field with a Markdown file's content, as a draft",
+				Cmd: "pay update posts 3 --set-md content=@body.md --draft --dry-run"},
 			{Why: "store the change without publishing it (--draft alone changes nothing: exit 5)",
 				Cmd: "pay update pages 16 --set title='Launch day' --draft"},
 			{Why: "store and publish in one call",
@@ -473,6 +496,10 @@ func updateHelp() *Help {
 				Cmd: "pay update crm-contacts --where 'lifecycleStage eq lead' --set status=customer --max-docs 100 --yes"},
 			{Why: "one PATCH per document, so a failure names the exact id",
 				Cmd: "pay update crm-contacts --where 'lifecycleStage eq lead' --set status=customer --all --per-doc --yes"},
+			{Why: "a nested block restructure (bento → grid inside a group): data.diff + orphan_risk first, then the id-preserving write",
+				Cmd: "pay update pages 16 --data-file ./layout.json --reset-nested --dry-run"},
+			{Why: "remove {} rows an earlier restructure left in the stored row (the same id; nothing else changes)",
+				Cmd: "pay update pages 16 --reset-nested"},
 		},
 		Mistakes: []Mistake{
 			{Wrong: "Auto-retrying exit 7 (partial_failure).",
@@ -485,8 +512,18 @@ func updateHelp() *Help {
 				Right: "--dry-run prints would_affect, sample_ids and the exact request. The blast radius of the real run is identical, because PayCLI resolves ids client-side."},
 			{Wrong: "`pay update <coll> <id> --draft` on its own, expecting it to \"save a draft\".",
 				Right: "An update with no field to change is rejected (exit 5, bad_request_body). --draft is a modifier: pass it alongside --set/--data."},
+			{Wrong: "`--set-md layout.2.content=@x.md` for rich text inside a block.",
+				Right: "A write body replaces the whole layout array, so a row cannot be addressed here (invalid_args). Edit the row in a pipe: `pay get … | pay blocks set <selector> --set-md content=@x.md --field layout | pay apply`."},
+			{Wrong: "Writing back a document read with --richtext md.",
+				Right: "Its rich text is Markdown strings; Payload would store them as-is. --data refuses it (richtext_rendered, exit 5). Re-read without --richtext, or use --set-md."},
 			{Wrong: "Assuming a 200 means every field you sent was stored.",
 				Right: "Read warnings[]: input_silently_dropped means Payload discarded part of your write and still answered success."},
+			{Wrong: "Changing a NESTED block's type (bento → grid inside a group) with a plain write, or fixing the {} rows by deleting and re-creating the page.",
+				Right: "Payload's Postgres adapter leaves the old nested rows behind (orphan_risk / orphan_rows warn; `pay get` shows {} rows). Add --reset-nested: same id, no delete."},
+			{Wrong: "Exporting a published document, editing it and writing it back with --draft, expecting a draft.",
+				Right: "A body with _status \"published\" publishes even with --draft in Payload. PayCLI removes _status from the body when --draft is given and warns body_publishes; --draft with --publish is refused."},
+			{Wrong: "A plain update (no --draft/--publish) of a published page that has a pending draft, or writing a `pay get --draft` export (_status \"draft\") back without --draft.",
+				Right: "Payload would store the draft as the live row with _status \"draft\" — the page goes offline. PayCLI refuses it (invalid_args): pass --draft (edit the draft), --publish (publish it with the change) or --unpublish (deliberately)."},
 		},
 		SeeAlso: []string{
 			"pay describe <collection> --field <path>   # what this field accepts",
@@ -513,18 +550,35 @@ func runUpdate(ctx context.Context, cmd *cobra.Command, d *Deps, f *updateFlags,
 	if err != nil {
 		return nil, err
 	}
-	if f.publish && f.unpublish {
-		return nil, apierr.New(apierr.CodeInvalidArgs, "--publish and --unpublish are mutually exclusive")
+	if id != "" {
+		// Canonical before anything reads or writes it (see canonicalID).
+		canon, e := d.canonicalID(t, t.Slug, id)
+		if e != nil {
+			return nil, e
+		}
+		id = canon
+	}
+	if err := checkStatusFlags(f.draft, f.publish, f.unpublish); err != nil {
+		return nil, err
 	}
 	if f.draft || f.publish || f.unpublish {
 		if err := checkDrafts(t.Slug, t.flags().Drafts); err != nil {
 			return nil, err
 		}
 	}
+	bulk := id == ""
+	if bulk && f.resetNested {
+		return nil, apierr.New(apierr.CodeInvalidArgs,
+			"--reset-nested works on one document: it reads it, plans the carrier phases for it and verifies it").
+			WithHint("run it per document: pay update %s <id> … --reset-nested --dry-run", t.Slug)
+	}
 
 	body, warnings, err := f.data.build(d, t, t.Shard)
 	if err != nil {
 		return nil, err
+	}
+	if warn := applyBodyStatus(body, f.draft, f.publish || f.unpublish, t.flags().Drafts); warn != nil {
+		warnings = append(warnings, *warn)
 	}
 	if f.publish {
 		body["_status"] = "published"
@@ -532,12 +586,11 @@ func runUpdate(ctx context.Context, cmd *cobra.Command, d *Deps, f *updateFlags,
 	if f.unpublish {
 		body["_status"] = "draft"
 	}
-	if len(body) == 0 {
+	if len(body) == 0 && !f.resetNested {
 		return nil, apierr.New(apierr.CodeBadRequestBody, "update needs at least one field to change").
 			WithHint("pass --set k=v, --data '{...}', --publish or --unpublish")
 	}
 
-	bulk := id == ""
 	selector := safety.SelectorID
 	if bulk {
 		selector = safety.SelectorBulk
@@ -584,6 +637,27 @@ func runUpdate(ctx context.Context, cmd *cobra.Command, d *Deps, f *updateFlags,
 	if err := query.ValidateSelect(f.selectF, t.schema(cfg)); err != nil {
 		return nil, err
 	}
+	// F6: {"$ref": …} objects become ids before anything is previewed or
+	// sent; §9.15.2: masked values from an export are handled first.
+	sc := writeScope{shard: t.Shard}
+	if !bulk {
+		sc.preimage = func(ctx context.Context) (map[string]any, error) {
+			doc, err := d.readOrphanTarget(ctx, client, orphanTarget{t: t, id: id}, p, true)
+			return map[string]any(doc), err
+		}
+	}
+	body, prepWarns, err := d.prepareWriteBody(ctx, sc, body, p.Locale)
+	if err != nil {
+		return nil, err
+	}
+	warnings = append(warnings, prepWarns...)
+	// --set-md into a field the schema cannot type: checked against the
+	// stored value (the document itself; for --where, other documents).
+	mdWarns, err := f.data.guardMDTargets(ctx, d, client, orphanTarget{t: t, id: id}, p)
+	if err != nil {
+		return nil, err
+	}
+	warnings = append(warnings, mdWarns...)
 
 	if bulk {
 		return runBulkUpdate(ctx, cmd, d, client, f, t, body, p, warnings)
@@ -603,17 +677,89 @@ func runUpdate(ctx context.Context, cmd *cobra.Command, d *Deps, f *updateFlags,
 func runUpdateOne(ctx context.Context, d *Deps, client *payload.Client, command string, f *updateFlags,
 	t *collTarget, id string, body map[string]any, p query.Params, warnings []output.Warning) (*output.Envelope, error) {
 	cfg := d.cfg()
-	if e := d.checkID(t, t.Slug, id); e != nil {
+	id, e := d.canonicalID(t, t.Slug, id)
+	if e != nil {
 		return nil, e
 	}
 	op := safety.Op{Command: command, Selector: safety.SelectorID}
-	w := d.newWriteOp(op, t.Slug, "PATCH", "/"+t.Slug+"/"+id).withIDs([]any{id})
+	newOp := func() *writeOp {
+		return d.newWriteOp(op, t.Slug, "PATCH", "/"+t.Slug+"/"+id).withIDs([]any{id}).
+			withBackup(ctx, BackupTarget{Collection: t, Params: p})
+	}
+	w := newOp()
+	o := orphanTarget{t: t, id: id}
+	fixCmd := fmt.Sprintf("re-run this command with --reset-nested added (`pay %s %s %s … --reset-nested --dry-run` shows the plan)",
+		command, t.Slug, shellQuote(id))
+	switch command {
+	case safety.CmdApply:
+		fixCmd = "end the same pipeline in `pay apply --reset-nested --dry-run` to see the plan, then without --dry-run"
+	case safety.CmdUpsert, safety.CmdSync:
+		// Neither verb has --reset-nested: the repair is an update by id.
+		fixCmd = fmt.Sprintf("after the write, `pay update %s %s --reset-nested --dry-run` plans the id-preserving repair",
+			t.Slug, shellQuote(id))
+	}
+	spec := resetSpec{o: o, command: command, body: body, params: p,
+		op: func(step string) *writeOp {
+			nw := newOp()
+			nw.step = step
+			return nw
+		},
+		send: func(ctx context.Context, b map[string]any, p query.Params) (*payload.WriteResult, error) {
+			return client.Update(ctx, t.Slug, id, b, p,
+				payload.WithClassify(classifyFor(t, cfg, payload.SentPaths(b))), payload.WithKnownRoute())
+		},
+	}
 
 	if cfg.DryRun {
-		q, _ := p.Encode()
+		// F7 stage B: the preview shows what the write changes (data.diff),
+		// read from the newest version with Payload's PATCH semantics, and
+		// the §10.2.1 orphan prediction the same reads allow.
+		diff, pre, dw := d.dryRunDiff(ctx, client, o, body, p, diffBaseLatest, fixCmd)
+		warnings = append(warnings, dw...)
+		if diff != nil {
+			w.dryDiff = diff
+		}
+		if pre != nil {
+			// §9.7: the document as it is now outranks an older census.
+			warnings = refineBlockWarnings(d, t, t.Shard, body, pre.latest, warnings)
+			// §9.12.8.3: a string over an editor state, an object over an array.
+			if err := d.checkStoredShapes(ctx, client, o, p, body, pre.latest); err != nil {
+				return nil, err
+			}
+		}
+		// §10.2.3: the preview refuses what the write would refuse.
+		if pre != nil {
+			pw, err := d.checkPublication(ctx, client, o, body, p, f.unpublish, pre)
+			if err != nil {
+				return nil, err
+			}
+			if pw != nil {
+				warnings = append(warnings, *pw)
+			}
+		}
+		sent, reqParams, affected, ids := body, p, 1, []any{id}
+		if f.resetNested {
+			plan, pw, err := d.planReset(ctx, client, spec, pre)
+			if err != nil {
+				return nil, err
+			}
+			warnings = append(warnings, pw...)
+			w.dryReset = plan.report(true)
+			switch {
+			case plan.repair && !plan.skip:
+				// A repair's request is the restatement, sent without
+				// validation (see reset_nested.go).
+				sent, reqParams = plan.restatement(plan.base), unvalidated(p, true)
+			case plan.repair:
+				// Nothing to repair: the real run sends nothing.
+				affected = 0
+				warnings = append(warnings, repairNotNeededWarning(o, true))
+			}
+		}
+		q, _ := reqParams.Encode()
 		env, err := emitDryRun(d, w, command, "PATCH",
 			client.URLFor(&payload.Request{Method: "PATCH", Path: "/" + t.Slug + "/" + id, Query: q}),
-			body, 1, []any{id}, warnings...)
+			sent, affected, ids[:affected], warnings...)
 		if err != nil {
 			return nil, err
 		}
@@ -622,18 +768,67 @@ func runUpdateOne(ctx context.Context, d *Deps, client *payload.Client, command 
 		env.Meta.Locale = localeMetaOf(p)
 		return env, nil
 	}
+	// §9.12.8.3: refused before the prompt; one read when the body has block
+	// rows or an index-keyed object.
+	if err := d.checkStoredShapes(ctx, client, o, p, body, nil); err != nil {
+		return nil, err
+	}
 	if err := w.confirm(1); err != nil {
 		return nil, err
 	}
-	if err := w.pre(1); err != nil {
+
+	var plan *resetPlan
+	if f.resetNested {
+		var pw []output.Warning
+		var err error
+		plan, pw, err = d.planReset(ctx, client, spec, nil)
+		if err != nil {
+			return nil, err
+		}
+		warnings = append(warnings, pw...)
+		if plan.skip && plan.repair {
+			return resetNothingToDo(command, o, plan, withLocaleMeta(w.run.meta(), p), warnings), nil
+		}
+	}
+	// §10.2.3: never unpublish by accident. The remedy already read the
+	// pre-image; otherwise two select=_status reads.
+	var pre *preimage
+	if plan != nil {
+		pre = plan.pre
+	}
+	if pw, err := d.checkPublication(ctx, client, o, body, p, f.unpublish, pre); err != nil {
 		return nil, err
+	} else if pw != nil {
+		warnings = append(warnings, *pw)
 	}
 
-	res, err := client.Update(ctx, t.Slug, id, body, p,
-		payload.WithClassify(classifyFor(t, cfg, payload.SentPaths(body))), payload.WithKnownRoute())
-	if err != nil {
-		w.post(false, statusOf(res), 0, 1, err.Error(), "")
-		return nil, err
+	var (
+		res *payload.WriteResult
+		rep *resetReport
+		err error
+	)
+	if plan != nil && !plan.skip {
+		var rw []output.Warning
+		res, rep, rw, err = d.execReset(ctx, spec, plan, w)
+		warnings = append(warnings, rw...)
+		if err != nil {
+			return nil, err
+		}
+		if plan.repair {
+			body = plan.restatement(plan.base)
+		}
+	} else {
+		if err := w.pre(1); err != nil {
+			return nil, err
+		}
+		warnings = append(warnings, d.riskFromBackup(o, body, p, fixCmd)...)
+		warnings = refineBlockWarnings(d, t, t.Shard, body, d.backedUpDoc("collection", t.Slug, id, p.Locale), warnings)
+		res, err = client.Update(ctx, t.Slug, id, body, p,
+			payload.WithClassify(classifyFor(t, cfg, payload.SentPaths(body))), payload.WithKnownRoute())
+		if err != nil {
+			w.post(false, statusOf(res), 0, 1, err.Error(), "")
+			return nil, err
+		}
 	}
 
 	env := output.New(command, output.KindDoc, res.Doc).
@@ -656,6 +851,21 @@ func runUpdateOne(ctx context.Context, d *Deps, client *payload.Client, command 
 	}) {
 		env.AddWarning(warn)
 	}
+	if rep != nil {
+		for _, warn := range d.finishReset(ctx, client, spec, body, res, rep) {
+			env.AddWarning(warn)
+		}
+		env.Meta.ResetNested = rep
+	} else {
+		if plan != nil {
+			env.Meta.ResetNested = plan.report(false)
+		}
+		warns, _ := d.orphanCheckAfterWrite(ctx, client, o, body, res.Doc, p, f.noEchoCheck, false)
+		for _, warn := range warns {
+			env.AddWarning(warn)
+		}
+	}
+	d.foldIntoCensus(discovery.EntityKindCollection, t.Slug, p, res.Doc)
 	return w.finish(env, res.HTTP, 1, 0, "")
 }
 
@@ -676,7 +886,9 @@ func runBulkUpdate(ctx context.Context, cmd *cobra.Command, d *Deps, client *pay
 
 	maxDocs := safety.ResolveMaxDocs(f.maxDocs, cmd.Flags().Changed("max-docs"), cfg.MaxBulk, f.all)
 	op := safety.Op{Command: safety.CmdUpdate, Selector: safety.SelectorBulk}
-	w := d.newWriteOp(op, t.Slug, "PATCH", "/"+t.Slug).withWhere(where)
+	// §12.8: the ids §12.3 resolves below are the ones backed up (withIDs).
+	w := d.newWriteOp(op, t.Slug, "PATCH", "/"+t.Slug).withWhere(where).
+		withBackup(ctx, BackupTarget{Collection: t, Params: p})
 	classify := payload.WithClassify(classifyFor(t, cfg, payload.SentPaths(body)))
 
 	// §12.3 phases 1-3: count, cap, resolve ids. Never pass --where through.
@@ -706,6 +918,12 @@ func runBulkUpdate(ctx context.Context, cmd *cobra.Command, d *Deps, client *pay
 
 	if cfg.DryRun {
 		q, _ := scope.Encode()
+		// F7 stage B: the sampled documents' change lists.
+		diff, dw := d.sampleDiffs(ctx, client, t, ids, body, p, diffBaseLatest, true)
+		if diff != nil {
+			w.dryDiff = diff
+		}
+		warnings = append(warnings, dw...)
 		// gap is already in warnings; emitDryRun dedupes, so the preview
 		// carries the blockType and write-shape warnings too instead of the
 		// resolve gap alone.
@@ -795,7 +1013,7 @@ func perDocUpdate(ctx context.Context, client *payload.Client, t *collTarget, id
 		}
 		res, err := client.Update(ctx, t.Slug, fmt.Sprintf("%v", id), body, p, opts...)
 		if err != nil {
-			out.Errors = append(out.Errors, payload.BulkFailure{ID: id, Message: err.Error()})
+			out.Errors = append(out.Errors, payload.BulkFailure{ID: id, Message: err.Error(), Code: apierr.CodeOf(err)})
 			// Latch the response that belongs to the FIRST failure. Overwriting
 			// out.HTTP on every success meant error.http pointed at the last
 			// document that worked, so the diagnostic an agent is told to read

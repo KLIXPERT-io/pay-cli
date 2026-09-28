@@ -25,6 +25,7 @@ func TestTTLTable(t *testing.T) {
 		{ClassWhereInput, 24 * time.Hour, 7 * 24 * time.Hour, true},
 		{ClassGraphQLMode, 24 * time.Hour, 7 * 24 * time.Hour, true},
 		{ClassSkillsManifest, 6 * time.Hour, 0, true},
+		{ClassBlockCensus, 24 * time.Hour, 7 * 24 * time.Hour, true},
 		{ClassIdentity, 60 * time.Second, 0, false},
 		{ClassDocument, 0, 0, false},
 	}

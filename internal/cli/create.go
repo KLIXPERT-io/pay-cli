@@ -35,6 +35,12 @@ type writeData struct {
 	dataFile string
 	set      []string
 	setJSON  []string
+	// setMD is --set-md: Markdown converted to a Lexical editor state, the
+	// highest-precedence contributor (§9.12.8).
+	setMD []string
+	// mdUnchecked are the --set-md keys the schema could not type; build
+	// fills it and guardMDTargets checks them against stored values.
+	mdUnchecked []string
 }
 
 func (w *writeData) register(cmd *cobra.Command) {
@@ -43,6 +49,7 @@ func (w *writeData) register(cmd *cobra.Command) {
 	fl.StringVar(&w.dataFile, "data-file", "", "read the JSON object body from a file")
 	fl.StringArrayVar(&w.set, "set", nil, "k=v field (repeatable, typed and coerced against the schema)")
 	fl.StringArrayVar(&w.setJSON, "set-json", nil, "k=JSON field (repeatable, no coercion — the escape hatch)")
+	fl.StringArrayVar(&w.setMD, "set-md", nil, setMDFlagUsage)
 }
 
 // build merges the data flags into one request body and applies §9.10.1's
@@ -56,6 +63,11 @@ func (w *writeData) build(d *Deps, t *collTarget, shard *discovery.Shard) (map[s
 	}
 
 	// --data / --data-file (base object)
+	if w.data != "" && w.dataFile != "" && readsStdin("--data", w.data) && readsStdin("--data-file", w.dataFile) {
+		return nil, nil, apierr.New(apierr.CodeInvalidArgs,
+			"--data %s and --data-file %s both read stdin, which holds one body", w.data, w.dataFile).
+			WithHint("pass one of them a file")
+	}
 	for _, raw := range []struct{ src, val string }{{"--data", w.data}, {"--data-file", w.dataFile}} {
 		if raw.val == "" {
 			continue
@@ -117,13 +129,90 @@ func (w *writeData) build(d *Deps, t *collTarget, shard *discovery.Shard) (map[s
 		setPath(body, key, v)
 	}
 
-	warnings = append(warnings, blockTypeWarnings(t, shard, body)...)
+	// --set-md (Markdown → Lexical editor state; replaces, never merges)
+	w.mdUnchecked = nil
+	if len(w.setMD) > 0 {
+		for _, pair := range w.setMD {
+			key, _, _ := strings.Cut(pair, "=")
+			if key = strings.TrimSpace(key); key == "" {
+				continue // convertSetMD reports the malformed pair
+			}
+			if err := checkBodyMDKey(t, key); err != nil {
+				return nil, nil, err
+			}
+			known, err := checkMDField(t, shard, key)
+			if err != nil {
+				return nil, nil, err
+			}
+			if !known {
+				w.mdUnchecked = append(w.mdUnchecked, key)
+			}
+		}
+		taken := w.stdinBody()
+		values, mdWarns, err := convertSetMD(d, w.setMD, mdSource{
+			flag: "--set-md", stdinFree: taken == "",
+			stdinTakenBy: taken + " already reads the request body from it",
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, mv := range values {
+			setLeaf(body, mv.Key, mv.State)
+		}
+		warnings = append(warnings, mdWarns...)
+	}
+
+	// A declared richText field holding a string is a document read with
+	// --richtext md|text (its envelope gone) or a hand-written value; Payload
+	// would store the string.
+	if err := checkRenderedBody(d.commandName(), t, body, shard); err != nil {
+		return nil, nil, err
+	}
+	// An object where the schema or census knows an array ({"layout":{"0":…}})
+	// empties the array; the pre-image check catches the rest (§9.12.8.3).
+	if err := checkKnownArrayShapes(d, t, shard, body); err != nil {
+		return nil, nil, err
+	}
+
+	warnings = append(warnings, blockTypeWarnings(d, t, shard, body)...)
 	return body, warnings, nil
 }
 
-// readBody resolves --data/--data-file, including `--data @-` for stdin.
+// stdinBody names the body flag that reads stdin ("--data @-",
+// "--data-file -"), "" when neither does. Stdin can be read once: a --set-md
+// KEY=@- after it would read nothing and clear the field.
+func (w *writeData) stdinBody() string {
+	switch {
+	case readsStdin("--data", w.data):
+		return "--data " + w.data
+	case readsStdin("--data-file", w.dataFile):
+		return "--data-file " + w.dataFile
+	}
+	return ""
+}
+
+// readsStdin reports whether a --data / --data-file value reads stdin:
+// `--data @-`, `--data-file -`, or a path that is stdin (/dev/stdin).
+func readsStdin(flag, value string) bool {
+	if flag == "--data" {
+		if !strings.HasPrefix(value, "@") {
+			return false
+		}
+		value = strings.TrimPrefix(value, "@")
+	}
+	return value == "-" || isStdinFile(value)
+}
+
+// readBody resolves --data/--data-file, including `--data @-` and
+// `--data-file -` for stdin.
 func readBody(d *Deps, flag, value string) ([]byte, error) {
 	switch {
+	case flag == "--data-file" && value == "-":
+		b, err := io.ReadAll(d.inStream())
+		if err != nil {
+			return nil, apierr.Wrap(err, apierr.CodeBadRequestBody, "--data-file - could not read stdin")
+		}
+		return b, nil
 	case flag == "--data-file":
 		b, err := os.ReadFile(value)
 		if err != nil {
@@ -182,6 +271,8 @@ func jsonKindOf(v any) string {
 		return "a string"
 	case []any:
 		return "an array"
+	case map[string]any, payload.Doc:
+		return "an object"
 	}
 	return "a scalar"
 }
@@ -201,6 +292,10 @@ func jsonKindOf(v any) string {
 func unwrapEnvelopeBody(flag string, obj map[string]any) (map[string]any, *output.Warning, error) {
 	if _, ok := asEnvelope(obj); !ok {
 		return obj, nil, nil
+	}
+	if format := envelopeRichText(obj); format != "" {
+		// A read with --richtext md|text: every richText field is a string.
+		return nil, nil, renderedError(flag, format)
 	}
 	if ok, _ := obj["ok"].(bool); !ok {
 		// An error envelope has no document in it at all. Sending its `error`
@@ -512,69 +607,6 @@ func absoluteDate(key, s string) (string, error) {
 		WithHint("example: --set '%s=2026-08-01T09:30:00Z'", key)
 }
 
-// blockTypeWarnings implements §9.7: Payload silently drops an unknown
-// blockType and answers 201, so the warning is emitted BEFORE sending.
-func blockTypeWarnings(t *collTarget, shard *discovery.Shard, body map[string]any) []output.Warning {
-	if shard == nil || len(shard.Fields) == 0 {
-		return nil
-	}
-	var out []output.Warning
-	for _, fld := range shard.Fields {
-		if fld.PayloadType != discovery.TypeBlocks {
-			continue
-		}
-		value, ok := lookupPath(body, fld.Path)
-		if !ok {
-			continue
-		}
-		items, ok := value.([]any)
-		if !ok || len(items) == 0 {
-			continue
-		}
-		allowed, resolved := shard.Blocks[fld.Path]
-		var unknown []string
-		for _, item := range items {
-			obj, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
-			bt, _ := obj["blockType"].(string)
-			if bt == "" {
-				continue
-			}
-			if !resolved || !containsString(allowed, bt) {
-				if !containsString(unknown, bt) {
-					unknown = append(unknown, bt)
-				}
-			}
-		}
-		if len(unknown) == 0 {
-			continue
-		}
-		hint := discovery.DescribeBlocksHelp(nil, "", fld.Path)
-		if resolved {
-			hint = "allowed blockType values for " + fld.Path + ": " + strings.Join(allowed, ", ")
-		}
-		out = append(out, output.Warning{
-			Code: warnUnknownBlockType,
-			Message: fmt.Sprintf("%s: blockType %s could not be confirmed against this project's block slugs. "+
-				"Payload silently discards an unknown blockType and still answers 201.",
-				fld.Path, strings.Join(quoteAll(unknown), ", ")),
-			Paths: []string{fld.Path},
-			Hint:  hint,
-		})
-	}
-	return out
-}
-
-func quoteAll(in []string) []string {
-	out := make([]string, 0, len(in))
-	for _, s := range in {
-		out = append(out, strconv.Quote(s))
-	}
-	return out
-}
-
 // ---------------------------------------------------------------------------
 // §10.2 echo-diff
 // ---------------------------------------------------------------------------
@@ -606,6 +638,27 @@ func echoDiff(slug string, sent map[string]any, doc payload.Doc, cfg echoConfig)
 	leaves := map[string]any{}
 	collectLeaves("", sent, echoed, leaves)
 
+	// An object (or array) sent where the echo holds a string was stored as
+	// JSON text — a text field given an editor state. Its leaves are not
+	// "dropped"; they are reported once, as what actually happened.
+	var strPaths []string
+	var stringified []string
+	stringifiedPaths("", sent, echoed, &stringified)
+	for _, sp := range stringified {
+		if !skipEchoPath(sp, cfg) {
+			strPaths = append(strPaths, sp)
+		}
+	}
+	sort.Strings(strPaths)
+	underString := func(path string) bool {
+		for _, sp := range strPaths {
+			if path == sp || strings.HasPrefix(path, sp+".") || strings.HasPrefix(path, sp+"[") {
+				return true
+			}
+		}
+		return false
+	}
+
 	droppedPaths := map[string]bool{}
 	droppedSent := map[string]any{}
 	normPaths := []string{}
@@ -613,7 +666,7 @@ func echoDiff(slug string, sent map[string]any, doc payload.Doc, cfg echoConfig)
 	normReturned := map[string]any{}
 
 	for _, path := range sortedKeysOf(leaves) {
-		if skipEchoPath(path, cfg) {
+		if skipEchoPath(path, cfg) || underString(path) {
 			continue
 		}
 		got, ok := lookupPath(map[string]any(doc), path)
@@ -631,6 +684,16 @@ func echoDiff(slug string, sent map[string]any, doc payload.Doc, cfg echoConfig)
 	}
 
 	var out []output.Warning
+	if len(strPaths) > 0 {
+		out = append(out, output.Warning{
+			Code: warnStoredAsString,
+			Message: fmt.Sprintf("%d value(s) you sent as an object came back as a string: Payload stored the JSON text in a "+
+				"text field, and the site shows it. An editor state from --set-md aimed at a text field is the usual cause.", len(strPaths)),
+			Paths: strPaths,
+			Hint: "pay describe " + slug + " shows the field types; write the text back with --set " + strPaths[0] +
+				"=… (the field now holds the JSON text)",
+		})
+	}
 	if len(droppedSent) > 0 {
 		paths := sortedKeysOf(droppedPaths)
 		out = append(out, output.Warning{
@@ -654,6 +717,48 @@ func echoDiff(slug string, sent map[string]any, doc payload.Doc, cfg echoConfig)
 		})
 	}
 	return out
+}
+
+// warnStoredAsString: an object in the body came back as a string (§10.2).
+const warnStoredAsString = "stored_as_string"
+
+// stringifiedPaths collects the paths where sent holds a non-empty object or
+// array and echoed holds that value as JSON text. Only JSON text counts: a
+// populated relationship sent back as an object echoes as its string id,
+// which is not this.
+func stringifiedPaths(prefix string, sent, echoed any, out *[]string) {
+	jsonText := func(open string) bool {
+		str, ok := echoed.(string)
+		return ok && prefix != "" && strings.HasPrefix(strings.TrimSpace(str), open)
+	}
+	switch s := sent.(type) {
+	case map[string]any:
+		if jsonText("{") && len(s) > 0 {
+			*out = append(*out, prefix)
+			return
+		}
+		m, _ := echoed.(map[string]any)
+		for k, v := range s {
+			path := k
+			if prefix != "" {
+				path = prefix + "." + k
+			}
+			stringifiedPaths(path, v, m[k], out)
+		}
+	case []any:
+		if jsonText("[") && len(s) > 0 {
+			*out = append(*out, prefix)
+			return
+		}
+		list, _ := echoed.([]any)
+		for i, v := range s {
+			var next any
+			if i < len(list) {
+				next = list[i]
+			}
+			stringifiedPaths(fmt.Sprintf("%s[%d]", prefix, i), v, next, out)
+		}
+	}
 }
 
 func droppedHint(slug string, paths []string, shard *discovery.Shard) string {
@@ -934,18 +1039,67 @@ func createdAsDraftWarning(slug string, doc payload.Doc, shard *discovery.Shard,
 }
 
 // stillMissing lists the collection's required paths that the document lacks.
+//
+// A required path can run THROUGH an array or blocks field
+// (`hero.links.link.label` on the website template: `label` is required in
+// every row of the `links` array). Such a path is required in each row that
+// exists — reported per row as `hero.links[1].link.label` — and vacuous when
+// the array is empty: Payload validates the fields of rows, not of rows that
+// are not there, so an empty optional array publishes (verified on
+// localhost:3900, a fresh website-template page with `hero.links: []`). The
+// old flat lookup stopped at the array and reported the path missing, which
+// made `pay publish` refuse a document the server accepts.
 func stillMissing(shard *discovery.Shard, doc payload.Doc) []string {
 	if shard == nil || len(shard.RequiredPaths) == 0 || doc == nil {
 		return nil
 	}
 	var out []string
 	for _, path := range shard.RequiredPaths {
-		v, ok := lookupPath(map[string]any(doc), path)
-		if !ok || isEmptyValue(v) {
-			out = append(out, path)
-		}
+		missingRequired(map[string]any(doc), strings.Split(path, "."), "", &out)
 	}
 	return out
+}
+
+// missingRequired walks one required path through objects and arrays and
+// appends every concrete path at which the value is absent or empty.
+func missingRequired(cur any, steps []string, prefix string, out *[]string) {
+	rest := func() string {
+		if prefix == "" {
+			return strings.Join(steps, ".")
+		}
+		if len(steps) == 0 {
+			return prefix
+		}
+		return prefix + "." + strings.Join(steps, ".")
+	}
+	if len(steps) == 0 {
+		if isEmptyValue(cur) {
+			*out = append(*out, prefix)
+		}
+		return
+	}
+	switch t := cur.(type) {
+	case map[string]any:
+		v, ok := t[steps[0]]
+		if !ok {
+			*out = append(*out, rest())
+			return
+		}
+		next := steps[0]
+		if prefix != "" {
+			next = prefix + "." + steps[0]
+		}
+		missingRequired(v, steps[1:], next, out)
+	case []any:
+		// Required inside every row that exists; nothing to check in none.
+		for i, el := range t {
+			missingRequired(el, steps, fmt.Sprintf("%s[%d]", prefix, i), out)
+		}
+	default:
+		// null (or a scalar where an object belongs): everything below is
+		// missing.
+		*out = append(*out, rest())
+	}
 }
 
 func isEmptyValue(v any) bool {
@@ -977,6 +1131,27 @@ type writeOp struct {
 	where  json.RawMessage
 	ids    []any
 	run    *runStats
+
+	// bk is the §12.8 backup this write takes before its pre-audit record
+	// (see backup.go); bkCtx is the context the backup read runs under, and
+	// backups the files it wrote, which the audit records carry.
+	bk      *BackupTarget
+	bkCtx   context.Context
+	backups []string
+
+	// step labels one request of a multi-request write in the audit log
+	// (the --reset-nested phases, §10.2.1).
+	step string
+	// restoredFrom is the backup file `pay backups restore` writes back; the
+	// audit records carry it.
+	restoredFrom string
+	// drySteps is the dry run's data.steps: every request of a write made of
+	// several (a two-step backups restore), in order.
+	drySteps any
+	// dryDiff and dryReset are the §12.2 dry-run's data.diff and
+	// data.reset_nested, attached by the caller before emitDryRun.
+	dryDiff  any
+	dryReset any
 }
 
 func (d *Deps) newWriteOp(op safety.Op, target, method, path string) *writeOp {
@@ -1020,6 +1195,10 @@ func (w *writeOp) event(phase audit.Phase, affected int) audit.Event {
 		Affected:   affected,
 		DryRun:     cfg.DryRun,
 		DurationMS: 0,
+		Backups:    w.backups,
+		Step:       w.step,
+
+		RestoredFrom: w.restoredFrom,
 	}
 	if w.global {
 		ev.Global = w.target
@@ -1029,8 +1208,14 @@ func (w *writeOp) event(phase audit.Phase, affected int) audit.Event {
 	return ev
 }
 
-// pre writes the §12.7 pre-record. A failure ABORTS the operation.
+// pre takes the §12.8 backup (when the write carries one) and then writes the
+// §12.7 pre-record. A failure of either ABORTS the operation: the backup comes
+// first so the pre-record can name the files, and so a write that could not
+// be backed up leaves no record claiming it started.
 func (w *writeOp) pre(affected int) error {
+	if err := w.takeBackup(); err != nil {
+		return err
+	}
 	if w.d == nil || !w.op.Level().Audited() {
 		return nil
 	}
@@ -1145,7 +1330,7 @@ unknown field or an entire blocks array with an unrecognised blockType.
 func createHelp() *Help {
 	return &Help{
 		Synopsis: []string{
-			"pay create <collection> [--set k=v ...] [--set-json k=JSON ...]",
+			"pay create <collection> [--set k=v ...] [--set-json k=JSON ...] [--set-md k=@file.md ...]",
 			"                        [--data JSON] [--data-file FILE] [--draft] [--depth N]",
 		},
 		Collections: true,
@@ -1156,6 +1341,7 @@ func createHelp() *Help {
 		FlagInfo: map[string]FlagInfo{
 			"set":       {Grammar: "key=value  (dotted keys nest: meta.title=…)", Repeatable: true},
 			"set-json":  {Grammar: "key=JSON", Repeatable: true},
+			"set-md":    {Grammar: setMDGrammar, Repeatable: true, Note: setMDBodyNote},
 			"data":      {Grammar: "a JSON object"},
 			"data-file": {Grammar: "a path, or - for stdin"},
 			"depth":     {Min: intPtr(0), Max: intPtr(10)},
@@ -1177,6 +1363,8 @@ func createHelp() *Help {
 				Cmd: "pay create pages --data-file ./page.json --set slug=pricing --set-json layout='[]'"},
 			{Why: "nested fields without any JSON at all (dotted --set keys nest)",
 				Cmd: "pay create posts --set title='Launch' --set meta.title='SEO title'"},
+			{Why: "a richText field from a Markdown file (no hand-built Lexical JSON)",
+				Cmd: "pay create posts --set title='Launch' --set slug=launch --set-md content=@body.md --draft"},
 			{Why: "a collection with no drafts — --draft would fail with feature_unavailable",
 				Cmd: "pay create crm-tasks --set title='Follow up'"},
 		},
@@ -1258,15 +1446,39 @@ func runCreate(ctx context.Context, d *Deps, f *createFlags, slug string) (*outp
 	if err := query.ValidateSelect(f.selectF, t.schema(cfg)); err != nil {
 		return nil, err
 	}
+	// F6: {"$ref": …} objects become ids before anything is previewed or sent.
+	// §9.15.2: masked values from an export are handled first.
+	body, prepWarns, err := d.prepareWriteBody(ctx, writeScope{shard: t.Shard}, body, p.Locale)
+	if err != nil {
+		return nil, err
+	}
+	warnings = append(warnings, prepWarns...)
+	// --set-md into a field the schema cannot type: checked against what
+	// other documents of the collection store there.
+	mdWarns, err := f.data.guardMDTargets(ctx, d, client, orphanTarget{t: t}, p)
+	if err != nil {
+		return nil, err
+	}
+	warnings = append(warnings, mdWarns...)
+	return runCreateOne(ctx, d, client, safety.CmdCreate, f, t, body, p, warnings)
+}
 
-	op := safety.Op{Command: safety.CmdCreate, Selector: safety.SelectorNone}
+// runCreateOne is the single-document POST, shared by `pay create` and the
+// create half of `pay upsert` and `pay sync` — for the reason runUpdateOne is
+// shared by update and apply: every verb that creates a document must make the
+// same confirmation, audit, echo-diff and created_as_draft decisions. command
+// is what the envelope and the audit record call the operation.
+func runCreateOne(ctx context.Context, d *Deps, client *payload.Client, command string, f *createFlags,
+	t *collTarget, body map[string]any, p query.Params, warnings []output.Warning) (*output.Envelope, error) {
+	cfg := d.cfg()
+	op := safety.Op{Command: command, Selector: safety.SelectorNone}
 	w := d.newWriteOp(op, t.Slug, "POST", "/"+t.Slug)
 
 	if cfg.DryRun {
 		// The previewed URL carries the same query the real POST will: a
 		// preview that hides ?locale=de&fallback-locale=none is not a preview.
 		q, _ := p.Encode()
-		env, err := emitDryRun(d, w, safety.CmdCreate, "POST", client.URLFor(&payload.Request{
+		env, err := emitDryRun(d, w, command, "POST", client.URLFor(&payload.Request{
 			Method: "POST", Path: "/" + t.Slug, Query: q,
 		}), body, 1, nil, warnings...)
 		if err != nil {
@@ -1289,7 +1501,7 @@ func runCreate(ctx context.Context, d *Deps, f *createFlags, slug string) (*outp
 		return nil, err
 	}
 
-	env := output.New(safety.CmdCreate, output.KindDoc, res.Doc).
+	env := output.New(command, output.KindDoc, res.Doc).
 		WithTarget(t.envTarget(res.Doc.ID())).
 		WithChanged(&output.Changed{Created: 1, IDs: []any{res.Doc.ID()}}).
 		WithMeta(withLocaleMeta(w.run.meta(), p)).
@@ -1317,6 +1529,7 @@ func runCreate(ctx context.Context, d *Deps, f *createFlags, slug string) (*outp
 	if warn := createdAsDraftWarning(t.Slug, res.Doc, t.Shard, t.flags().Drafts); warn != nil {
 		env.AddWarning(*warn)
 	}
+	d.foldIntoCensus(discovery.EntityKindCollection, t.Slug, p, res.Doc)
 	return w.withIDs([]any{res.Doc.ID()}).finish(env, res.HTTP, 1, 0, "")
 }
 
@@ -1363,6 +1576,20 @@ func emitDryRun(d *Deps, w *writeOp, command, method, url string, body map[strin
 		return nil, err
 	}
 	res := safety.NewDryRun(safety.DryRunRequest{Method: method, URL: url, Body: raw}, total, ids, !d.cfg().Redact)
+	// §12.8: say which backups the real run would write. Assigned only when
+	// non-nil — a typed nil in the `any` field would render as null.
+	if prev := w.wouldBackup(); prev != nil {
+		res.WouldBackup = prev
+	}
+	if w.dryDiff != nil {
+		res.Diff = w.dryDiff
+	}
+	if w.dryReset != nil {
+		res.ResetNested = w.dryReset
+	}
+	if w.drySteps != nil {
+		res.Steps = w.drySteps
+	}
 	env := res.Envelope(command, w.run.meta())
 	if warn := w.post(true, 0, total, 0, "", ""); warn != nil {
 		env.AddWarning(*warn)

@@ -9,10 +9,14 @@ import (
 // links to each of these by name.
 var wantFiles = []string{
 	"SKILL.md",
+	"references/blocks.md",
 	"references/errors.md",
 	"references/gotchas.md",
+	"references/migration.md",
 	"references/query-syntax.md",
 	"references/recipes.md",
+	"references/richtext.md",
+	"references/safe-writes.md",
 }
 
 func TestEmbeddedFiles(t *testing.T) {

@@ -131,7 +131,7 @@ func newAuthListCmd(rt *Runtime) *cobra.Command {
 		Examples: []Example{
 			{Why: "all profiles", Cmd: "pay auth list"},
 			{Why: "names only, for a script", Cmd: "pay auth list --path .profiles[].name"},
-			{Why: "which profiles actually hold a credential", Cmd: "pay auth list --output table --columns name,base_url,credential"},
+			{Why: "which profiles actually hold a credential", Cmd: "pay auth list --path .profiles --output table"},
 			{Why: "confirm which profile is active right now", Cmd: "pay auth list --path .active --output id"},
 		},
 		Mistakes: []Mistake{

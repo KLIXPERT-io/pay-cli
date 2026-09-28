@@ -84,6 +84,11 @@ type App struct {
 	// NoSignals disables the SIGINT/SIGTERM handler. Tests set it; the
 	// in-process handler would otherwise leak across `go test`.
 	NoSignals bool
+
+	// Executable is the path the running binary was started from, symlinks
+	// NOT resolved (os.Executable). `pay doctor` checks that its directory is
+	// on $PATH. Empty means unknown, and the check reports `unknown`.
+	Executable string
 }
 
 // Main is the entry point cmd/pay/main.go calls. It returns the exit status
@@ -92,6 +97,10 @@ func Main() int {
 	wd, err := os.Getwd()
 	if err != nil {
 		wd = ""
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		exe = ""
 	}
 	app := App{
 		Args:        os.Args[1:],
@@ -104,6 +113,7 @@ func Main() int {
 		StdinIsTTY:  isTerminal(os.Stdin),
 		StdoutIsTTY: isTerminal(os.Stdout),
 		StderrIsTTY: isTerminal(os.Stderr),
+		Executable:  exe,
 	}
 	// §15.4: a Windows self-update leaves pay.exe.old behind; sweep it before
 	// anything else and never let a failure here affect the command.
@@ -164,6 +174,7 @@ func Run(ctx context.Context, app App) (code int) {
 			code = rt.fail(err)
 		}
 	}()
+	defer rt.flushCensusFolds()
 
 	root := newRootCommand(rt)
 	root.SetArgs(app.Args)
@@ -234,10 +245,17 @@ type Runtime struct {
 
 	mu       sync.Mutex
 	warnings []output.Warning
+	// censusFolds are write echoes the block census learns from when the
+	// invocation ends (blocks_census.go); guarded by mu.
+	censusFolds []censusFold
 
 	credOnce sync.Once
 	cred     *secret.Credential
 	credErr  error
+
+	previewOnce sync.Once
+	preview     *secret.PreviewSecret
+	previewErr  error
 
 	clientOnce sync.Once
 	client     *payload.Client
@@ -262,6 +280,16 @@ type Runtime struct {
 
 	discOnce sync.Once
 	disc     *discoveryState
+
+	// backupPaths are the §12.8 files this invocation wrote (meta.backups);
+	// backupSeen maps a document to the file already written for it, so a
+	// multi-request write backs each document up once.
+	backupPaths []string
+	backupSeen  map[string]string
+	// backupDocs keeps the pre-image each backup captured (unredacted, in
+	// memory only), keyed like backupSeen: the orphan-row check (§10.2.1)
+	// predicts from it instead of reading the document a second time.
+	backupDocs map[string]map[string]any
 }
 
 func newRuntime(app App) *Runtime {
@@ -334,7 +362,38 @@ func (rt *Runtime) Secrets() []string {
 	if rt.cred != nil && rt.cred.Value != "" {
 		out = append(out, rt.cred.Value)
 	}
+	if rt.preview != nil && rt.preview.Value != "" {
+		out = append(out, rt.preview.Value)
+	}
 	return out
+}
+
+// PreviewSecret resolves F9's preview-secret chain once per invocation
+// (PAY_PREVIEW_SECRET_<P>, PAY_PREVIEW_SECRET, the profile's
+// preview_secret_env, credentials.json). A nil secret with a nil error means
+// none is configured; whether that is fatal is the caller's call, because a
+// preview_path without {secret} needs none.
+//
+// Like Credential it re-arms the logger, so the literal is scrubbed from
+// every later log line on top of the per-request URL scrubbing the payload
+// client does.
+func (rt *Runtime) PreviewSecret() (*secret.PreviewSecret, error) {
+	rt.previewOnce.Do(func() {
+		if rt.Cfg == nil {
+			rt.previewErr = apierr.New(apierr.CodeInternal, "configuration was not resolved")
+			return
+		}
+		rt.preview, rt.previewErr = secret.ResolvePreviewSecret(secret.PreviewInput{
+			Profile:   rt.Cfg.Profile,
+			Env:       rt.Env,
+			SecretEnv: rt.Cfg.PreviewSecretEnv,
+			Store:     rt.SecretStore(),
+		})
+		if rt.preview != nil {
+			rt.rebuildLogger()
+		}
+	})
+	return rt.preview, rt.previewErr
 }
 
 // Stdin is the command's input stream.
@@ -510,6 +569,7 @@ func (rt *Runtime) Meta() output.Meta {
 	if rt.dataBytes > 0 {
 		m.Bytes = rt.dataBytes
 	}
+	m.Backups = rt.backupsWritten()
 	if rt.disc != nil {
 		if rt.disc.manifest != nil {
 			m.DiscoveryRevision = rt.disc.manifest.Revision()

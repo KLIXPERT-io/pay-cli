@@ -29,6 +29,10 @@ type discoveryState struct {
 	shards        map[string]*discovery.Shard
 	err           error
 	ran           bool
+
+	// census is the §7.10c block census once this invocation loaded or
+	// built it.
+	census *discovery.Census
 }
 
 // DiscoverOptions are the knobs `pay discover` exposes. The zero value is what

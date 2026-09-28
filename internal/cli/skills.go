@@ -363,6 +363,13 @@ func skillsProjectDoc(ctx context.Context, rt *Runtime, opts skills.Options) ([]
 	sort.Slice(pc.Collections, func(i, j int) bool { return pc.Collections[i].Slug < pc.Collections[j].Slug })
 	sort.Slice(pc.Globals, func(i, j int) bool { return pc.Globals[i].Slug < pc.Globals[j].Slug })
 
+	// Local and cached facts only: the GraphQL mode the manifest already
+	// holds, the CACHED block census (never built here) and the resolved
+	// URL/preview/backup configuration.
+	pc.GraphQL = skillsGraphQLInfo(manifest)
+	pc.Blocks = skillsBlockCatalog(ctx, rt)
+	pc.Site = skillsSiteInfo(rt)
+
 	return skills.RenderProject(pc), pc.DiscoveryRevision, nil
 }
 

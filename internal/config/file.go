@@ -30,6 +30,12 @@ type File struct {
 	Update         UpdateSection      `toml:"update,omitempty"`
 	Profiles       map[string]Profile `toml:"profiles,omitempty"`
 
+	// BackupDir turns on automatic pre-write backups (§12.8). A relative
+	// value is resolved against the directory of the file that set it, so a
+	// committed pay.toml can say `backup_dir = ".pay-backups"` and mean "next
+	// to this file" whatever directory the command runs from.
+	BackupDir string `toml:"backup_dir,omitempty"`
+
 	// APIKey is not a legal key anywhere (§4.2); it is decoded only so the
 	// hard error can name it.
 	//nolint:gosec // G117: decode-only. Encode() clears it; see
@@ -108,9 +114,17 @@ func checkForbiddenKeys(md toml.MetaData, path string) error {
 		}
 		if strings.EqualFold(parts[len(parts)-1], "api_key") {
 			return apierr.New(apierr.CodeConfigSecretInPlaintext,
-				"%s sets %s: an API key may never be stored in a config file", displayPath(path), key.String()).
+				"%s sets %s, but an API key may never be stored in a config file", displayPath(path), key.String()).
 				WithHint("remove it and store the key instead: pay auth login --api-key-stdin, " +
 					"or point api_key_env at an environment variable")
+		}
+		// F9: the preview secret is draft access to the whole site; it is a
+		// credential and follows the same rule. ./pay.toml is committed.
+		if strings.EqualFold(parts[len(parts)-1], "preview_secret") {
+			return apierr.New(apierr.CodeConfigSecretInPlaintext,
+				"%s sets %s, but a preview secret may never be stored in a config file", displayPath(path), key.String()).
+				WithHint("remove it and store it instead: printf %%s \"$PREVIEW_SECRET\" | pay auth preview-secret --stdin, " +
+					"or point preview_secret_env at the environment variable your site reads")
 		}
 	}
 	return nil
@@ -120,12 +134,12 @@ func checkForbiddenKeys(md toml.MetaData, path string) error {
 func (f *File) Validate() error {
 	if f.APIKey != "" {
 		return apierr.New(apierr.CodeConfigSecretInPlaintext,
-			"%s sets api_key: an API key may never be stored in a config file", displayPath(f.Path))
+			"%s sets api_key, but an API key may never be stored in a config file", displayPath(f.Path))
 	}
 	for name, p := range f.Profiles {
 		if p.APIKey != "" {
 			return apierr.New(apierr.CodeConfigSecretInPlaintext,
-				"%s sets profiles.%s.api_key: an API key may never be stored in a config file",
+				"%s sets profiles.%s.api_key, but an API key may never be stored in a config file",
 				displayPath(f.Path), name)
 		}
 		if p.AuthMode != "" {

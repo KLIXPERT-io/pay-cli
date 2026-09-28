@@ -31,6 +31,10 @@ type WriteResult struct {
 type BulkFailure struct {
 	ID      any    `json:"id"`
 	Message string `json:"message"`
+	// Code is the classified code when the failure came from a request of its
+	// own (a per-document write); empty for a sub-error inside one bulk
+	// response, which Payload reports as a bare message.
+	Code apierr.Code `json:"code,omitempty"`
 }
 
 // BulkResult is a bulk write response. Payload answers HTTP 400 whenever
@@ -143,6 +147,17 @@ func (c *Client) writeDoc(ctx context.Context, method, path string, data map[str
 		return nil, err
 	}
 	if out.Doc == nil {
+		// A global's update answers {"message", "result": {…}} — the document
+		// under `result`, not `doc` (verified on Payload 3.87). Reading it as
+		// a top-level document made the echo-diff report every field sent to
+		// `pay globals update` as input_silently_dropped.
+		var wrapped struct {
+			Result Doc `json:"result"`
+		}
+		if decodeJSON(resp, &wrapped) == nil && len(wrapped.Result) > 0 {
+			out.Doc = wrapped.Result
+			return out, nil
+		}
 		// A few endpoints answer with the document at the top level rather
 		// than under `doc`; keep one shape for every caller.
 		var doc Doc

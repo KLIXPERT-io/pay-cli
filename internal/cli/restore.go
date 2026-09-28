@@ -43,8 +43,8 @@ cannot bring back a document removed with --permanent: that delete is real.`,
 			if err != nil {
 				return nil, err
 			}
-			id := args[1]
-			if e := d.checkID(t, t.Slug, id); e != nil {
+			id, e := d.canonicalID(t, t.Slug, args[1])
+			if e != nil {
 				return nil, e
 			}
 			if err := checkTrash(t.Slug, t.flags().Trash); err != nil {
@@ -65,7 +65,8 @@ cannot bring back a document removed with --permanent: that delete is real.`,
 			}
 
 			op := safety.Op{Command: safety.CmdRestore, Selector: safety.SelectorID, TrashEnabled: true}
-			w := d.newWriteOp(op, t.Slug, "PATCH", "/"+t.Slug+"/"+id).withIDs([]any{id})
+			w := d.newWriteOp(op, t.Slug, "PATCH", "/"+t.Slug+"/"+id).withIDs([]any{id}).
+				withBackup(ctx, BackupTarget{Collection: t, Params: p})
 
 			if cfg.DryRun {
 				q, _ := p.Encode()

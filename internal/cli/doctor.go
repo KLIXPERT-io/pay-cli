@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/KLIXPERT-io/pay-cli/internal/apierr"
+	"github.com/KLIXPERT-io/pay-cli/internal/backup"
 	"github.com/KLIXPERT-io/pay-cli/internal/buildinfo"
 	"github.com/KLIXPERT-io/pay-cli/internal/discovery"
 	"github.com/KLIXPERT-io/pay-cli/internal/output"
@@ -49,10 +50,17 @@ type doctorReport struct {
 		Unknown int `json:"unknown"`
 	} `json:"summary"`
 	Connection map[string]any `json:"connection"`
-	Cache      map[string]any `json:"cache"`
-	Audit      map[string]any `json:"audit"`
-	Skill      map[string]any `json:"skill"`
-	Update     map[string]any `json:"update"`
+	// Binary is where the running binary lives and whether `pay` on $PATH
+	// reaches it. Site is F9's frontend-URL and draft-preview configuration.
+	Binary map[string]any `json:"binary"`
+	Site   map[string]any `json:"site"`
+	Cache  map[string]any `json:"cache"`
+	Audit  map[string]any `json:"audit"`
+	Skill  map[string]any `json:"skill"`
+	Update map[string]any `json:"update"`
+
+	// Backups is §12.8: where pre-write backups go, and whether they can.
+	Backups map[string]any `json:"backups"`
 }
 
 func newDoctorCmd(rt *Runtime) *cobra.Command {
@@ -81,7 +89,13 @@ func newDoctorCmd(rt *Runtime) *cobra.Command {
 		Long: "This is the command to run when anything is confusing. It answers, in one call:\n" +
 			"can I reach the server, is this actually Payload, does my credential resolve to a\n" +
 			"user, which collections accept API keys at all, is GraphQL usable, is the cache\n" +
-			"healthy and writable, is the audit log writable, and is a newer release pending.\n" +
+			"healthy and writable, is the audit log writable, where do pre-write backups go\n" +
+			"and can they be written, is a newer release pending, does `pay` on $PATH reach\n" +
+			"this binary, and how `pay url` / `pay url --preview` are configured.\n" +
+			"\n" +
+			"When the server cannot be reached at all — no base_url, no usable client, failed\n" +
+			"discovery — the checks that need no server (audit log, backups, skill, self-update)\n" +
+			"still run, so one call still says whether this machine is ready to write.\n" +
 			"\n" +
 			"doctor exits 0 whenever it produced a report — a failing CHECK is data, not an\n" +
 			"error. Branch on .data.ok, not on the exit code.",
@@ -110,12 +124,21 @@ func newDoctorCmd(rt *Runtime) *cobra.Command {
 func (rt *Runtime) diagnose(ctx context.Context) *doctorReport {
 	r := &doctorReport{
 		Connection: map[string]any{},
+		Binary:     map[string]any{},
+		Site:       map[string]any{},
 		Cache:      map[string]any{},
 		Audit:      map[string]any{},
+		Backups:    map[string]any{},
 		Skill:      map[string]any{},
 		Update:     map[string]any{},
 	}
 	add := func(c Check) { r.Checks = append(r.Checks, c) }
+
+	// --- this machine: can a shell find `pay`? -----------------------------
+	pathCheck, binInfo := binaryPathCheck(rt.App.Executable, rt.Env.Get(pathEnvName), rt.Env.Get("HOME"),
+		doctorGOOS, osPathProbe())
+	r.Binary = binInfo
+	add(pathCheck)
 
 	// --- configuration ----------------------------------------------------
 	r.Connection["profile"] = rt.Cfg.Profile
@@ -125,11 +148,15 @@ func (rt *Runtime) diagnose(ctx context.Context) *doctorReport {
 		add(Check{Name: "base_url", Status: CheckFail,
 			Detail: "no base_url is configured for this profile",
 			Hint:   "pay auth login --profile " + rt.Cfg.Profile + " --base-url https://example.com"})
+		rt.localChecks(r, nil, add)
 		rt.finishReport(r)
 		return r
 	}
 	add(Check{Name: "base_url", Status: CheckOK,
 		Detail: "resolved from " + rt.Cfg.Sources["base_url"], Value: rt.Cfg.BaseURL})
+
+	// --- frontend URLs and draft preview (local only) ----------------------
+	rt.siteChecks(r, add)
 
 	// --- credential -------------------------------------------------------
 	cred, err := rt.Credential(ctx)
@@ -153,6 +180,7 @@ func (rt *Runtime) diagnose(ctx context.Context) *doctorReport {
 	client, clientErr := rt.Client(ctx)
 	if clientErr != nil {
 		add(Check{Name: "client", Status: CheckFail, Detail: clientErr.Error()})
+		rt.localChecks(r, nil, add)
 		rt.finishReport(r)
 		return r
 	}
@@ -204,6 +232,7 @@ func (rt *Runtime) diagnose(ctx context.Context) *doctorReport {
 	if discErr != nil {
 		add(Check{Name: "discovery", Status: CheckFail, Detail: discErr.Error(),
 			Hint: apierr.From(discErr).Hint})
+		rt.localChecks(r, nil, add)
 		rt.finishReport(r)
 		return r
 	}
@@ -235,6 +264,8 @@ func (rt *Runtime) diagnose(ctx context.Context) *doctorReport {
 	case discovery.GraphQLModeOK:
 		add(Check{Name: "graphql", Status: CheckOK,
 			Detail: "introspection is available at " + m.Capabilities.GraphQL.Path, Value: m.Capabilities.GraphQL.Mode})
+	case discovery.GraphQLModeIntrospectionDisabled:
+		add(introspectionDisabledCheck(m))
 	case discovery.GraphQLModeDisabled, discovery.GraphQLModeRouteMissing:
 		add(Check{Name: "graphql", Status: CheckWarn,
 			Detail: "GraphQL is not available (" + m.Capabilities.GraphQL.Mode + "); field discovery falls back to REST probes",
@@ -315,7 +346,21 @@ func (rt *Runtime) diagnose(ctx context.Context) *doctorReport {
 
 	// --- cache (§8.7) -----------------------------------------------------
 	rt.cacheChecks(r, m, add)
+	rt.censusCheck(m, add)
 
+	rt.localChecks(r, m, add)
+	rt.finishReport(r)
+	return r
+}
+
+// localChecks are the checks that need no server: the audit log, the backup
+// directory, the agent skill and the self-update state. They run on every
+// path through diagnose — including the early returns for a missing
+// base_url, an unusable client or failed discovery — because a machine that
+// cannot reach its project still has an audit log that must be writable and
+// a backup directory every later write will depend on. m is nil when
+// discovery did not run.
+func (rt *Runtime) localChecks(r *doctorReport, m *discovery.Manifest, add func(Check)) {
 	// --- audit log (§12.7) ------------------------------------------------
 	auditor := rt.Audit()
 	r.Audit["path"] = auditor.Path()
@@ -336,14 +381,14 @@ func (rt *Runtime) diagnose(ctx context.Context) *doctorReport {
 		}
 	}
 
+	// --- backups (§12.8) -------------------------------------------------
+	rt.backupChecks(r, add)
+
 	// --- skill (§14) ------------------------------------------------------
 	rt.skillChecks(r, m, add)
 
 	// --- self-update (§15) ------------------------------------------------
 	rt.updateChecks(r, add)
-
-	rt.finishReport(r)
-	return r
 }
 
 func (rt *Runtime) cacheChecks(r *doctorReport, m *discovery.Manifest, add func(Check)) {
@@ -473,9 +518,13 @@ func (rt *Runtime) skillChecks(r *doctorReport, m *discovery.Manifest, add func(
 			Detail: "the pay agent skill is not installed in this project",
 			Hint:   "pay skills install --with-project-context"})
 	case stale > 0:
+		revision := "unknown"
+		if m != nil {
+			revision = m.Revision()
+		}
 		add(Check{Name: "skill", Status: CheckWarn,
 			Detail: fmt.Sprintf("%d installed skill target(s) are stale (CLI %s, discovery %s)",
-				stale, buildinfo.Version(), m.Revision()),
+				stale, buildinfo.Version(), revision),
 			Hint: "pay skills update"})
 	default:
 		add(Check{Name: "skill", Status: CheckOK,
@@ -585,4 +634,45 @@ func derefString(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// backupChecks reports §12.8: the resolved backup directory, where the setting
+// came from, and whether a backup could be written right now. A directory that
+// is configured but not writable is a FAIL, because every write would then
+// abort with backup_failed.
+func (rt *Runtime) backupChecks(r *doctorReport, add func(Check)) {
+	dir := rt.Cfg.BackupDir
+	r.Backups["dir"] = dir
+	r.Backups["source"] = rt.Cfg.Sources["backup_dir"]
+	r.Backups["enabled"] = rt.backupStore() != nil
+	r.Backups["no_backup"] = rt.Cfg.NoBackup
+	switch {
+	case dir == "":
+		add(Check{Name: "backups", Status: CheckSkipped,
+			Detail: "no backup directory is configured, so writes are not backed up",
+			Hint:   "set PAY_BACKUP_DIR (or backup_dir in ./pay.toml) to save every document before a write changes it"})
+		return
+	case rt.Cfg.NoBackup:
+		add(Check{Name: "backups", Status: CheckWarn,
+			Detail: "backups are configured (" + dir + ") but disabled for this run (--no-backup / PAY_NO_BACKUP)",
+			Hint:   "drop --no-backup and unset PAY_NO_BACKUP to back up writes again"})
+		return
+	}
+	store := backup.New(dir)
+	profileDir := store.ProfileDir(rt.Cfg.Profile)
+	r.Backups["profile_dir"] = profileDir
+	if err := store.Writable(rt.Cfg.Profile); err != nil {
+		r.Backups["writable"] = false
+		add(Check{Name: "backups", Status: CheckFail,
+			Detail: "the backup directory is not writable: " + err.Error(),
+			Hint:   "every write would abort with backup_failed (exit 1); fix " + dir + " or pass --no-backup"})
+		return
+	}
+	r.Backups["writable"] = true
+	if entries, err := store.List(backup.Filter{Profile: rt.Cfg.Profile}); err == nil {
+		r.Backups["files"] = len(entries)
+	}
+	add(Check{Name: "backups", Status: CheckOK,
+		Detail: profileDir + " is writable; every write backs up the documents it changes first",
+		Value:  map[string]any{"dir": dir, "source": rt.Cfg.Sources["backup_dir"]}})
 }

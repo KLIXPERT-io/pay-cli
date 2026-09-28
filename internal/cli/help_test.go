@@ -27,12 +27,18 @@ var helpOwned = [][]string{
 	{"globals"}, {"globals", "list"}, {"globals", "get"}, {"globals", "update"},
 	{"versions"}, {"versions", "list"}, {"versions", "get"},
 	{"versions", "restore"}, {"versions", "diff"},
+	{"diff"},
+	{"outline"},
+	// F6: idempotent writes.
+	{"upsert"}, {"plan"}, {"sync"},
 	// Meta commands.
 	{"explain"}, {"collections"}, {"describe"}, {"doctor"}, {"discover"},
 	{"whoami"}, {"access"}, {"can"}, {"version"}, {"completion"},
 	{"auth"}, {"auth", "login"}, {"auth", "list"}, {"auth", "status"},
 	{"auth", "test"}, {"auth", "logout"}, {"auth", "use"}, {"auth", "rename"},
-	{"auth", "fix-perms"},
+	{"auth", "fix-perms"}, {"auth", "preview-secret"},
+	// F9: frontend URLs and draft preview.
+	{"url"},
 	{"config"}, {"config", "get"}, {"config", "set"}, {"config", "unset"},
 	{"config", "list"}, {"config", "paths"}, {"config", "explain"},
 	// The last four trees to be brought under the doctrine. They rendered
@@ -55,6 +61,13 @@ var helpOwned = [][]string{
 	{"apply"},
 	{"blocks"}, {"blocks", "ls"}, {"blocks", "mv"}, {"blocks", "rm"},
 	{"blocks", "add"}, {"blocks", "cp"}, {"blocks", "set"},
+	// §7.10c's block catalog.
+	{"blocks", "types"}, {"blocks", "schema"}, {"blocks", "example"},
+	{"blocks", "new"}, {"blocks", "validate"}, {"blocks", "learn"},
+	// Rich text ⇄ Markdown.
+	{"lexical"}, {"lexical", "from-md"}, {"lexical", "to-md"}, {"lexical", "text"},
+	// §12.8's automatic pre-write backups.
+	{"backups"}, {"backups", "list"}, {"backups", "show"}, {"backups", "restore"}, {"backups", "prune"},
 }
 
 // helpOwnedCoversTheWholeTree is the guard that made `helpOwned` stop being a
@@ -121,6 +134,10 @@ var dataCommands = [][]string{
 	{"globals", "list"}, {"globals", "get"}, {"globals", "update"},
 	{"versions", "list"}, {"versions", "get"},
 	{"versions", "restore"}, {"versions", "diff"},
+	{"diff"},
+	{"url"},
+	{"outline"},
+	{"upsert"}, {"plan"}, {"sync"},
 }
 
 // §10.5 section 8. The renderer's fallback prints {0, 1}, which is a lie for

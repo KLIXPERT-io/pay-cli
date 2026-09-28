@@ -165,7 +165,7 @@ killed, which is exactly the case the audit log exists to capture.`,
 var auditActions = []string{
 	safety.ActionCreate, safety.ActionUpdate, safety.ActionDelete, safety.ActionTrash,
 	safety.ActionRestore, safety.ActionPublish, safety.ActionUnpublish, safety.ActionUpload,
-	safety.ActionRestoreVersion, safety.ActionRaw,
+	safety.ActionRestoreVersion, safety.ActionRaw, safety.ActionRestoreBackup,
 }
 
 type auditTailOptions struct {

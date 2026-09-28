@@ -36,6 +36,11 @@ func TestOpLevel(t *testing.T) {
 		{"bulk unpublish", Op{Command: CmdUnpublish, Selector: SelectorBulk}, L3},
 		{"case and space insensitive", Op{Command: "  Create "}, L1},
 		{"unknown verb fails safe", Op{Command: "frobnicate"}, L2},
+		{"plan is read", Op{Command: CmdPlan}, L0},
+		{"upsert create half", Op{Command: CmdUpsert}, L1},
+		{"upsert update half", Op{Command: CmdUpsert, Selector: SelectorID}, L1},
+		{"sync prompts like a global write", Op{Command: CmdSync}, L2},
+		{"a sync item is still L2", Op{Command: CmdSync, Selector: SelectorID}, L2},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -78,6 +83,11 @@ func TestOpAction(t *testing.T) {
 	}{
 		{"create", Op{Command: CmdCreate}, ActionCreate},
 		{"duplicate is a create", Op{Command: CmdDuplicate}, ActionCreate},
+		{"upsert that creates", Op{Command: CmdUpsert}, ActionCreate},
+		{"upsert that updates", Op{Command: CmdUpsert, Selector: SelectorID}, ActionUpdate},
+		{"sync item create", Op{Command: CmdSync}, ActionCreate},
+		{"sync item update", Op{Command: CmdSync, Selector: SelectorID}, ActionUpdate},
+		{"sync global update", Op{Command: CmdSync, Global: true}, ActionUpdate},
 		{"upload", Op{Command: CmdUpload}, ActionUpload},
 		{"update", Op{Command: CmdUpdate}, ActionUpdate},
 		{"globals update is an update", Op{Command: CmdGlobalsUpdate}, ActionUpdate},

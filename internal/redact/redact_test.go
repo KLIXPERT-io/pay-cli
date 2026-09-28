@@ -3,6 +3,7 @@ package redact
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -173,12 +174,6 @@ func TestJSONRedaction(t *testing.T) {
 			in:        `{"resetPasswordExpiration":1758000000000,"id":1}`,
 			want:      `{"resetPasswordExpiration":"<redacted>","id":1}`,
 			wantPaths: []string{"resetPasswordExpiration"},
-		},
-		{
-			name:      "null secret is still masked",
-			in:        `{"resetPasswordToken":null}`,
-			want:      `{"resetPasswordToken":"<redacted>"}`,
-			wantPaths: []string{"resetPasswordToken"},
 		},
 		{
 			name:      "deeply nested",
@@ -541,5 +536,129 @@ func TestTokenExpIsNotASecret(t *testing.T) {
 	}
 	if strings.Contains(string(res.Data), "abc") {
 		t.Errorf("token survived: %s", res.Data)
+	}
+}
+
+// F9: a preview secret may sit in a path segment or under a query name that
+// says nothing about secrets, where the structural rules cannot see it.
+func TestURLWithSecrets(t *testing.T) {
+	const secret = "prev/iew secret+1"
+	cases := []struct{ in, want string }{
+		{"https://site.dev/next/preview?path=%2Fa&previewSecret=" + url.QueryEscape(secret),
+			"https://site.dev/next/preview?path=%2Fa&previewSecret=" + Mask},
+		{"https://site.dev/preview/" + url.PathEscape(secret) + "?path=%2Fa",
+			"https://site.dev/preview/" + Mask + "?path=%2Fa"},
+		{"https://site.dev/p?k=" + url.QueryEscape(secret), "https://site.dev/p?k=" + Mask},
+		{"https://site.dev/p?k=short", "https://site.dev/p?k=short"},
+	}
+	for _, tc := range cases {
+		got := URLWithSecrets(tc.in, []string{secret, "short"})
+		if got != tc.want {
+			t.Errorf("URLWithSecrets(%q)\n got %q\nwant %q", tc.in, got, tc.want)
+		}
+	}
+	if got := URLWithSecrets("https://u:p@x.dev/a?token=t", nil); got != URL("https://u:p@x.dev/a?token=t") {
+		t.Errorf("without secrets it must equal URL: %q", got)
+	}
+}
+
+// preview_secret_env holds the NAME of a variable (F9), like api_key_env; the
+// secret itself is still masked under any key that says secret.
+func TestPreviewSecretEnvIsAName(t *testing.T) {
+	if Key("preview_secret_env") {
+		t.Error("preview_secret_env is a variable name and must stay visible in `pay config explain`")
+	}
+	for _, k := range []string{"preview_secret", "previewSecret", "PREVIEW_SECRET"} {
+		if !Key(k) {
+			t.Errorf("%s must be masked", k)
+		}
+	}
+}
+
+// StoredDoc is the backup rule set: credentials only, because every masked
+// value is one a restore can never bring back.
+func TestStoredDocMasksCredentialsOnly(t *testing.T) {
+	jwt := "eyJhbGciOiJIUzI1NiJ9.eyJwYWdlIjoiZGVtbyJ9.c2lnbmF0dXJlLWRlbW8"
+	doc := map[string]any{
+		"title":        "x",
+		"embed":        jwt,                                   // JWT-shaped content: kept
+		"designTokens": map[string]any{"primary": "#123"},     // *token* key: kept
+		"secretSauce":  "recipe",                              // *secret* key: kept
+		"sessions":     []any{map[string]any{"t": "Keynote"}}, // content field: kept
+		"hash":         "abc123",                              // content field: kept
+		"apiKey":       "third-party-key",                     // credential name: masked anywhere
+		"note":         "uses KEY-0123456789abcdef inline",    // literal secret: masked
+		"author": map[string]any{ // a populated user: auth keys masked
+			"email": "u@example.com", "sessions": []any{"s1"}, "hash": "h", "salt": "s",
+			"password": "p", "resetPasswordToken": "r", "_verificationToken": "v", "enableAPIKey": true,
+			"profile": map[string]any{"hash": "content"}, // auth-ness does not inherit
+		},
+		"missing": map[string]any{"apiKey": nil}, // nothing to hide
+	}
+	out, paths := Scrubber{Literals: []string{"KEY-0123456789abcdef"}}.StoredDoc(doc, false)
+	m := out.(map[string]any)
+	for _, keep := range []string{"embed", "secretSauce", "hash", "title"} {
+		if m[keep] != doc[keep] {
+			t.Errorf("%s = %v, want it kept", keep, m[keep])
+		}
+	}
+	if tok, _ := m["designTokens"].(map[string]any); tok["primary"] != "#123" {
+		t.Errorf("designTokens = %v", m["designTokens"])
+	}
+	if s, _ := m["sessions"].([]any); len(s) != 1 {
+		t.Errorf("sessions = %v", m["sessions"])
+	}
+	if m["apiKey"] != Mask || m["note"] != Mask {
+		t.Errorf("apiKey = %v note = %v", m["apiKey"], m["note"])
+	}
+	a := m["author"].(map[string]any)
+	for _, k := range []string{"sessions", "hash", "salt", "password", "resetPasswordToken", "_verificationToken"} {
+		if a[k] != Mask {
+			t.Errorf("author.%s = %v, want masked", k, a[k])
+		}
+	}
+	if a["email"] != "u@example.com" || a["profile"].(map[string]any)["hash"] != "content" {
+		t.Errorf("author = %v", a)
+	}
+	want := "apiKey,author._verificationToken,author.hash,author.password,author.resetPasswordToken,author.salt,author.sessions,note"
+	if strings.Join(paths, ",") != want {
+		t.Errorf("paths = %v\nwant    %s", paths, want)
+	}
+
+	// The top-level document of an auth collection is an auth document even
+	// without an email key.
+	_, paths = Scrubber{}.StoredDoc(map[string]any{"hash": "h", "sessions": []any{}}, true)
+	if strings.Join(paths, ",") != "hash,sessions" {
+		t.Errorf("authRoot paths = %v", paths)
+	}
+	// The original is untouched.
+	if doc["apiKey"] != "third-party-key" {
+		t.Error("StoredDoc mutated its input")
+	}
+}
+
+// A second text pass over an already-masked assignment keeps the punctuation
+// after the mask: error messages that name a URL with a masked query value
+// used to lose their separator ("previewSecret=<redacted> \"You…").
+func TestTextScrubIsIdempotentAroundTheMask(t *testing.T) {
+	in := `the site refused the preview handshake (HTTP 403 at http://x/next/preview?path=/a&previewSecret=<redacted>: "You are not allowed")`
+	if got := Text(in); got != in {
+		t.Errorf("Text changed an already-masked message:\n got %s\nwant %s", got, in)
+	}
+}
+
+// A null under a secret-looking key hides nothing, and masking it turned null
+// into the string "<redacted>" when an export was written back (stage media
+// 848's ogQuelle.hash, copied into page 35's rich text).
+func TestNullSecretIsNotMasked(t *testing.T) {
+	in := `{"resetPasswordToken":null,"ogQuelle":{"hash":null,"url":"x"}}`
+	got := JSON([]byte(in))
+	if got.Changed || string(got.Data) != in || len(got.Paths) != 0 {
+		t.Errorf("JSON masked a null: changed=%v data=%s paths=%v", got.Changed, got.Data, got.Paths)
+	}
+	v, paths := Value(map[string]any{"hash": nil, "apiKey": "k-12345678"})
+	m := v.(map[string]any)
+	if m["hash"] != nil || m["apiKey"] != Mask || len(paths) != 1 || paths[0] != "apiKey" {
+		t.Errorf("Value = %v paths %v", m, paths)
 	}
 }

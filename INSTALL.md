@@ -37,7 +37,10 @@ Both installers:
 3. download the archive **and** `checksums.txt`,
 4. **verify the SHA-256 and refuse to install on a mismatch**,
 5. verify the cosign signature over `checksums.txt` when `cosign` is on your PATH,
-6. extract the binary into the install directory and print its version.
+6. extract the binary into the install directory and print its version,
+7. check that the install directory is on `$PATH`. If it is not, the installer prints how to
+   fix that for an agent's non-interactive shell as well (see
+   [`pay: not found` after installing](#pay-not-found-after-installing)).
 
 The default install directory is **`$HOME/.local/bin`** on Unix and
 `%LOCALAPPDATA%\Programs\pay` on Windows. That is deliberate: agents rarely have `sudo`,
@@ -232,6 +235,9 @@ Inside them:
 | `credentials.json` | 0600 | API keys and JWTs, unless they are in the keychain |
 | `audit.log` | 0600 | every L1–L3 write, before and after, JSONL, 10 MB × 3 generations |
 | `cache/v1/<scope>/` | 0700 | discovery manifests and field schemas, per connection+credential |
+| `cache/v1/<scope>/census.json` | 0600 | the block census: block types, fields and value counts learned from documents (24 h) |
+| `state/preview/<profile>.cookies.json` | 0600 | the draft-preview cookie `pay url --preview` minted |
+| `state/reset-nested/<profile>/*.json` | 0600 | a `--reset-nested` restatement, kept only when its last step failed |
 | `update-state.json` | 0600 | the last update check |
 
 Override any of them: `PAY_CONFIG_DIR`, `PAY_CACHE_DIR`, `PAY_STATE_DIR`, or `PAY_HOME`
@@ -248,6 +254,12 @@ rm -rf "$(pay cache path --output raw)"
 ```
 
 It costs one re-discovery, nothing else. If it ever costs more than that, it is a bug.
+
+**Backups live where you put them.** Pre-write backups are off until you name a directory
+with `PAY_BACKUP_DIR`, `backup_dir` in `pay.toml` / `config.toml`, or `--backup-dir`. Files
+go to `<dir>/<profile>/<collection>/<id>/<UTC-time>--<command>.json` (0600, directories
+0700). They hold document content, so keep the directory out of version control.
+`pay backups prune --older-than 30d` cleans up.
 
 ---
 
@@ -325,7 +337,7 @@ steps above. Everything else about PayCLI is offline already: after one discover
 
 ```sh
 pay skills uninstall              # remove the agent skill (only files pay installed)
-pay auth logout --all             # clear stored credentials and keychain entries
+pay auth logout <profile>         # clear a profile's stored credential (repeat per profile; see pay auth list)
 pay cache clear --all             # drop the discovery cache
 
 rm -f "$(command -v pay)"
@@ -367,6 +379,11 @@ profile `staging-eu` reads `PAY_API_KEY_STAGING_EU`.
 | `PAY_YES` | assume `--yes`. Use with care |
 | `PAY_NO_COLOR`, `NO_COLOR` | suppress colour in human output |
 | `PAY_LOG_LEVEL`, `PAY_LOG_FORMAT` | `debug`\|`info`\|`warn`\|`error`; `text`\|`json` |
+| `PAY_BACKUP_DIR` | back up every document a write changes into this directory (relative to the working directory) |
+| `PAY_NO_BACKUP` | skip the pre-write backup |
+| `PAY_CENSUS_MAX_DOCS` | documents per collection the block census reads (default 500) |
+| `PAY_SITE_URL` | the site's origin for `pay url` (default: the Payload origin) |
+| `PAY_PREVIEW_SECRET` / `PAY_PREVIEW_SECRET_<PROFILE>` | the site's preview secret for `pay url --preview`; never printed |
 
 ### Paths and updates
 
@@ -397,16 +414,45 @@ pay doctor
 
 It checks, in order: configuration, base URL reachability, whether the endpoint is
 actually Payload, the credential, the auth collection, admin access, the discovery cache,
-the audit log's writability, the installed skill's freshness and clock skew — and prints
-the fix for each thing that is wrong.
+the audit log's writability, the backup directory, the block census, whether `pay` on
+`$PATH` is this binary, the installed skill's freshness and clock skew — and prints the fix
+for each thing that is wrong. The local checks (`binary_on_path`, `audit_log`, `backups`,
+`skill`, `update`) run even when no server is configured.
 
 ### `pay: not found` after installing
 
-`$HOME/.local/bin` is not on your `PATH`:
+The install directory (`$HOME/.local/bin` by default) is not on the `PATH` of the shell that
+ran the command.
+
+**Coding agents are the usual case.** An agent (Claude Code, Codex, Cursor, …) runs each
+command in a **non-interactive** shell. Such a shell usually reads neither `~/.bashrc` nor
+`~/.profile`. So a PATH line you added there works in your terminal, and the agent still
+gets "command not found". Run `pay doctor` by its absolute path from the agent's shell. The
+`binary_on_path` check says whether a shell that types `pay` runs this binary, and its hint
+is the exact fix for that machine:
 
 ```sh
-export PATH="$HOME/.local/bin:$PATH"     # add to ~/.bashrc or ~/.zshrc
+~/.local/bin/pay doctor --path .checks
 ```
+
+Fixes, most robust first:
+
+```sh
+# 1. Link it into a directory that is already on the agent's PATH (sudo if needed).
+#    `pay doctor` names one: ~/.local/bin or ~/bin when already on PATH, else /usr/local/bin.
+ln -sf ~/.local/bin/pay /usr/local/bin/pay
+
+# 2. Put the directory on the agent's own PATH, in the environment the agent starts its
+#    shells with (for Claude Code: the "env" block of settings.json), keeping the rest of PATH.
+
+# 3. For your own shells: ~/.profile (login shells) and ~/.zshenv (every zsh).
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Until then, call the binary by its absolute path (`~/.local/bin/pay …`). The installer
+prints the same advice when the install directory is not on `$PATH`. If `binary_on_path`
+says the first `pay` on `$PATH` is a *different* binary, an older copy shadows this one:
+remove or update it, or use the absolute path.
 
 ### `config_missing` (exit 9)
 

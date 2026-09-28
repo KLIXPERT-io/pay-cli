@@ -128,6 +128,17 @@ type Profile struct {
 	EchoCheckIgnore []string `toml:"echo_check_ignore,omitempty"`
 	CustomEndpoints []string `toml:"custom_endpoints,omitempty"`
 
+	// Frontend URLs and draft preview (F9). site_url defaults to base_url's
+	// origin; url_paths maps a collection slug to a path template such as
+	// "/posts/{slug}"; preview_path is the site's preview-handshake route;
+	// preview_secret_env NAMES the environment variable holding the preview
+	// secret. The secret itself is never a config key (preview_secret is
+	// rejected like api_key).
+	SiteURL          string            `toml:"site_url,omitempty"`
+	URLPaths         map[string]string `toml:"url_paths,omitempty"`
+	PreviewPath      string            `toml:"preview_path,omitempty"`
+	PreviewSecretEnv string            `toml:"preview_secret_env,omitempty"`
+
 	// APIKey is never a legal key (§4.2); see File.Validate.
 	APIKey string `toml:"api_key,omitempty"`
 }
@@ -149,6 +160,9 @@ type Defaults struct {
 	Locale         string `toml:"locale,omitempty"`
 	FallbackLocale string `toml:"fallback_locale,omitempty"`
 	ErrorsTo       string `toml:"errors_to,omitempty"`
+	// CensusMaxDocs bounds how many documents per collection the block census
+	// (§7.10c) reads.
+	CensusMaxDocs *int `toml:"census_max_docs,omitempty"`
 }
 
 // CacheSection is the [cache] table (§4.2).

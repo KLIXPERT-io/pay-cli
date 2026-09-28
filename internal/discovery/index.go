@@ -1166,6 +1166,6 @@ func (m *Manifest) ResolveGlobal(slug string) (*Global, error) {
 	e := apierr.New(apierr.CodeGlobalUnknown,
 		"this project has no global %q", slug).
 		WithDidYouMean(apierr.DidYouMean(slug, m.GlobalSlugs())...).
-		WithHint("run `pay collections --globals` for the full list")
+		WithHint("run `pay globals list` for the full list")
 	return nil, e
 }

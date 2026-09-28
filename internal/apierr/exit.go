@@ -34,6 +34,8 @@ var exitByCode = map[Code]int{
 	CodeUpdateVerificationFailed: ExitInternal,
 	CodeAuditWriteFailed:         ExitInternal,
 
+	CodeBackupFailed: ExitInternal,
+
 	// 2 — auth
 	CodeAuthMissing:             ExitAuth,
 	CodeAuthInvalid:             ExitAuth,
@@ -53,6 +55,8 @@ var exitByCode = map[Code]int{
 	CodeRouteNotFound:   ExitNotFound,
 	CodeVersionNotFound: ExitNotFound,
 	CodeSelectorNoMatch: ExitNotFound,
+	CodeNotPublished:    ExitNotFound,
+	CodeRefUnresolved:   ExitNotFound,
 
 	// 5 — validation / bad input
 	CodeValidationFailed:    ExitValidation,
@@ -76,6 +80,15 @@ var exitByCode = map[Code]int{
 	CodeFieldAmbiguous:      ExitValidation,
 	CodeNoInput:             ExitValidation,
 	CodeNoEdits:             ExitValidation,
+	CodeNotRichText:         ExitValidation,
+	CodeRichTextRendered:    ExitValidation,
+
+	CodeBackupTargetMismatch: ExitValidation,
+	CodeSlugAmbiguous:        ExitValidation,
+	CodeMatchAmbiguous:       ExitValidation,
+	CodeRefAmbiguous:         ExitValidation,
+	CodeRefCycle:             ExitValidation,
+	CodeManifestInvalid:      ExitValidation,
 
 	// 6 — network / server
 	CodeNetworkUnreachable: ExitNetwork,
@@ -92,6 +105,7 @@ var exitByCode = map[Code]int{
 	// 8 — access denied
 	CodeAccessDenied:      ExitAccessDenied,
 	CodeAdminAccessDenied: ExitAccessDenied,
+	CodePreviewDenied:     ExitAccessDenied,
 
 	// 9 — config / profile
 	CodeConfigMissing:           ExitConfig,
@@ -100,6 +114,7 @@ var exitByCode = map[Code]int{
 	CodeBaseURLInvalid:          ExitConfig,
 	CodeEndpointNotPayload:      ExitConfig,
 	CodeAuthCollectionUnknown:   ExitConfig,
+	CodePreviewSecretMissing:    ExitConfig,
 
 	// 10 — capability / discovery
 	CodeCollectionUnknown:    ExitCapability,
@@ -110,6 +125,7 @@ var exitByCode = map[Code]int{
 	CodeGraphQLDisabled:      ExitCapability,
 	CodeSchemaStale:          ExitCapability,
 	CodeBlockTypeUnknown:     ExitCapability,
+	CodePreviewFailed:        ExitCapability,
 
 	// 11 — confirmation required
 	CodeConfirmationRequired: ExitConfirmationRequired,

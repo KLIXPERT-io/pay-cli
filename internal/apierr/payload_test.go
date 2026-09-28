@@ -328,6 +328,44 @@ func TestValidationHintIsBranched(t *testing.T) {
 	}
 }
 
+// TestValidationHintCreateVsUpdate: the "stored document is already invalid"
+// branch is an UPDATE diagnosis. A create that leaves out required fields has
+// no stored document — the missing fields are the caller's own input.
+func TestValidationHintCreateVsUpdate(t *testing.T) {
+	tests := []struct {
+		name, method, url string
+		want, notWant     string
+	}{
+		{"create (POST to the collection root)", "POST", "http://h/api/pages?depth=0",
+			"missing 3 required field(s) you did not send", "already invalid"},
+		{"create under a custom api route", "POST", "http://h/cms/api/pages",
+			"`pay describe pages` lists the required fields", "pre-existing state"},
+		{"update by id", "PATCH", "http://h/api/pages/1?depth=0",
+			"already invalid on 3 field(s) you did not send", "missing 3 required"},
+		{"global update (POST /globals/<slug>)", "POST", "http://h/api/globals/pages",
+			"already invalid on 3 field(s)", "missing 3 required"},
+		{"duplicate (POST /<slug>/<id>/duplicate)", "POST", "http://h/api/pages/1/duplicate",
+			"already invalid on 3 field(s)", "missing 3 required"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := Classify(Response{
+				Status: 400, Method: tc.method, URL: tc.url, ContentType: jsonCT,
+				Body: []byte(validationEN), Collection: "pages",
+			})
+			if got.Code != CodeValidationFailed {
+				t.Fatalf("code = %s, want validation_failed", got.Code)
+			}
+			if !strings.Contains(got.Hint, tc.want) {
+				t.Errorf("hint = %q, want it to contain %q", got.Hint, tc.want)
+			}
+			if strings.Contains(got.Hint, tc.notWant) {
+				t.Errorf("hint = %q, must not contain %q", got.Hint, tc.notWant)
+			}
+		})
+	}
+}
+
 func TestClassifyNonJSON(t *testing.T) {
 	tests := []struct {
 		name        string

@@ -34,6 +34,12 @@ const (
 	ClassIdentity Class = "identity"
 	// ClassSkillsManifest covers the skills manifest and release metadata.
 	ClassSkillsManifest Class = "skills_manifest"
+	// ClassBlockCensus is §7.10c's block census: an AGGREGATE of observed
+	// block rows (counts, JSON types, a bounded set of short scalar values and
+	// document references). It holds no document, so §8.3 rule 4 does not
+	// apply; its fresh window is the GraphQL-schema row's, because both
+	// describe the project's block schema and change only on a deploy.
+	ClassBlockCensus Class = "block_census"
 	// ClassDocument is document data of any kind. Never cached to disk
 	// (§8.3 rule 4): Payload content is mutable by definition and stale
 	// content served to an agent causes wrong edits.
@@ -58,6 +64,7 @@ var ttlTable = map[Class]TTL{
 	ClassWhereInput:        {Fresh: 24 * time.Hour, HardMax: 7 * 24 * time.Hour, Persist: true},
 	ClassGraphQLMode:       {Fresh: 24 * time.Hour, HardMax: 7 * 24 * time.Hour, Persist: true},
 	ClassSkillsManifest:    {Fresh: 6 * time.Hour, HardMax: 0, Persist: true},
+	ClassBlockCensus:       {Fresh: 24 * time.Hour, HardMax: 7 * 24 * time.Hour, Persist: true},
 	ClassIdentity:          {Fresh: 60 * time.Second, HardMax: 0, Persist: false},
 	ClassDocument:          {Fresh: 0, HardMax: 0, Persist: false},
 }

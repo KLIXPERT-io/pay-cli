@@ -97,6 +97,9 @@ type rootFlags struct {
 	dryRun  bool
 	noAudit bool
 
+	backupDir string
+	noBackup  bool
+
 	noRedact           bool
 	noRaw              bool
 	configPath         string
@@ -165,6 +168,8 @@ func (f *rootFlags) bind(set *pflag.FlagSet) {
 	set.BoolVar(&f.yes, "yes", false, "assume yes for every confirmation prompt")
 	set.BoolVar(&f.dryRun, "dry-run", false, "print what would be sent and exit 0 without sending it")
 	set.BoolVar(&f.noAudit, "no-audit", false, "do not write the audit log for this command")
+	set.StringVar(&f.backupDir, "backup-dir", "", "back up every document a write changes into this directory first (§12.8)")
+	set.BoolVar(&f.noBackup, "no-backup", false, "skip the automatic pre-write backup for this command")
 
 	set.BoolVar(&f.noRedact, "no-redact", false, "do not redact secrets in output (dangerous)")
 	set.BoolVar(&f.noRaw, "no-raw", false, "omit Payload's raw response body from the envelope")
@@ -198,6 +203,7 @@ func (f *rootFlags) configFlags() config.Flags {
 		CacheTTL:         f.cacheTTL,
 		LogLevel:         f.logLevel,
 		LogFormat:        f.logFormat,
+		BackupDir:        f.backupDir,
 	}
 	switch {
 	case f.changed("max-retries"):
@@ -238,6 +244,10 @@ func (f *rootFlags) configFlags() config.Flags {
 	if f.changed("no-audit") {
 		v := f.noAudit
 		cf.NoAudit = &v
+	}
+	if f.changed("no-backup") {
+		v := f.noBackup
+		cf.NoBackup = &v
 	}
 	if f.changed("quiet") {
 		v := f.quiet
@@ -367,6 +377,7 @@ func (rt *Runtime) setup(cmd *cobra.Command) error {
 		Env:     rt.Env,
 		Project: projectFile,
 		User:    userFile,
+		WorkDir: rt.App.WorkDir,
 	})
 	if err != nil {
 		return err

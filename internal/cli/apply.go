@@ -11,6 +11,7 @@ import (
 	"github.com/KLIXPERT-io/pay-cli/internal/output"
 	"github.com/KLIXPERT-io/pay-cli/internal/payload"
 	"github.com/KLIXPERT-io/pay-cli/internal/payload/query"
+	"github.com/KLIXPERT-io/pay-cli/internal/rows"
 	"github.com/KLIXPERT-io/pay-cli/internal/safety"
 )
 
@@ -45,6 +46,8 @@ type applyFlags struct {
 	locale    string
 	selectF   []string
 	noEcho    bool
+	// resetNested is §10.2.1's --reset-nested (see update.go).
+	resetNested bool
 }
 
 func newApplyCmd(rt *Runtime) *cobra.Command {
@@ -75,9 +78,11 @@ reorder silently rewrites a page. Use --all-fields to send everything anyway.`,
 	fl.StringSliceVar(&f.selectF, "select", nil, "limit the echoed document to these fields")
 	fl.BoolVar(&f.draft, "draft", false, "save as a draft, skipping required-field validation")
 	fl.BoolVar(&f.publish, "publish", false, "also set _status=published")
-	fl.BoolVar(&f.unpublish, "unpublish", false, "also set _status=draft")
+	fl.BoolVar(&f.unpublish, "unpublish", false, "also set _status=draft, taking the live document offline (not with --draft)")
 	fl.StringVar(&f.locale, "locale", "", "write into this locale")
 	fl.BoolVar(&f.noEcho, "no-echo-check", false, "skip the §10.2 echo-diff")
+	fl.BoolVar(&f.resetNested, "reset-nested", false,
+		"remove nested block rows the write would leave behind (orphans), keeping the document id")
 
 	cmd.RunE = runData(rt, safety.CmdApply, func(ctx context.Context, c *cobra.Command, d *Deps, args []string) (*output.Envelope, error) {
 		return runApply(ctx, c, d, f, args)
@@ -87,6 +92,10 @@ reorder silently rewrites a page. Use --all-fields to send everything anyway.`,
 }
 
 func runApply(ctx context.Context, cmd *cobra.Command, d *Deps, f *applyFlags, args []string) (*output.Envelope, error) {
+	// Contradictory flags are refused before stdin is even read.
+	if err := checkStatusFlags(f.draft, f.publish, f.unpublish); err != nil {
+		return nil, err
+	}
 	client, err := d.requireClient()
 	if err != nil {
 		return nil, err
@@ -94,6 +103,9 @@ func runApply(ctx context.Context, cmd *cobra.Command, d *Deps, f *applyFlags, a
 	in, err := readPipeInput(d, safety.CmdApply)
 	if err != nil {
 		return nil, err
+	}
+	if in.RichText != "" {
+		return nil, renderedError("pay apply", in.RichText)
 	}
 	if in.Bare {
 		return nil, apierr.New(apierr.CodeNoEdits,
@@ -108,10 +120,6 @@ func runApply(ctx context.Context, cmd *cobra.Command, d *Deps, f *applyFlags, a
 	body, fields, warnings, err := applyBody(in, f)
 	if err != nil {
 		return nil, err
-	}
-
-	if f.publish && f.unpublish {
-		return nil, apierr.New(apierr.CodeInvalidArgs, "--publish and --unpublish are mutually exclusive")
 	}
 
 	// A global has no id and goes to POST /globals/{slug}; a collection
@@ -129,10 +137,18 @@ func runApply(ctx context.Context, cmd *cobra.Command, d *Deps, f *applyFlags, a
 	if err != nil {
 		return nil, err
 	}
+	if err := checkRenderedBody("pay apply", t, body, t.Shard); err != nil {
+		return nil, err
+	}
+	// §7.10c: the same census-aware block check create/update run.
+	warnings = append(warnings, blockTypeWarnings(d, t, t.Shard, body)...)
 	if f.draft || f.publish || f.unpublish {
 		if err := checkDrafts(t.Slug, t.flags().Drafts); err != nil {
 			return nil, err
 		}
+	}
+	if warn := applyBodyStatus(body, f.draft, f.publish || f.unpublish, t.flags().Drafts); warn != nil {
+		warnings = append(warnings, *warn)
 	}
 	if f.publish {
 		body["_status"] = "published"
@@ -155,8 +171,24 @@ func runApply(ctx context.Context, cmd *cobra.Command, d *Deps, f *applyFlags, a
 	if err := query.ValidateSelect(f.selectF, t.schema(d.cfg())); err != nil {
 		return nil, err
 	}
+	// §9.15.1: a `pay blocks … --set-json` stage can put {"$ref": …} into
+	// the piped document, so apply resolves references like every other
+	// write (0 requests when there are none).
+	// §9.15.2: masked values in the piped document are handled first.
+	body, prepWarns, err := d.prepareWriteBody(ctx, writeScope{shard: t.Shard,
+		preimage: func(ctx context.Context) (map[string]any, error) {
+			doc, err := d.readOrphanTarget(ctx, client, orphanTarget{t: t, id: id}, p, true)
+			return map[string]any(doc), err
+		}}, body, p.Locale)
+	if err != nil {
+		return nil, err
+	}
+	warnings = append(warnings, prepWarns...)
 
-	uf := &updateFlags{selectF: f.selectF, noEchoCheck: f.noEcho}
+	// The status flags travel too: runUpdateOne's publication guard must know
+	// that --unpublish (body _status "draft") was deliberate.
+	uf := &updateFlags{selectF: f.selectF, noEchoCheck: f.noEcho, resetNested: f.resetNested,
+		draft: f.draft, publish: f.publish, unpublish: f.unpublish}
 	env, err := runUpdateOne(ctx, d, client, safety.CmdApply, uf, t, id, body, p, warnings)
 	if err != nil {
 		return nil, err
@@ -228,6 +260,9 @@ func applyBody(in *pipeInput, f *applyFlags) (map[string]any, []string, []output
 	body := map[string]any{}
 	var missing []string
 	for _, path := range fields {
+		if err := applyFieldNotNested(in.Doc, path); err != nil {
+			return nil, nil, nil, err
+		}
 		v, ok := docValueAt(in.Doc, path)
 		if !ok {
 			missing = append(missing, path)
@@ -243,22 +278,58 @@ func applyBody(in *pipeInput, f *applyFlags) (map[string]any, []string, []output
 	return body, fields, warnings, nil
 }
 
+// applyFieldNotNested refuses a write path that reaches INTO an array row.
+// Payload has no per-row endpoint: a PATCH replaces a whole top-level array, so
+// `layout[2].blocks` can only be written as `layout` — which is exactly what
+// the `pay blocks` stages record in edits.fields. Without this check the path
+// would fail as "the piped document has no layout[2].blocks", which is false
+// and sends the caller looking for a field that is right there.
+func applyFieldNotNested(doc map[string]any, path string) error {
+	// A path this grammar cannot read, or one that does not resolve, is left
+	// to the plain lookup below, which reports it as missing.
+	p, perr := rows.ParsePath(path)
+	if perr != nil {
+		return nil //nolint:nilerr // reported by the caller's lookup
+	}
+	res, rerr := rows.Resolve(doc, p)
+	if rerr != nil || !res.At.Nested() {
+		return nil //nolint:nilerr // reported by the caller's lookup
+	}
+	root := res.At.Root()
+	return apierr.New(apierr.CodeInvalidArgs,
+		"--field %s is inside a row of %s, and Payload can only write %s as a whole", path, root, root).
+		WithHint("pass --field %s: the nested edit is already inside it (the `pay blocks` stages record the top-level field for this reason)", root)
+}
+
 // applyGlobal is the same write against a global. It reuses the CmdGlobalsUpdate
 // risk level rather than apply's own: writing a global has no per-document
 // recovery path, and routing it through a pipeline must not make it cheaper to
 // confirm than `pay globals update` is.
 func applyGlobal(ctx context.Context, d *Deps, client *payload.Client, f *applyFlags, in *pipeInput,
 	slug string, body map[string]any, fields []string, warnings []output.Warning) (*output.Envelope, error) {
-	cfg := d.cfg()
 	g, err := d.global(ctx, slug)
 	if err != nil {
 		return nil, err
 	}
 	t := g.asCollTarget()
-	if f.draft {
+	if err := checkRenderedBody("pay apply", t, body, g.Shard); err != nil {
+		return nil, err
+	}
+	warnings = append(warnings, blockTypeWarnings(d, t, g.Shard, body)...)
+	if f.draft || f.publish || f.unpublish {
 		if err := checkDrafts(g.Slug, g.flags().Drafts); err != nil {
 			return nil, err
 		}
+	}
+	if warn := applyBodyStatus(body, f.draft, f.publish || f.unpublish, g.flags().Drafts); warn != nil {
+		warnings = append(warnings, *warn)
+	}
+	// --publish/--unpublish mean the same on a global as on a document.
+	if f.publish {
+		body["_status"] = "published"
+	}
+	if f.unpublish {
+		body["_status"] = "draft"
 	}
 
 	p := query.Params{Depth: query.IntPtr(f.depth), Select: f.selectF}
@@ -270,60 +341,22 @@ func applyGlobal(ctx context.Context, d *Deps, client *payload.Client, f *applyF
 	if f.draft {
 		p.Draft = query.BoolPtr(true)
 	}
-
-	op := safety.Op{Command: safety.CmdGlobalsUpdate, Selector: safety.SelectorNone, Global: true}
-	path := payload.GlobalPath(g.Slug)
-	w := d.newWriteOp(op, g.Slug, "POST", path)
-	w.global = true
-
-	if cfg.DryRun {
-		q, _ := p.Encode()
-		env, err := emitDryRun(d, w, safety.CmdApply, "POST",
-			client.URLFor(&payload.Request{Method: "POST", Path: path, Query: q}), body, 1, nil, warnings...)
-		if err != nil {
-			return nil, err
-		}
-		// The preview carries the same edit log the real write does. The
-		// collection path gets this from runApply wrapping runUpdateOne; the
-		// global path returns straight from here, so without this line
-		// `pay apply --dry-run` on a global is the one envelope in the family
-		// that cannot say what the pipeline did.
-		return env.WithEdits(&output.Edits{Fields: fields, Ops: opsOf(in)}), nil
-	}
-	if err := w.confirm(1); err != nil {
-		return nil, err
-	}
-	if err := w.pre(1); err != nil {
-		return nil, err
-	}
-
-	res, err := client.GlobalUpdate(ctx, g.Slug, body, p,
-		payload.WithClassify(payload.ClassifyContext{SentPaths: payload.SentPaths(body), IncludeRaw: true, NoRedact: !cfg.Redact}),
-		payload.WithKnownRoute())
+	body, prepWarns, err := d.prepareWriteBody(ctx, writeScope{shard: g.Shard,
+		preimage: func(ctx context.Context) (map[string]any, error) {
+			doc, err := d.readOrphanTarget(ctx, client, orphanTarget{g: g}, p, true)
+			return map[string]any(doc), err
+		}}, body, p.Locale)
 	if err != nil {
-		w.post(false, statusOf(res), 0, 1, err.Error(), "")
 		return nil, err
 	}
+	warnings = append(warnings, prepWarns...)
 
-	env := output.New(safety.CmdApply, output.KindGlobal, res.Doc).
-		WithTarget(g.envTarget()).
-		WithChanged(&output.Changed{Updated: 1, IDs: []any{}}).
-		WithEdits(&output.Edits{Fields: fields, Ops: opsOf(in)}).
-		WithMeta(w.run.meta()).
-		WithRawBody(res.Raw, !cfg.Redact).
-		WithNext(&output.Next{
-			Reason: output.ReasonVerifyWrite,
-			Cmd:    fmt.Sprintf("pay globals get %s --depth 0%s", g.Slug, d.profileFlag()),
-		})
-	for _, warn := range warnings {
-		env.AddWarning(warn)
-	}
-	for _, warn := range echoWarnings(g.Slug, body, res.Doc, f.selectF, echoConfig{
-		Shard: g.Shard, Ignore: cfg.EchoCheckIgnore, LocaleAll: f.locale == "all", Disabled: f.noEcho,
-	}) {
-		env.AddWarning(warn)
-	}
-	return w.finish(env, res.HTTP, 1, 0, "")
+	return runGlobalWrite(ctx, d, client, globalWriteSpec{
+		command: safety.CmdApply, g: g, body: body, p: p, selectF: f.selectF, noEcho: f.noEcho,
+		localeAll: f.locale == "all", resetNested: f.resetNested, unpublish: f.unpublish, warnings: warnings,
+		// The preview and the write carry the same edit log.
+		edits: &output.Edits{Fields: fields, Ops: opsOf(in)},
+	})
 }
 
 // opsOf is the piped envelope's op log, or nil when there is none.
@@ -353,8 +386,9 @@ func applyHelp() *Help {
 			{Name: "id", Required: false, Type: "string", Example: "12"},
 		},
 		FlagInfo: map[string]FlagInfo{
-			"field":      {Grammar: "PATH", Repeatable: true, Note: "narrows the write further; it can never widen it beyond the piped document"},
-			"all-fields": {Note: "sends every field, including server-owned ones and any relationship the read expanded"},
+			"field":        {Grammar: "PATH", Repeatable: true, Note: "narrows the write further; it can never widen it beyond the piped document. A top-level field only: a nested `pay blocks set … --field layout[2].blocks` edit is recorded (and written) as layout"},
+			"all-fields":   {Note: "sends every field, including server-owned ones and any relationship the read expanded; with --draft its _status is removed (body_publishes)"},
+			"reset-nested": {Note: "carrier phases so Payload's Postgres adapter clears nested block tables the write would skip (orphans); not needed with --draft"},
 		},
 		Output: OutputSpec{
 			Kind:     output.KindDoc,
@@ -372,6 +406,10 @@ func applyHelp() *Help {
 				Cmd: "cat page.json | pay apply pages 12 --all-fields --yes"},
 			{Why: "a global's blocks field",
 				Cmd: "pay globals get header --depth 0 | pay blocks rm last | pay apply --yes"},
+			{Why: "a nested edit: the blocks inside a group; the PATCH carries the whole of layout",
+				Cmd: "pay get pages 12 --draft --depth 0 | pay blocks rm last --field 'layout[type:group].blocks' | pay apply --draft --dry-run"},
+			{Why: "a nested block TYPE change written straight to the stored row, without orphan {} rows",
+				Cmd: "pay get pages 12 --depth 0 | pay blocks rm 0 --field 'layout[0].blocks' | pay blocks add grid --field 'layout[0].blocks' | pay apply --reset-nested --yes"},
 		},
 		Mistakes: []Mistake{
 			{Wrong: "Putting `--path .layout` between the edit and `pay apply`.",

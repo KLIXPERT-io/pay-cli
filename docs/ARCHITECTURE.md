@@ -47,7 +47,7 @@ disagreement is resolved here. Where a recommendation was discarded, the reason 
 | 12 | `/api/access` `fields` as a field-name source | **Never used for field names** | Re-verified live: `collections.pages.fields` is the boolean `true` for a privileged key and an object for a restricted one; typed as `true \| false \| map`. |
 | 13 | Retry on HTTP 500: retry once for GETs (caching) vs never (agentux, commands) | **Never auto-retry 500** | Re-verified live that the three common 500s (uncastable id, `/versions` on a non-versioned collection, dangling relationship) are deterministic client mistakes, so a retry only doubles the latency of a guaranteed failure. |
 | 14 | `X-Payload-HTTP-Method-Override` auto-promotion for long URLs | **Read-shaped requests only; never for `PATCH`/`DELETE`** | Re-verified live: a `Content-Type` of `application/x-www-form-urlencoded; charset=utf-8` makes Payload silently discard the whole body (a `limit=2` body returned 10 docs), which on a scoped bulk delete would become delete-everything. |
-| 15 | Output format auto-switching to `table` on a TTY (gsc, commands, gopkg) | **Never.** `json` always, unless `--output` / `PAY_OUTPUT` / `defaults.output` says otherwise; `PAY_HUMAN=1` opts into TTY switching | Agent harnesses frequently allocate a PTY, so TTY-dependent output makes the same command emit different bytes in different harnesses. |
+| 15 | Output format auto-switching to `table` on a TTY (gsc, commands, gopkg) | **Never.** `json` always, unless `--output` / `PAY_OUTPUT` / `defaults.output` says otherwise; there is no TTY switching at all | Agent harnesses frequently allocate a PTY, so TTY-dependent output makes the same command emit different bytes in different harnesses. |
 | 16 | Secret storage: OS keychain with silent file fallback (gsc) vs file-first with opt-in keychain (gopkg) | **File-first** (`credentials.json`, 0600); keychain only when explicitly requested | Re-verified on this machine: `go-keyring` fails even with a live D-Bus session bus (`org.freedesktop.secrets was not provided by any .service files`), and a silent fallback means the secret lands in a different place depending on invisible environment state. |
 | 17 | Config dir on macOS: `os.UserConfigDir()` (gsc) vs `~/.config/pay` everywhere (gopkg) | **`~/.config/pay` on both Linux and macOS** | gsc's split between `DataDir()` and `Path()` puts config and cache in different trees on macOS; one guessable path is worth more to an agent than platform idiom. |
 | 18 | Skills: shell out to `npx skills add` (agentux considered it) vs native Go + `go:embed` | **Native, embedded, offline** — and, by **product-owner override**, the skill lives at the repository root in `skills/pay/`, not nested under `internal/` | The original decision refused a root `skills/` because `go:embed` cannot reach a *parent* directory, so a root copy would have meant a *second* copy that drifts. That reasoning is about the **copy**, not the location, and it is answered by making `skills/` itself a Go package (`skills/embed.go`, `//go:embed all:pay`): the embed reaches a *child*, `internal/skills` imports it, and there is still exactly one tree. What the move buys is the `skills` convention — `npx skills add https://github.com/KLIXPERT-io/pay-cli/skills --skill pay` resolves against a root `skills/` and nothing else — so non-Go agents get the skill without a PayCLI install. `skills/embed_test.go` enforces the invariant the old rule enforced by construction: the embed root **is** the on-disk directory, byte for byte, and the repository contains exactly one `SKILL.md`. |
@@ -73,6 +73,13 @@ disagreement is resolved here. Where a recommendation was discarded, the reason 
 | 38 | `pay explain` hard-truncating `collections[]` at 40 | **Never truncate the slug list**; truncate only per-collection detail, with an explicit order and real paging flags | Verified: at 49 collections in key-sorted order the entries past 40 are `payload-*`, **`posts`**, `redirects`, `search`, **`users`** — an agent asking "what can I do here?" would conclude blog posts do not exist. |
 | 39 | Self-update "fail closed only under `PAY_UPDATE_STRICT=1`" | **Three outcomes**: `verified` / `unverifiable` (warn, proceed) / `verification_failed` (**always abort**) | A signature that is present and mismatches is positive evidence of the exact attack the signing exists to stop; installing anyway is worse than not checking. |
 | 40 | Self-update applied in-process at the top of `main()` | **Implicit apply is always a detached child; the swap takes effect on the next invocation** | An in-process swap makes the running process report the new version while executing the old command surface, which is conflict 20's hazard in a subtler form, and `os.Rename` over a running `.exe` fails on Windows outright. |
+| 41 | Block knowledge on a site with introspection off and no project source: give up (`blocks_source: "unknown"`) vs learn from content | **The block census (§7.10c)**: blocks learned from real documents read at depth 0, every fact labelled `observed-census`, and an observation only ever **warns** | Payload 3.87 disables introspection in production by default and the app's source is not on the agent's machine, but a depth-0 REST read returns every key of every block row — the rows are a measured schema (§2.9). |
+| 42 | Writes and the census: build it on demand vs use it only when cached | **Writes never build the census** (§9.7); they use a cached one, overlay the pre-image they already hold, fold their echo back in, and otherwise emit one `blocks_unchecked` warning | A write — even a `--dry-run` — silently fanning out into hundreds of GETs is the more surprising behaviour; the catalog verbs an agent runs before writing build it anyway. |
+| 43 | A body carrying `_status: "published"` written with `--draft` | **`--draft` wins**: `_status` is stripped and `body_publishes` says so (§10.2.2) | Payload's `isSavingDraft` is false whenever the body says `published`, so every edited export of a published page would otherwise publish despite the flag the caller typed. |
+| 44 | A non-draft write to a published document that has a pending draft: silently re-route it into the draft vs refuse | **Refuse** (`invalid_args`, exit 5) until `--draft`, `--publish` or `--unpublish` states the outcome (§10.2.3) | Re-routing a write on invisible server state makes one command do two different things (conflict 21's nondeterminism); a refusal that names the three choices costs one re-run and never takes a live page offline. The re-routing variant was implemented during this release and removed before it shipped. |
+| 45 | Orphan `{}` rows after a nested block restructure on Postgres: delete + re-create vs an in-place remedy | **`--reset-nested`** — validation-free carrier phases that make the adapter clear the nested tables, then a restatement (§10.2.1) | Re-creating changes the document id and drops its version history; the carrier write is derived from the drizzle adapter's clearing rule (§10.2.1.1) and was verified on the stage document it was designed for. |
+| 46 | Writing back a document read with `--richtext md\|text` | **Refused** — `richtext_rendered` (exit 5), nothing sent (§9.12.8.3) | Payload stores a string in a richText field without an error (verified, §2.9); the admin editor can then no longer open the field. |
+| 47 | Automatic pre-write backups: on by default vs opt-in | **Off until a directory is configured** (`--backup-dir` / `PAY_BACKUP_DIR` / `backup_dir`); once configured, a backup that cannot be taken **aborts** the write (§12.8) | Writing document bodies into a directory nobody chose is a surprise; once the user opted in, a write without its backup breaks the promise — the same rule as §12.7's pre-audit record. |
 
 ---
 
@@ -207,6 +214,40 @@ Everything here was verified after the first draft, and is the evidence base for
 | Manifest decode cost (Go 1.22.2, `encoding/json`, §7.8-shaped structs, best of 5) | 49×20 = 1.02 MB → 9.05 ms · 49×40 = 2.03 MB → 18.4 ms · 150×200 = 31.0 MB → 282 ms · 150×500 = 77.6 MB → 714 ms |
 | Index-only decode cost (§8.2's split layout, same method) | 49 entries = 55.5 KB → **496 µs** · 150 = 170 KB → **1.44 ms** · 500 = 567 KB → **4.79 ms**; one 200-field shard = 210 KB → **1.81 ms** |
 
+### 2.9 Third-pass verification (agent-ergonomics release, 2026-09-28)
+
+Verified against **Payload 3.87.1** — the klixpert stage (Postgres, `NODE_ENV=production`,
+**read-only** except the one approved scratch page named in §10.2.1.2) and the local website-template
+instance at `localhost:3900` (Postgres, introspection on; only `paywt-*` test documents, all deleted
+afterwards) — and against the installed sources `payload`, `@payloadcms/drizzle`,
+`@payloadcms/db-postgres` and `@payloadcms/richtext-lexical` 3.87.1. This is the evidence base for
+§§7.10c, 9.11–9.17, 10.2.1–10.2.3 and 12.8.
+
+| Fact | Evidence |
+|---|---|
+| Introspection is **off by default in production** | `payload/dist/config/types.d.ts`: `graphQL.disableIntrospectionInProduction?: boolean` `@default true`; set in `config/defaults.js`; stage → `capabilities.graphql.mode = "introspection_disabled"`, `pay describe pages` lists 13 REST-observed fields, no block slug, no block schema |
+| A depth-0 REST read returns **every key of every block row, nulls included**, at every depth | stage `pay get pages 47 --draft --depth 0`: 26 blocks nested three deep (`layout[].blocks[].blocks`), each row carrying its full key set |
+| Slugs inferred from GraphQL interface names are wrong, and Payload drops the row silently | localhost with no project source: inferred `callToActionBlock`; `update pages 49 --set-json 'layout=[{"blockType":"callToActionBlock"},{"blockType":"cta"}]'` → 200, the echo holds only the `cta` row |
+| Payload pages list reads by offset `(page-1)*limit` | stage `find posts --limit 50 --page 2` = documents 51–100 of `--limit 100 --page 1`; a smaller last-page limit re-reads and skips documents |
+| An update-by-id merges the body into the **newest version** (the pending draft, if any) | `payload/dist/collections/operations/updateByID.js` l.79 `getLatestCollectionVersion`; globals `globals/operations/update.js` `getLatestGlobalVersion` |
+| A draft save never touches the main (stored) row | `collections/operations/utilities/update.js` l.253 `if (!isSavingDraft)` → `db.updateOne` |
+| `isSavingDraft = draftArg && drafts && data._status !== 'published'` | same file l.29 (globals `update.js` l.42); localhost page 47: `update --data-file <published export> --draft` published the page |
+| A plain save of a published page with a pending draft stores the **draft and its `_status: "draft"`** as the live row | localhost pages 63/67/68: stored row went `published` → `draft`, the site answered 404, no warning from the pre-release build |
+| Bulk update merges into the **stored** rows unless `?draft=true` | `collections/operations/update.js` l.100-127 (`db.find` vs `queryDrafts`); the admin's bulk Publish sends `?draft=true` (`@payloadcms/ui` `PublishMany`) |
+| Array/blocks rows merge **by id**; an id-less row is a new row whose unsent keys take their `defaultValue` | `fields/hooks/beforeChange/getExistingRowDoc.js`, `fields/hooks/beforeValidate/promise.js` (`getFallbackValue`); rows the body omits are not carried over |
+| The Postgres adapter clears a nested block table **only if the new document still reaches** a blocks field that accepts that type | `@payloadcms/drizzle/dist/upsertRow/index.js` l.516-525 (`blocksToDelete`, `DELETE WHERE _parentID = <doc id>`), `transform/write/traverseFields.js` l.130-134; rows read back grouped by `_path` → stale rows reappear as `{}` (§10.2.1.1) |
+| The orphan is real and survives a clean echo | stage page 71 (`paywt-orphan-test`, created for this, permanently deleted): bento→grid inside a group → echo clean, `pay get --draft` clean, `pay get` → `[{}, text A, {}, text B, {}]` |
+| `?unpublishAllLocales=true` skips validation on a non-draft update and updates the newest version in place (no per-locale status) | `utilities/update.js` l.154-157; localhost page 56: `layout: []` accepted with the switch, rejected without; version count unchanged |
+| A string in a richText field is **stored**, not rejected | `@payloadcms/richtext-lexical/dist/validate/index.js` walks nodes only when `value.root.children` exists; localhost `content: "## just a string"` draft → 201, read back as a string |
+| An editor state sent to a **text** field is stored as JSON text | localhost `meta.description` read back as `"{\"root\":{\"children\":…"` |
+| A global update answers `{"message", "result": {…}}` | localhost `POST /api/globals/header`; `payload.writeDoc` now unwraps `result` (before, every field was reported `input_silently_dropped`) |
+| `trash=true` returns trashed **and** live documents | localhost `crm-companies` |
+| A create ignores a body `id` | localhost `create crm-companies` with `"id":125` → id 127 |
+| Postgres version snapshots carry **different row ids** than the document | stage pages 47 versions 699 vs 687: a leaf diff reports 111 changes (almost all `layout[…].id`), a structural one 7 |
+| The website template's draft preview is a GET that sets a cookie and redirects | `src/app/(frontend)/next/preview/route.ts` in `~/payload-dummy`; localhost: never-published page → 404 without cookie; handshake `307` + `__prerender_bypass` (HttpOnly, Path=/, SameSite=Lax); with the cookie → 200 with the draft's title |
+| A link node with an empty URL fails validation on a non-draft write | localhost: `400 … link node failed to validate`; `richtext-lexical` `validate/validateNodes.js` + `validateUrlMinimal` |
+| An agent's non-interactive shell may not see `~/.local/bin` | the migration agent's shell: `~/.local/bin/pay` existed, PATH lacked the directory, `pay` = "command not found" |
+
 ---
 
 ## 3. Repository and package layout
@@ -221,7 +262,8 @@ pay-cli/
 ├── LICENSE                       # MIT
 ├── README.md  INSTALL.md  CHANGELOG.md
 ├── Makefile  .goreleaser.yaml  .golangci.yml  .editorconfig  .gitignore
-├── install.sh  install.ps1
+├── install.sh  install.ps1        # install.sh also prints the PATH advice of §18's binary_on_path
+├── scripts/arch-lint.sh          # the §3.1 greps; `make lint`
 ├── docs/
 │   ├── GROUNDING.md              # probed facts (input)
 │   └── ARCHITECTURE.md           # this file
@@ -245,43 +287,64 @@ pay-cli/
 │   ├── embed_test.go             # asserts the embedded tree IS this directory
 │   └── pay/                      SKILL.md
 │                                 references/{query-syntax,errors,recipes,gotchas}.md
-└── internal/
-    ├── buildinfo/      buildinfo.go  buildinfo_test.go
-    ├── apierr/         code.go  error.go  exit.go  payload.go  diagnose.go  *_test.go
-    ├── redact/         redact.go  url.go  headers.go  redact_test.go
-    ├── config/         paths.go  file.go  profile.go  resolve.go  project.go  interpolate.go
+└── internal/                     # every package also holds its *_test.go files
+    ├── buildinfo/      buildinfo.go
+    ├── apierr/         code.go  error.go  exit.go  payload.go  diagnose.go
+    ├── redact/         redact.go  headers.go
+    │                   url.go            # URL, and URLWithSecrets for literal secrets (§5.3, §9.16)
+    ├── fsatomic/       fsatomic.go  rename.go  read_other.go  read_windows.go   # §3.1 atomicWrite
+    ├── fetch/          fetch.go          # client-side download of `pay upload <URL>` (§13)
+    ├── config/         paths.go  file.go  profile.go  resolve.go  project.go  interpolate.go  pathjoin.go
     │                   projectscan.go    # reads package.json + scans block slugs (§7.10) — local FS only
-    │                   *_test.go
     ├── secret/         store.go  file.go  env.go  keyring.go  helper.go  chain.go  fingerprint.go
     │                   jwt.go            # JWT credential record: {token, exp}; never the password
-    │                   *_test.go
+    │                   preview.go        # §5.5 preview-secret chain (never the keychain)
     ├── payload/        client.go  transport.go  retry.go  errors.go  find.go  mutate.go  globals.go
     │                   versions.go  upload.go  auth.go  login.go  graphql.go  override.go
     │                   reactive.go       # WithReactiveInvalidation(ctx) — §8.4 Level-3 opt-in
-    │                   *_test.go
-    │   └── query/      json.go  brackets.go  dsl.go  operators.go  validate.go  *_test.go
+    │                   site.go           # §6.3 site requests: SiteGet, SameOrigin (no redirect follow)
+    │   └── query/      json.go  brackets.go  dsl.go  operators.go  validate.go
     ├── discovery/      manifest.go  index.go  shard.go  authboot.go  stage0.go  stage1.go  stage2.go
     │                   stage3.go  degrade.go  fieldkind.go  labels.go  idtype.go  locales.go
-    │                   blocks.go  provenance.go  fingerprint.go  *_test.go
+    │                   blocks.go  blockschema.go  provenance.go  fingerprint.go
+    │                   census.go  census_fetch.go  census_merge.go  census_validate.go   # §7.10c
+    │                   census_overlay.go  census_diff.go  census_secret.go
     ├── cache/          store.go  key.go  scope.go  ttl.go  gc.go  generation.go
-    │                   lock_unix.go  lock_windows.go  *_test.go
-    ├── output/         envelope.go  json.go  jsonl.go  table.go  csv.go  id.go  format.go  writer.go  *_test.go
-    ├── logging/        logging.go  logging_test.go
-    ├── audit/          audit.go  rotate.go  audit_test.go
-    ├── safety/         risk.go  confirm.go  dryrun.go  blastradius.go  *_test.go
-    ├── skills/         embed.go  install.go  manifest.go  project.go  *_test.go
+    │                   census.go  census_json.go         # census.json: verified read, locked RMW (§7.10c)
+    │                   lock_unix.go  lock_windows.go
+    ├── rows/           rows.go           # selectors, move/copy/remove/set, StripIDs (§9.11)
+    │                   path.go           # the nested --field path grammar and resolution (§9.11.3)
+    │                   outline.go        # DocTree: every row array of a document (§9.13)
+    ├── lexical/        doc.go  nodes.go  mdblock.go  mdinline.go  frommd.go  tomd.go
+    │                   plaintext.go  placeholder.go  testdata/{golden,md,fuzz}/     # §9.12 — pure
+    ├── docdiff/        docdiff.go  patch.go  path.go  richtext.go                   # §9.14.5 — pure
+    ├── orphans/        orphans.go                                                   # §10.2.1.8 — pure
+    ├── manifest/       manifest.go  ref.go  order.go     # §9.15 — reads manifest files; no HTTP
+    ├── backup/         backup.go                         # §12.8 on-disk format only; no HTTP
+    ├── output/         envelope.go  json.go  jsonl.go  table.go  csv.go  id.go  format.go  writer.go
+    ├── logging/        logging.go
+    ├── audit/          audit.go  rotate.go
+    ├── safety/         risk.go  confirm.go  dryrun.go  blastradius.go
+    ├── skills/         embed.go  install.go  manifest.go  project.go
     │                   # installer only: the bytes come from the root skills package
     ├── update/         update.go  state.go  detach.go  managed.go  verify.go
-    │                   lock_unix.go  lock_windows.go  platform_unix.go  platform_windows.go  *_test.go
+    │                   lock_unix.go  lock_windows.go  platform_unix.go  platform_windows.go
     ├── payloadtest/    server.go  fixture.go  golden.go  clock.go      # imported only by _test.go
-    └── cli/            app.go  root.go  help.go  complete.go
-                        auth.go  profile.go  config.go  whoami.go  access.go  can.go  doctor.go
+    └── cli/            app.go  root.go  help.go  local.go  opmemo.go
+                        complete.go  complete_blocks.go  completion.go
+                        auth.go  auth_preview.go  profile.go  config.go  whoami.go  access.go  can.go
+                        doctor.go  doctor_census.go  doctor_site.go
                         discover.go  explain.go  collections.go  describe.go
                         find.go  get.go  count.go  create.go  update.go  delete.go  restore.go
-                        duplicate.go  publish.go
-                        upload.go  download.go  globals.go  versions.go
-                        raw.go  cache.go  skills.go  selfupdate.go  completion.go  version.go  audit.go
-                        *_test.go
+                        duplicate.go  publish.go  upload.go  download.go  globals.go  versions.go
+                        pipeline.go  blocks.go  blocks_path.go  apply.go        # §9.11
+                        blocks_catalog.go  blocks_census.go                     # §7.10c
+                        lexical.go  richtext.go  outline.go  diff.go            # §9.12–§9.14
+                        refs.go  upsert.go  plan.go  sync.go                    # §9.15
+                        docresolve.go  url.go  url_preview.go                   # §9.16, §9.17
+                        orphans.go  reset_nested.go  pubguard.go                # §10.2.1–§10.2.3
+                        backup.go  backups.go                                   # §12.8
+                        raw.go  cache.go  skills.go  selfupdate.go  version.go  audit.go
 ```
 
 ### 3.1 Architectural rules (CI-enforced)
@@ -301,6 +364,18 @@ pay-cli/
   `http.Request` construction outside `internal/payload/transport.go` (so `Accept-Language` and the
   `Authorization` redaction rule cannot be bypassed); (d) any `fmt`/`log` call that takes a
   `*http.Request`'s `Header` map as an argument.
+* **Pure packages.** `internal/lexical`, `internal/docdiff`, `internal/orphans` and `internal/rows`
+  perform no I/O, read no clock or environment and import nothing from `internal/cli`, cobra or
+  `internal/payload`; `internal/docdiff` and `internal/orphans` import only `internal/lexical`.
+  `internal/manifest` (reads manifest files) and `internal/backup` (reads and writes backup files
+  through `fsatomic`) may touch the filesystem but never HTTP and never `internal/cli`. These are
+  held by the import graph (`go list -f '{{.Imports}}'`) and review; `arch-lint.sh` does not grep
+  for them. They are what make the diff, orphan and Markdown logic table-testable against recorded
+  documents.
+* Every new durable file of this release — backup files (§12.8), the preview cookie file (§9.16),
+  the saved `--reset-nested` restatement (§10.2.1.5), `pay lexical … -o FILE`, `census.json` — is
+  written through `fsatomic`, so the atomic-write rule above covers them. Site requests (§6.3) are
+  built in `internal/payload/transport.go` like every other request, so rule (c) still holds.
 * **Repo-wide secret assertion:** a test walks every byte of `testdata/golden/*.{out,err}` and every
   line every test writes to the audit log or a log sink, and fails if it contains the fixture key
   string (`PAY_TEST_API_KEY`'s value, or the fixture literal `paycli-dev-key-…`). This is the test
@@ -321,6 +396,10 @@ github.com/zalando/go-keyring   v0.2.8    OPT-IN keychain only (pure Go, +2 indi
 ```
 
 Test-only: `github.com/google/go-cmp v0.7.0`.
+
+The agent-ergonomics release adds **no dependency**: the Markdown parser and renderer of §9.12 are
+~1.5k lines of stdlib Go (`html.UnescapeString` resolves entities), and the structural diff (§9.14),
+the orphan analysis (§10.2.1) and the manifest planner (§9.15) are plain Go over decoded JSON.
 Dev tools via go.mod `tool` directives (`go tool staticcheck`, `go tool goimports`).
 
 **Rejected:** `viper` (untestable precedence), `go-retryablehttp`/`resty` (Payload-specific
@@ -349,7 +428,10 @@ One source of truth, `internal/config/paths.go`. `$PAY_HOME` overrides all three
 | state | `$PAY_STATE_DIR` → `$XDG_STATE_HOME/pay` → `~/.local/state/pay` | `%LocalAppData%\pay\state` |
 
 Files: `config.toml` (0600), `credentials.json` (0600), `audit.log` (0600) in config dir;
-`v1/<scope>/…` in cache dir; `update-state.json` in state dir. All directories 0700.
+`v1/<scope>/…` (including `census.json`, §7.10c) in cache dir; `update-state.json`,
+`preview/<profile>.cookies.json` (§9.16) and `reset-nested/<profile>/…json` (§10.2.1.5) in state
+dir. All directories 0700. The backup directory (§12.8) is **not** one of these: it exists only when
+the user names one, and `pay config paths` reports it as `backup_dir` (`""` when off).
 
 `rm -rf $(pay cache path)` must never break the CLI, only slow it down.
 `pay config paths --output json` prints all of them so an agent never guesses.
@@ -359,6 +441,8 @@ Files: `config.toml` (0600), `credentials.json` (0600), `audit.log` (0600) in co
 ```toml
 version = 1
 default_profile = "local"
+# backup_dir    = "~/pay-backups"  # §12.8. TOP-LEVEL key (profiles are sub-directories of it);
+#                                  # a relative value is anchored at the directory of THIS file
 
 [defaults]
 output        = "json"     # json | jsonl | table | csv | id | raw
@@ -373,6 +457,7 @@ accept_language = "en"     # §6 — load-bearing, see §21 A11
 max_bulk      = 100        # default for --max-docs: blast-radius cap on bulk WRITES only.
                            # --limit is page size and is an error on a bulk-write verb (§12.3).
 confirm_writes = false     # true => even L1 single-doc writes prompt
+census_max_docs = 500      # §7.10c: documents the block census reads per collection (negative rejected)
 
 [cache]
 dir            = ""        # "" = default
@@ -412,6 +497,13 @@ blocks           = {}              # optional manual blockType map, see §9.7
 # echo_check_ignore = ["slug", "email"]   # paths this project's hooks rewrite (§10.2)
 # custom_endpoints  = []
 
+# --- Frontend URLs and draft preview (§9.16). All optional.
+# site_url           = "https://www.example.com"   # default: base_url's ORIGIN (source "derived:base_url")
+# preview_path       = "/next/preview?path={path}&previewSecret={secret}"   # the website template's route (default)
+# preview_secret_env = "PREVIEW_SECRET"            # the NAME of an env var holding the preview secret
+# [profiles.local.url_paths]
+# posts = "/posts/{slug}"                          # collection -> path template (§9.16.2)
+
 [profiles.staging]
 base_url        = "https://staging.example.com"
 api_path        = "/api"
@@ -445,6 +537,20 @@ redaction cannot see a credential embedded in a URL string.
 
 The key `api_key` is **not a valid field anywhere in config.toml**; its presence is a hard error
 (`config_secret_in_plaintext`). `base_url` containing userinfo is on the same arch-lint list.
+**`preview_secret` is forbidden the same way, at any depth of any config file**
+(`config_secret_in_plaintext`, exit 9, hint
+`printf %s "$PREVIEW_SECRET" | pay auth preview-secret --stdin` or `preview_secret_env`).
+
+**Site keys (§9.16).** `site_url` must be absolute http(s); userinfo, a query or a fragment is
+`invalid_option` (exit 5); a base path is allowed (Next.js `basePath`). Every `url_paths` template
+and `preview_path` must start with `/` (`invalid_option`, with a runnable `pay config set` hint).
+`url_paths` merges per collection across layers (project wins per key, like `blocks`).
+`preview_secret_env` holds an env-var **name**; it is on redaction's non-secret allowlist (next to
+`token_exp`) so `pay config explain` can show it. `pay config explain` reports `site_url`,
+`url_paths`, `preview_path`, `preview_secret_env`, `census_max_docs`, `backup_dir` and `no_backup`.
+
+**`census_max_docs`** (`[defaults]`, int, default 500, negative rejected) bounds the block census
+(§7.10c); `PAY_CENSUS_MAX_DOCS` and the catalog verbs' `--census-max-docs N` override it.
 
 ### 4.3 Project config
 
@@ -480,6 +586,15 @@ emits the identical value for a fixed input.
 The raw key and the raw token never appear in a cache key, a log line, an audit record, or any output.
 A password is **never** stored: `pay auth login --jwt` keeps only the minted token and its expiry.
 
+A profile record may also carry **`"preview_secret": "…"`** (§5.5), written by
+`pay auth preview-secret --stdin`. It is independent of the API credential:
+`pay auth login` carries an existing preview secret over, `pay auth preview-secret --clear` touches
+only that field, clearing the last credential of a record removes the record, `pay auth logout`
+removes it with the record and `pay auth rename` moves it. A record holding **only** a preview secret
+is not an API credential: §5.1's chain skips it (auth stays anonymous), `pay auth status` reports
+`authenticated: false` and `pay auth list` shows `credential: "none"`. The OS keychain is never used
+for the preview secret.
+
 ### 4.5 Precedence
 
 Two independent chains, both implemented in the pure `Resolve`.
@@ -498,6 +613,23 @@ An env var that is **set but empty counts as unset** (`os.LookupEnv` then skip e
 `pay config explain --output json` prints, for every effective setting,
 `{"value": …, "source": "flag|env:PAY_X|project:/abs/pay.toml|user:/abs/config.toml|default"}`.
 
+Three settings of this release resolve through their own chains, stated here so the general rule is
+not misapplied:
+
+* **`backup_dir`** (top-level, never per profile): `--backup-dir` → `PAY_BACKUP_DIR` →
+  `./pay.toml backup_dir` → `config.toml backup_dir` → off. A relative value is anchored **where it
+  was written**: a config-file value at the directory of that file (a committed
+  `backup_dir = ".pay-backups"` means "next to pay.toml" from any sub-directory), a flag or env value
+  at the working directory; a leading `~/` expands to `$HOME` (`%USERPROFILE%`). `Resolve` stays pure:
+  the working directory arrives as `Input.WorkDir` (from `App.WorkDir`), never from `os.Getwd`.
+  `--no-backup` / `PAY_NO_BACKUP=1` (flag beats env) disables writing for one invocation without
+  forgetting the directory. `pay config set backup_dir <relative>` writes the **user** config, where a
+  relative value would anchor at the config directory, so it stores `<working directory>/<value>` and
+  warns `config_path_anchored` (hint: put it in `./pay.toml` instead).
+* **`site_url`**: `PAY_SITE_URL` → project profile → user profile → derived from `base_url`'s origin
+  (source `derived:base_url`). No flag.
+* **the preview secret**: §5.5.
+
 ### 4.6 Environment variables
 
 ```
@@ -505,15 +637,20 @@ PAY_PROFILE  PAY_BASE_URL  PAY_API_PATH  PAY_GRAPHQL_PATH  PAY_GRAPHQL_ROUTE  PA
 PAY_AUTH_MODE                # auto|api-key|jwt|anonymous
 PAY_API_KEY  PAY_API_KEY_<PROFILE_UPPER_SNAKE>  PAY_JWT  PAY_JWT_<PROFILE_UPPER_SNAKE>
 PAY_HOME  PAY_CONFIG  PAY_CONFIG_DIR  PAY_CACHE_DIR  PAY_STATE_DIR
-PAY_OUTPUT  PAY_HUMAN  PAY_ERRORS_TO  PAY_NO_COLOR  NO_COLOR
+PAY_OUTPUT  PAY_ERRORS_TO
 PAY_DEPTH  PAY_LIMIT  PAY_MAX_DOCS  PAY_TIMEOUT  PAY_DEADLINE  PAY_MAX_RETRIES  PAY_CONCURRENCY
 PAY_NO_CACHE  PAY_CACHE_TTL  PAY_REFRESH
 PAY_LOG_LEVEL  PAY_LOG_FORMAT  PAY_VERBOSE  PAY_QUIET
 PAY_NO_REDACT  PAY_INSECURE_SKIP_VERIFY  PAY_KEYRING (auto|off|force)
-PAY_NO_AUDIT  PAY_NO_UPDATE  PAY_NO_UPDATE_NOTICE  PAY_UPDATE_URL  PAY_UPDATE_STRICT
+PAY_NO_AUDIT  PAY_NO_UPDATE  PAY_UPDATE_URL  PAY_UPDATE_STRICT
 PAY_YES                     # equivalent to --yes; for non-interactive automation
+PAY_BACKUP_DIR  PAY_NO_BACKUP                              # §12.8 automatic pre-write backups
+PAY_CENSUS_MAX_DOCS                                        # §7.10c block census document cap
+PAY_SITE_URL  PAY_PREVIEW_SECRET  PAY_PREVIEW_SECRET_<PROFILE_UPPER_SNAKE>   # §9.16, §5.5
 PAY_TEST_BASE_URL  PAY_TEST_API_KEY   # live tests only
 ```
+
+The variable named by a profile's `preview_secret_env` (e.g. `PREVIEW_SECRET`) is read too (§5.5).
 
 ---
 
@@ -621,7 +758,9 @@ fallback path. `PAY_KEYRING=off` never touches dbus/wincred at all.
 
 * `internal/redact` scrubs `apiKey`, `apiKeyIndex`, `hash`, `salt`, `password`, `sessions`,
   `resetPasswordToken`, `resetPasswordExpiration`, and any key matching `(?i)token|secret` from **all**
-  output, logs, audit records and cache writes. Disabled only by `--no-redact`.
+  output, logs, audit records and cache writes. Disabled only by `--no-redact`. A `null` under such
+  a key is left as `null`: it hides nothing, and masking it turned null into the string `"<redacted>"`
+  in every document a get → edit → write loop sent back (write bodies handle masks, §9.15.2).
   Required because `GET /api/{auth}/me` returns the API key in plaintext (verified).
 * **Header names are matched too**, which the value-key list above does not cover:
   `redact.Header(name)` returns true for
@@ -651,6 +790,23 @@ fallback path. `PAY_KEYRING=off` never touches dbus/wincred at all.
   key_fingerprint, key_source, token_exp, authenticated}` and never the key or the token.
 * `credentials.json` is in the `.gitignore` template; `pay auth login` warns if the detected project
   root's `.gitignore` does not cover the agent skill directory.
+* **Literal secrets in URLs.** `redact.URLWithSecrets(raw, secrets)` replaces each literal (≥ 8
+  chars), and its `QueryEscape`/`PathEscape` forms, with `<redacted>`, then applies `redact.URL`.
+  The structural rule already masks `?previewSecret=…` (the name contains "secret"); the literal pass
+  covers a custom `preview_path` that puts the secret in a path segment or under an innocuous
+  parameter name. `payload.Request.Secrets` carries the literals, and the transport's shown URL is
+  the only form that reaches `Response.URL`, `error.http.url`, a transport error and every `-v` debug
+  line. `Runtime.PreviewSecret()` adds the resolved value to the logger/audit literal scrubber.
+* **Envelope keys never contain `secret`/`token` unless the value is meant to be masked** — the
+  structural rule would mask the whole value. The preview fields are therefore named `key_source`,
+  `key_fingerprint`, `preview_key_source`, `preview_profile_env_var`. Error messages and hints are
+  text-scrubbed (`name=value` around "secret"), so no message quotes `previewSecret={secret}`.
+* **A structural diff masks by path**, because the key-based pass cannot see a secret whose name is
+  only in `path` while its value sits under `from`/`to`: `pay diff`, `pay versions diff` and every
+  dry-run `data.diff` mask `from`/`to` of a change whose path ends in a `redact.Key` and raise
+  `data_redacted` naming the paths (§9.14.6).
+* **Backups and the census use narrower rule sets on purpose** — a masked value can never be
+  restored, and the census is keyed by schema names, not by values. §12.8.4 and §7.10c state them.
 
 ### 5.4 Verification
 
@@ -676,6 +832,27 @@ auth collection on the project has `useAPIKey`, `pay doctor` and every `auth_mis
 `auth_invalid` hint print the **JWT** command
 (`pay auth login --jwt --email you@example.com --password-stdin`) rather than
 `pay auth login --api-key`, because the latter can never succeed there.
+
+### 5.5 The preview secret
+
+`pay url --preview` (§9.16) needs the site's draft-preview secret (the website template's
+`PREVIEW_SECRET`). `secret.ResolvePreviewSecret`, first hit wins, set-but-empty counts as unset:
+
+1. `$PAY_PREVIEW_SECRET_<PROFILE_UPPER_SNAKE>`
+2. `$PAY_PREVIEW_SECRET`
+3. the variable named by the profile's `preview_secret_env`
+4. `credentials.json` → the profile's `preview_secret` (§4.4)
+
+Sources are reported as `env:PAY_PREVIEW_SECRET`, `env:PREVIEW_SECRET`,
+`file:credentials.json (preview_secret)`; the fingerprint is §4.4's formula (unkeyed on purpose, so
+`pay auth preview-secret` and `pay doctor` fingerprints compare across machines). Nothing resolved is
+not an error in itself; it becomes `preview_secret_missing` (exit 9) only for `pay url --preview`
+with a `preview_path` containing `{secret}`, raised **before any request**.
+
+`pay auth preview-secret` reports `{profile, configured, source, fingerprint, env_vars,
+profile_env_var, credentials_file}`; `--stdin` stores one line in `credentials.json` (0600) and warns
+`preview_secret_shadowed` when an env var still wins over it; `--clear` removes only the stored copy;
+`--stdin --clear` is `invalid_args`. The value is never printed (tested).
 
 ---
 
@@ -785,6 +962,27 @@ returned 10 docs):
 * The override path is **never** used for `PATCH` or `DELETE`. Bulk writes that exceed the URL budget
   are split into multiple smaller id-scoped requests instead. A silently-unscoped bulk delete is not
   a risk worth taking for a convenience.
+
+### 6.3 Site requests (the frontend, not the API)
+
+`pay url --preview` (§9.16) GETs a route of the **website**, not of `/api`. `payload.Request` gains:
+
+* `URL string` — an absolute URL replacing `base_url + api_path + Path`.
+* `NoRedirect bool` — the transport returns the 3xx as is. Implemented as a context value checked
+  first in the single `CheckRedirect` (`http.ErrUseLastResponse`), so the one-client/one-pool rule
+  holds.
+* `Secrets []string` — literals to scrub from every shown URL (§5.3).
+
+**Credentials never cross an origin.** When `Request.URL`'s scheme://host[:port] differs from
+`base_url`'s (`payload.SameOrigin`, default ports normalised), the transport sends neither the
+`Authorization` header nor the profile's `[profiles.X.headers]`. Same origin — the Payload 3 norm, one
+Next.js app — sends both, which the website template's route needs (`payload.auth({headers})`).
+
+`Client.SiteGet(ctx, SiteRequest{URL, Secrets})` → `SiteResult{Status, Location (scrubbed), Cookies,
+CrossOrigin, BodyExcerpt (≤200 chars, scrubbed), HTTP}`: a GET, never follows a redirect, never
+promoted to a method-override POST (a secret-bearing URL must not move into a body), normal §6.1 retry
+for a read. It **never classifies the status**: a Next.js route handler's 403 is not Payload's
+`access_denied`; the caller maps it (§9.16.3).
 
 ---
 
@@ -1033,8 +1231,8 @@ The probe **must contain a field literally named `__type`**. Payload's introspec
 validation rule that reports an error only when the query AST contains `__schema` or `__type`, and
 only under `NODE_ENV=production` (verified, `@payloadcms/graphql/dist/index.js`). The original
 `{__typename}` probe contains neither, so against the exact deployment the guard targets — a
-production build with `graphQL.disableIntrospectionInProduction: true`, a documented hardening
-option — it returns a happy 200 and PayCLI would record `mode: "ok"`, then watch Stages 1 and 2 both
+production build with `graphQL.disableIntrospectionInProduction: true` — Payload 3.87's
+**default** (§2.9), not merely a hardening option — it returns a happy 200 and PayCLI would record `mode: "ok"`, then watch Stages 1 and 2 both
 come back 200-with-`errors[]`.
 
 | Signal | Mode | Consequence |
@@ -1120,7 +1318,7 @@ Holes are **declared, never guessed**, via `manifest.limitations[]` with stable 
 |---|---|---|
 | `FIELDS_UNAVAILABLE` | collection has zero documents and no GraphQL (10 of 49 live collections) | try `GET /{slug}/versions?limit=1`; or `--deep --allow-write-probes` |
 | `SELECT_OPTIONS_UNAVAILABLE` | enum options not enumerable over REST | `options_source: "observed"` from a `limit=200&select[f]=true` sample |
-| `BLOCK_SLUGS_UNKNOWN` | the GraphQL union names are `interfaceName`s, not `blockType` slugs | resolve from project source (§7.10), sample documents, or the profile's `blocks` map |
+| `BLOCK_SLUGS_UNKNOWN` | the GraphQL union names are `interfaceName`s, not `blockType` slugs | resolve from project source (§7.10), the block census (§7.10c: `census-matched`), or the profile's `blocks` map |
 | `CUSTOM_ENDPOINTS_NOT_ENUMERABLE` | `config.endpoints` is not introspectable | profile `custom_endpoints`, or `pay raw` |
 | `SORTABILITY_HEURISTIC` | sortability inferred, not measured | `pay discover --deep --verify-sort` runs the asc/desc differential probe |
 | `LOCALIZATION_UNKNOWN` | whether the project is localised at all is not detectable over REST with certainty (`locale` is accepted and ignored when it is not) | `?locale=all` differential heuristic (§7.9b); until then no locale parameters are sent |
@@ -1130,7 +1328,7 @@ Holes are **declared, never guessed**, via `manifest.limitations[]` with stable 
 | `LABELS_UNAVAILABLE` | probe 8's message did not match the English pattern (translated or custom) | `labels.source: "derived"` from the slug; nothing else depends on labels |
 | `LOCALES_UNKNOWN` | localisation is enabled but the true locale codes could not be enumerated (§7.9) | `--locale` is passed through unvalidated with `locale_unverified`; pin `locales` in the profile |
 | `LOCALIZATION_PER_FIELD_UNKNOWN` | per-field `localized` is not introspectable over REST **or** GraphQL | `fields[].localized: null`; §10.2's echo-diff skips those fields |
-| `BLOCK_SLUGS_UNKNOWN_NO_SOURCE` | block slugs unresolvable from the API **and** no project source found (§7.10) | the collection is marked `publishable: false` with that reason |
+| `BLOCK_SLUGS_UNKNOWN_NO_SOURCE` | block slugs unresolvable from the API **and** no project source found (§7.10) | the collection is marked `publishable: false` with that reason; the block census (§7.10c) learns the slugs from real documents as `observed-census` facts (they inform, never gate) |
 | `AUTH_CANDIDATES_TRUNCATED` | Stage -1 could only see the anonymous slug list | pass `--auth-collection <slug>` |
 | `HOOK_MUTATION_UNKNOWN` | `beforeChange`/`beforeValidate` hooks are not introspectable | `fields[].hook_mutated` is `"unknown"` until observed; profile `echo_check_ignore` |
 | `PAYLOAD_VERSION_UNKNOWN` | no endpoint or header carries it and no `package.json` was found (§7.11) | version-gated hints use their unconditional wording |
@@ -1400,6 +1598,11 @@ eval**. Matches are recorded as `blocks: ["cta","content","mediaBlock",…]`,
 Resolution order for a collection's block field: profile `blocks` map (`"configured"`) → project
 source (`"project-source"`) → observed `blockType` values in sample documents (`"observed"`) →
 `blocks: null`, `blocks_source: "unknown"`, limitation `BLOCK_SLUGS_UNKNOWN_NO_SOURCE`.
+That is what **discovery** records in the shard. Every consumer that needs block knowledge then
+merges the shard with the block census (§7.10c, `BlockKnowledge`): a slug inferred from an interface
+name that no document carries is joined to the observed slug it names (`census-matched`), observed
+slugs no declared source names are added as `observed-census`, and the verbatim text below is
+printed only when the census has nothing either.
 
 **When unresolved, say so in plain words and stop pointing at empty sources.** The collection's index
 entry gets `publishable: false` with
@@ -1558,6 +1761,261 @@ fixed 26-key field entry is unchanged.
 a plugin-provided collection such as `forms`, whose config lives in node_modules). Collapsing the
 middle case into the last would turn a project's deliberate silence into a PayCLI failure.
 
+### 7.10c The block census — blocks learned from the live site
+
+§7.10 answers *which* blockTypes a field accepts and §7.10a *what is inside* one, but both need
+GraphQL introspection or the project's source on disk, and neither is dependable (§2.9):
+
+* **Introspection is off by default in production.** Payload 3.87.1 declares
+  `graphQL.disableIntrospectionInProduction` `@default true`, and `NoProductionIntrospection`
+  rejects every `__schema`/`__type` field while `NODE_ENV === 'production'`
+  (`GraphQL introspection is not allowed, but the query contained __schema or __type`). On the
+  klixpert stage discovery is therefore REST-observed: `pay describe pages` lists 13 fields, `layout`
+  is `payload_type: "unknown"` (it was `[]` in the three sampled documents), and no block slug or block
+  schema is published.
+* **The app's source is not on the machine running PayCLI** in general (§7.10's scan finds nothing).
+* **Even with introspection on, slugs can be wrong.** Without project source, §7.10 infers
+  `callToActionBlock` from the union member while the real slug is `cta`, and Payload drops the row
+  with a 200 (§2.9).
+
+Real documents are always available, and a depth-0 REST read returns **every key of every block row,
+nulls included** — the rows *are* a schema, measured rather than declared. The census reads them.
+
+#### 7.10c.1 What is read
+
+`CensusTargets(manifest, shards, only)` chooses the entities:
+
+* An entity with a **GraphQL-sourced** shard is read only if some field is `payload_type: blocks`;
+  `select` is narrowed to those fields' top-level roots.
+* Any other entity (REST-observed shard, or none) is read with `select` narrowed to the top-level
+  fields that could hold a blocks array — `blocks`/`array`/`group`/`unknown` kinds and anything whose
+  JSON type is array/object/unknown, except rich text, relationships and join fields. An entity with no
+  such field is skipped unless named explicitly.
+* Internal collections, `access-denied` entities and endpoint-disabled collections are skipped unless
+  named. Globals are read whole (one document; `select` saves nothing).
+
+Per entity: `GET /{slug}?depth=0&draft=true&limit=100&page=N&select[…]=true` (`draft` omitted when the
+entity is known to have no drafts), up to `max_docs` documents (default **500**;
+`[defaults] census_max_docs`, `PAY_CENSUS_MAX_DOCS`, `--census-max-docs N`).
+
+* **Paging** uses one `limit` for every page of an entity (100, or `max_docs` when smaller), because
+  Payload's offset is `(page-1)*limit` (§2.9); the budget is enforced by consuming only as many
+  documents of a page as it has left, and a document is counted once by id.
+* **Early stop.** After a full page (100 documents) of the NEWEST documents (Payload's default order)
+  without a single block row, the census reads ONE more page from the other end (`sort=id`) before
+  concluding anything — a migration that creates empty stub pages first makes the newest page of a
+  blocks collection blockless (stage: pages 52–69, the 17 newest, had empty layouts). If that page has
+  block rows too the read continues; otherwise it stops (`stopped_early: true` only when documents
+  remain unread). Stage `media` (848 docs) costs 2 requests.
+* **Relationship probe.** Up to **6** documents are re-read at depth 1, chosen greedily to cover every
+  (blockType, field) holding an id-like value (integer, ObjectID, UUID) at least once. A value that
+  became an object with `id` is a `relationship`, and an `upload` when it has `filename`/`mimeType`
+  (`kind_source: "observed-depth-1"`).
+* Entities are read ≤ 4 at a time. A failing entity is kept with `error` set, never fails the run,
+  and the previous good census of that entity is kept instead of the failure.
+
+Measured on stage: `pages` (41 docs, 487 block rows, 37 types) costs **7 requests** (1 list + 6
+depth-1); answering from the cache costs **0** (`meta.http_requests: 0`).
+
+#### 7.10c.2 What is recorded — `$CACHE/v1/<scope>/census.json`
+
+```
+census_version, scope, cli_version, updated_at,
+collections|globals: { <slug>: {
+  slug, kind, built_at, draft, select[], docs_scanned, total_docs, truncated, stopped_early,
+  max_docs, requests, relation_probe (ok|none|failed|skipped), error, block_rows, folded_docs?,
+  doc_keys[] (ids the read counted; "_global" for a global), folded_keys[]? (ids folded in since),
+  paths: { <pattern>: {path, parent, parent_types{type:n}, field, types{type:n}, rows, docs,
+                       empty_rows, untyped_rows} },
+  types: { <blockType>: {slug, count, docs, used_in{pattern:n},
+           fields: { <key>: CensusField },
+           instances: [ {kind, slug, id, path, score} ] } } } }
+
+CensusField = {kind, kind_source, types{json-type:n}, present, non_null, non_empty,
+               values[{value,count}], distinct, distinct_capped, enum_like,
+               accepts{type:n} (nested blocks), items (array/blocks rows),
+               fields{…} (group keys / array-row keys),
+               optional? (a fold of an already counted document held it empty: never likely)}
+```
+
+* **Path patterns** erase indices: `layout`, `layout[].blocks`, `layout[].blocks[].blocks`,
+  `layout[].blocks[].columns[].blocks`. Each nested pattern records `parent_types`, so a parent-scoped
+  `group.blocks` is answerable from `types.group.fields.blocks.accepts`.
+* `kind` ∈ `blocks | array | richText | group | relationship | upload | list | scalar | unknown`; the
+  most informative observation wins (one filled blocks array outweighs any number of `[]`). Rich-text
+  internals are never walked. `id` and `blockType` are never profiled; `blockName` is.
+* **Values:** ≤ 12 per field, strings ≤ 120 chars, ≤ 64 distinct counted before `distinct_capped`.
+  For a field that is not enum-like only **repeated** values are kept — a value seen once is content,
+  not vocabulary. Booleans keep their values (for defaults).
+* **`enum_like`** is deliberately conservative (a false enum turns every new value into a warning):
+  scalar, ≥ 4 non-null observations, **2..12** distinct values, distinct × 2 ≤ non-null, not boolean,
+  **never a number** (Payload stores select values as strings; the form builder's `width` is a
+  number that merely happens to be 50 or 100), and every value an identifier — token-like (≤ 40 chars,
+  no whitespace) and **not link-like** (`LinkLikeValue`: a leading `/`, `./`, `../`, `#` or `?`; `://`;
+  `@`, `(`, `)`; a URI scheme; a trailing file extension or domain). A ratio such as `1/1` or `50%`
+  stays an identifier. The check is re-applied when a census is **used** (`CensusField.IsVocabulary`),
+  so a census written by an older build cannot keep producing false findings.
+* **Instances:** the 8 most complete rows (score = non-empty keys), as references only.
+* **§8.3 rule 4 still holds.** The census is an aggregate — counts, JSON types, short repeated scalars
+  and document references. It stores no document; `pay blocks example` fetches the referenced rows
+  live. Class `block_census`: fresh 24 h, hard max 7 d, persistable (§8.5). Size on stage: 315 KB
+  pretty-printed for 28 entities.
+* **Read-modify-write under the scope lock** (`Store.UpdateCensus`): the entities this invocation read
+  are merged into the census as it is on disk at that moment (per entity, the newer `built_at` wins),
+  because agents run tools in parallel (stage: `learn ctas & learn forms & learn pages` kept only
+  `pages` in 3 of 3 runs before; all three now). `--refresh` replaces the whole file. Verified on
+  read (`census_version`, `scope`); anything else is a miss plus `cache_unreadable`. Removed with the
+  scope by `pay cache clear` and GC. `census.json` is not part of the discovery set (not
+  generation-bound, §8.2).
+* **Census-shaped redaction.** The file is written through `censusJSON`, not the document-shaped
+  `redact.JSON`: the census keys its maps by schema **names** (field names, slugs, patterns), and key
+  redaction turned the profile of a field named `hash`, `csrfToken` or `clientSecret` into a string,
+  after which the file no longer decoded. Under a secret-looking key an object keeps its structure and
+  loses only its `values`, a string is masked, counts are kept; any JWT-shaped string is masked. The
+  builder never samples scalar values of a field whose name matches `redact.Key`. A census whose
+  header matches but whose body does not decode is a miss **plus** `cache_unreadable` (hint
+  `pay blocks learn`), never a silent miss.
+
+#### 7.10c.3 Merging with declared facts — `BlockKnowledge`
+
+Every fact keeps the list of sources that support it. For a top-level blocks field:
+
+1. The shard's declared answer (`block_fields[path]`, or the legacy `blocks`/`blocks_source` pair).
+2. Each declared slug a document carries gains `observed-census`.
+3. **Census matching:** a slug inferred from a GraphQL interface name that no document carries is
+   joined to an observed slug the declared list lacks when exactly one matches by name — equal, equal
+   without the `Block` suffix, or the interface's initials (`CallToAction` → `cta`). The joined slug is
+   labelled `census-matched` and reaches the union member's §7.10a block schema. A mere prefix is never
+   a match (`text` ≠ `Textarea`).
+4. Observed slugs no declared source names are added with `observed-census` only.
+
+`authoritative: true` — the only state in which "not in the list" is an **error** — requires a profile
+pin, **or** a project-source list with no unresolved member, **or** a GraphQL union whose every member
+resolved to a confirmed slug (project source, observation or census match) with no observed extra.
+Nested patterns are always observation (GraphQL never reaches a nested union), so never authoritative.
+Verified on localhost: `layout` → `archive, content, cta` (`census-matched`), `formBlock, mediaBlock`
+(`inferred-from-interface-name` + `observed-census`), `authoritative: true`.
+
+**A slug is not globally unique.** The form builder's `text` field block and a page's `text` content
+block share a slug and nothing else (stage: `forms` and `pages`). Type statistics therefore come from
+the entity's own rows; another entity's rows of the same slug are merged only when ≥ 80 % of the union
+of their keys is shared (`CompatibleTypes`), and a cross-entity answer that drops an incompatible
+shape warns `block_type_shapes_differ`. Validation uses another entity's statistics for a type this
+entity never used only when the row fits that shape (≥ 80 % of its own keys are keys the foreign type
+carries); otherwise the row gets no observation-based finding at all.
+
+**Required-ness** in the census view is `required` ∈ `"true" | "false" | "likely" | "unknown"` with
+`required_source`. `"true"`/`"false"` only from a declared source (GraphQL NON_NULL, project source;
+`blockName` is `"false"`/`payload-protocol`). **`"likely"`** (`observed-census`) = non-null and
+non-empty in every one of ≥ 3 observed rows, for varying scalars (≥ 2 distinct), rich text,
+relationships and uploads — never checkboxes, enum-like fields, constants, or numbers set to one of a
+few values, because a `defaultValue` fills those whether or not the field is required.
+
+#### 7.10c.4 Validation — `ValidateBlocks`
+
+Every block row at every depth of a document or write body:
+
+| code | severity | when |
+|---|---|---|
+| `empty_row` | error | a `{}` entry in a blocks array (the Postgres orphan of §10.2.1) |
+| `missing_block_type` | error | a non-empty row with no blockType |
+| `invalid_row` | error | a non-object entry in a blocks array |
+| `unknown_block_type` | **error** if the accepted set is authoritative; **warning** if the census read this entity, saw block rows in it, and the slug occurs nowhere in the project | Payload silently drops such a row |
+| `block_type_not_observed_here` | warning | the census saw block rows in this entity, and the slug exists in the project but never at this position: for a nested row whose parent type's field has observed rows, the **parent-scoped** set (`group.blocks`) is the observed set — it replaces, not widens, the depth pattern (`layout[].blocks` is the union of every parent at that depth, so it would admit a `bentoItem` into a group); otherwise the depth pattern |
+| `unknown_field` | warning | a key never observed on that type and absent from every declared schema — Payload silently drops unknown fields |
+| `value_not_in_enum` | **error** if outside GraphQL enum options; **warning** if outside an observed enum-like vocabulary | |
+| `required_field_missing` | error | a declared-required field missing or null |
+| `likely_required` | warning | a `likely` field empty |
+
+**Rule:** an error needs a declared fact or Payload's wire format; an observation can only ever produce
+a warning; with no fact at all nothing is said. An entity whose census holds **no block row** is "no
+fact": neither placement finding is made against it. Each issue carries `path`
+(`layout[2].blocks[1].textSize`), `block_type`, `message`, `hint` (a runnable `pay` command) and
+`source`. Verified on stage (`create --dry-run`, nothing written): real types silent; `heroo` →
+`unknown_block_type` with `did you mean "hero"?`; `headline` on text → `unknown_field`;
+`textSize: "huge"` → `value_not_in_enum` (observed: regular, large); a hero inside `group.blocks` →
+`block_type_not_observed_here`; `{}` → `empty_row`; a `bentoItem` added to a group's `blocks`
+(`--field 'layout[type:group[0]].blocks'`, `group.blocks` or the document) → `block_type_not_observed_here`
+against `group.blocks`, as `pay blocks ls` reports it.
+
+**`pay blocks new … | pay blocks validate`.** `blocks new --collection C` sets the envelope `target`
+to C, so validate checks against C's census without repeating `--collection`. For a `blocks new` row
+without `--field`, validate checks the row at the most-used position in its `used_in` (and takes the
+entity from it when no target is known) instead of `layout`: stage `blocks new bentoItem | blocks
+validate` → `layout[].blocks[].blocks`, no `census_unavailable`, no spurious
+`block_type_not_observed_here`.
+
+**Nested array kind.** Whether an array inside a row is a blocks field is decided by what the field
+IS — a declared `blocks`/`array` type, else the census kind when real rows were observed (`items > 0`)
+— and only for an unknown field by its content (a row with a blockType). A stray `blockType` on a row
+of a plain array (`hero.buttons`) is therefore `unknown_field` on that key (Payload drops the key, not
+the row), never `missing_block_type` on the untouched real rows (stage home page: previously exit 5).
+
+#### 7.10c.5 When the census is (re)built
+
+* **Lazily, by the catalog verbs** — `pay blocks types | schema | example | new | validate` and
+  `pay blocks add --template` (§9.2) — for the entities they need, reusing a cached entity when fresh
+  (< 24 h), read without error, and read with at least the requested `max_docs` (or complete).
+* **Scope of the per-type verbs.** `schema | example | new <type>` without `--collection` answer from
+  the cached census first: the entities whose cache (read without error, within the 7-day hard max)
+  saw `<type>` are the scope; they are reused when fresh (0 requests) and only they are rebuilt when
+  stale (`data.census.scope`: `narrowed: …`). If the rebuilt holders no longer carry the type, the
+  verb falls back to the wide scan before answering `block_type_unknown`.
+* **Wide scan** (no cached holder; `pay blocks types` without an entity): every `CensusTargets`
+  entity, except that an entity whose cached census held **no block rows**, was read completely (or
+  `stopped_early`) without error within the hard max, and whose shard declares no blocks field is
+  reused even when older than 24 h. When a wide scan made requests it warns `census_scope_wide`
+  ("--collection was not given, so the block census read N of M entities that can hold blocks …"),
+  hint `pay blocks schema <type> --collection <entity>`. Measured on stage: `blocks schema hero`
+  with a 48 h-old census 35 → **4** requests; `blocks types` 35 → **10**.
+* **`pay blocks learn [ENTITY…]`** forces a rebuild and reports the difference to the previous census
+  (`grid gained splitDesktop`, `pages: layout now also holds "statement"`). Absence proves removal only
+  for a complete read: when the new read is truncated or failed, what it lacks is `change: "not_seen"`
+  ("… was not seen in this partial read (7 of 41 documents …); it may still be in use"), never
+  `removed`; additions after a partial previous read say they "may not be new". A complete read with
+  fewer documents (pages deleted) still reports `removed`. Stage: `learn pages --census-max-docs 7`
+  → 45 × `not_seen`, 0 × `removed`.
+* `--refresh` rebuilds the entities the command needs and discards the rest; `--no-cache` builds in
+  memory only (`persisted: false`).
+* **Reactive rebuild (validate).** When validation against a cached census yields an `observed-census`
+  finding of kind `unknown_block_type`, `block_type_not_observed_here`, `unknown_field` or
+  `value_not_in_enum`, the entity is rebuilt once and validated again (`census.revalidated: true`).
+  Verified on stage: a deploy added four block types mid-session; the rebuild cleared the findings.
+  **Cooldown:** an entity read less than **10 minutes** ago is not rebuilt again — in an edit-and-validate
+  loop the anomaly is almost always the edit itself; `data.census.revalidate_skipped` says so and names
+  `pay blocks learn <slug>`.
+* **Reactive re-read (example).** `pay blocks example` / `blocks new --from-example` against a cached
+  census whose references all moved re-read the holding entities once (`census.revalidated: true`).
+* **Writes never build it** (§9.7) but fold their echoes into it. `pay describe` builds it (one
+  entity) only when the GraphQL mode is not `ok`; otherwise it uses a cached census if there is one.
+  Pipe stages (`pay blocks ls|mv|…`, `pay outline`) and completion only ever read a cached one.
+
+Every catalog envelope carries `data.census = {source: cache|built|mixed, requests, max_docs,
+persisted, ttl_s, revalidated?, revalidate_skipped?, scope?, entities[{kind, slug, built_at, age_s,
+from_cache, draft, docs_scanned, total_docs, truncated, stopped_early?, max_docs, requests,
+relation_probe, block_rows, block_types, error?}], note}`. Warning codes: `blocks_unchecked`,
+`census_entity_failed`, `census_truncated` (a read cut short by the budget), `census_unavailable`,
+`census_scope_wide`, `example_moved`, `block_type_shapes_differ`, plus the §7.10c.4 codes when a
+write reports them.
+
+#### 7.10c.6 `pay describe` answers from the census
+
+* `pay describe <e> --field PATH` answers from the census when the shard cannot: a nested pattern
+  (`layout[2].blocks`, `layout[].blocks`, `group.blocks`), or a top-level field with no declared slugs
+  (stage `layout` is `payload_type: unknown`). Output: `field` (synthesised
+  `{path, payload_type: blocks, payload_type_source: observed-census}` when not in the shard),
+  `block_types`, `blocks_source: observed-census`, `block_type_sources`, `blocks_reason`, `accepted`,
+  `blocks_help`, `census`.
+* When the declared slugs are inferred/mixed and the census reconciles them, `block_types`,
+  `blocks_source`, `block_type_sources` and `accepted` are replaced and the declared list is kept as
+  `declared_block_types` (localhost: `callToActionBlock…` → `archive, content, cta, formBlock,
+  mediaBlock`, `blocks_source: graphql`).
+* `pay describe <e> --block TYPE` with no declared schema for TYPE answers with the census view in
+  `.block` (the shape of `pay blocks schema`), `block_source: observed-census`, `block_fields`,
+  `required_fields`, `likely_required`, `examples` (`pay blocks example|new …`).
+* `--block TYPO` → `invalid_option` whose `did_you_mean` draws on the census types too, and — when
+  the schema names no slug — the hint `pay blocks types <e>` (stage `--block heroo` → `["hero"]`).
+
 ### 7.11 `payload_version` and `db_adapter`
 
 Neither is obtainable from the API. Verified: `X-Powered-By: Next.js, Payload` carries no version,
@@ -1673,6 +2131,7 @@ $CACHE/v1/<scope>/manifest.json         the index (§7.8.1) — INCLUDES `meta` 
 $CACHE/v1/<scope>/fields/<slug>.json    one field shard per entity (§7.8.2)
 $CACHE/v1/<scope>/fields/_global_<slug>.json
 $CACHE/v1/<scope>/graphql/<Type>.json   per-type raw introspection, a pure derived blob cache
+$CACHE/v1/<scope>/census.json           §7.10c block census — an aggregate, own header, NOT generation-bound
 $CACHE/v1/<scope>/.lock
 ```
 
@@ -1731,7 +2190,9 @@ Hard never-cache-to-disk:
 3. Any `Content-Type` other than `application/json`. A wrong base URL returns 200 `text/html`
    (verified), and a 22,729-byte Next.js error page must never be stored as a discovery result.
 4. **Document data of any kind** — find, findByID, count, versions, global content. Payload content is
-   mutable by definition, and stale content served to an agent causes wrong edits.
+   mutable by definition, and stale content served to an agent causes wrong edits. The block census
+   (§7.10c) is not document data: it stores counts, JSON types, short *repeated* scalar values and
+   document references, never a document, and `pay blocks example` fetches referenced rows live.
 5. Any `/api/{auth}/me` response (plaintext API key, verified).
 6. Anything fetched anonymously into an authenticated scope (structurally impossible given the
    `keyFP="anon"` sentinel, but asserted).
@@ -1821,6 +2282,7 @@ body was read. A 404 `Route not found` on `POST /api/{coll}` behind a proxy mid-
 | identity (`/me`) | 60 s | — | **memory only** |
 | GraphQL mode / capability probe | 24 h | 7 d | full re-discovery |
 | skills manifest / release metadata | 6 h | — | — |
+| block census (`block_census`, §7.10c) | 24 h | 7 d | per-entity rebuild: `pay blocks learn`, stale on use, `--refresh`, reactive in `validate`/`example`; write echoes folded in |
 | **any document data** | **never cached** | | |
 
 **Staleness ladder.** Within `fresh` → use with zero network, `meta.cache.discovery = "hit"`.
@@ -1936,6 +2398,8 @@ subcommands.
 --locale CODE               --fallback-locale CODE|none|default
 --yes                       --dry-run                    --no-audit
 --no-redact                 --no-raw                     --config PATH   --insecure-skip-verify
+--backup-dir DIR            --no-backup                  (§12.8: back up every document a write changes)
+--errors-to stdout|stderr   --log-level LEVEL            --log-format text|json
 ```
 
 Why concurrency defaults to 8 and not higher (300 requests at 50-way concurrency all returned 200 in
@@ -1951,6 +2415,7 @@ pay auth login   --profile NAME --base-url URL [--api-key KEY|--api-key-stdin|--
                  [--auth-collection SLUG] [--keyring] [--no-verify]
 pay auth list | use <profile> | logout [<profile>] | test [--profile P]
              | rename <old> <new> | status | fix-perms
+pay auth preview-secret [--stdin | --clear]  # §5.5: the site's draft-preview secret; never printed
 pay whoami                                   # GET /{auth}/me; asserts user != null; redacted
 pay access [<collection>] [--doc ID] [--global SLUG]
 pay can <create|read|update|delete> <collection>     # exit 0 permitted, 8 denied
@@ -1962,7 +2427,10 @@ pay explain  [--slim|--full] [--section connection|collections|globals|commands|
 pay collections [--kind content|upload|auth|internal] [--writable] [--include-internal]
                 [--capability upload|versions|drafts|auth|trash|folders] [--grep PATTERN]
                                                         (alias: pay ls)
-pay describe <collection|global> [--field PATH] [--required-only] [--queryable] [--examples] [--sample]
+pay describe <collection|global> [--field PATH] [--block SLUG] [--blocks-detail]
+             [--required-only] [--queryable] [--examples] [--sample]
+             # --field also takes nested block patterns (layout[].blocks, layout[2].blocks, group.blocks);
+             # --field/--block answer from the block census when the schema cannot (§7.10c.6)
 pay doctor
 pay cache info | ls | path | show <scope> | clear [--scope S|--all] | warm
 
@@ -1980,50 +2448,114 @@ pay find <collection>                                                    (aliase
                  # NOT exclude never-published documents — see §9.6.2, verified live.
     --since 7d   --until DATE   --date-field updatedAt   --count-only
     --no-validate-sort   --no-validate-where
-pay get   <collection> <id>   --depth --select --populate --draft --trash --locale
+    --richtext json|md|text      # render every Lexical editor state for reading (§9.12.8.2)
+pay get   <collection> <id> | <collection> --slug SLUG                    # §9.17
+          --depth --select --select-exclude --populate --joins --draft --published-only --trash
+          --locale --fallback-locale --richtext json|md|text
+          # get --published-only is an ASSERTION (not_published, exit 4), not a filter (§9.6.2)
 pay count <collection>        --where/--or/--where-json --trash        (NOTE: --draft is a no-op)
-# --data / --data-file / --set / --set-json are COMBINABLE and deep-merged, later wins. Value
-# typing, relationship-id coercion and the full precedence order are §9.10 — identical for
-# create, update, upload and globals update.
+# --data / --data-file / --set / --set-json / --set-md are COMBINABLE and deep-merged, later wins.
+# Value typing, relationship-id coercion and the full precedence order are §9.10 — identical for
+# create, update, upload, globals update, upsert and the body form of diff. Every write body may
+# hold {"$ref": …} references, resolved to ids before anything is previewed or sent (§9.10.5).
 pay create <collection>
     [--data JSON] [--data-file F] [--data @-] [--set k=v]... [--set-json k=JSON]...
-    --draft --autosave --depth --select --file PATH --no-echo-check --dry-run --yes
+    [--set-md k=@file.md|k=@-|k=MARKDOWN]...
+    --draft --autosave --depth --select --file PATH --locale --no-echo-check --dry-run --yes
 pay update <collection> <id>            (same data flags)
-    --draft --autosave --publish --unpublish --trash --override-lock
-    --depth --select --no-echo-check --dry-run --yes
-pay update <collection> --where ... [--max-docs N | --all] [--per-doc] --dry-run --yes
+    --draft --autosave --publish --unpublish --trash --override-lock --reset-nested
+    --depth --select --locale --no-echo-check --dry-run --yes
+    # no data flags + --reset-nested = the orphan-row repair (§10.2.1.5)
+pay update <collection> --where ... [--max-docs N | --all] [--per-doc] [--fail-fast] --dry-run --yes
 pay delete <collection> <id>            --permanent --override-lock --dry-run --yes
 pay delete <collection> --where ... [--max-docs N | --all] --permanent
                                         --unsafe-passthrough-where --dry-run --yes
 pay restore   <collection> <id>                       # un-trash
 pay duplicate <collection> <id> [--no-draft]
-pay publish|unpublish <collection> <id> | --where ... [--max-docs N | --all]
+pay publish|unpublish <collection> <id> [--reset-nested] [--depth] [--select] [--locale]
+pay publish|unpublish <collection> <id> <id>... [--fail-fast]      # one PATCH per id (§12.5)
+pay publish|unpublish <collection> --where ... [--max-docs N | --all]
+                 # publish only: [--no-pre-validate]; all forms: --dry-run --yes
 
-pay upload   <collection> <file|-|URL> [--alt TEXT] [--set k=v]... [--data JSON]
+pay upsert <collection> [--match F[,F…]] (--data|--data-file|--set|--set-json|--set-md …)
+           [--publish|--draft] [--force] [--ignore PATH]... [--locale] [--depth] [--no-echo-check]
+           [--dry-run]                                                   # §9.15.2
+pay plan   <DIR|FILE|->... [--brief] [--ignore PATH]... [--full]         # §9.15.6, read-only
+pay sync   <DIR|FILE|->... [--brief] [--ignore PATH]... [--full] [--fail-fast] [--no-echo-check]
+           [--dry-run] [--yes]                                           # §9.15.7
+
+pay diff <collection> <id> (--data-file F | --data JSON | --set k=v … | --set-json k=JSON … | --set-md …)
+pay diff <collection> <id> --draft-vs-published
+pay diff <collection> <idA> <idB> [--draft]
+pay diff --global <slug> (--data-file F | --data … | --draft-vs-published)
+pay diff --left FILE --right FILE                   # local: no network, no profile
+         # every form: [--ignore PATH]... [--include-timestamps] [--full]  (§9.14)
+
+pay outline <collection> <id> [--draft]                                  # §9.13
+pay outline <collection> --slug SLUG [--draft]
+pay outline --global SLUG [--draft]
+pay get … --depth 0 | pay outline
+
+pay url <collection> <id> | <collection> --slug SLUG                     # §9.16
+        [--draft] [--locale CODE] [--preview [--cookie-file FILE]]
+
+# Rich text ⇄ Markdown (§9.12). Local: no profile, credential, cache or network.
+pay lexical from-md [FILE|-] [--as FIELD] [--keep-frontmatter]
+pay lexical to-md   [FILE|-] [--field PATH] [-o|--out FILE|-]
+pay lexical text    [FILE|-] [--field PATH] [-o|--out FILE|-]
+
+pay upload   <collection> <file|-|URL> [--alt TEXT] [--set k=v]... [--set-json k=JSON]...
+             [--set-md k=…]... [--data JSON] [--data-file F]
              [--filename NAME] [--replace ID] [--content-type MIME] [--max-size 100MB] [--allow-remote]
 pay download <collection> <id> | --filename NAME [-o PATH|-] [--size thumbnail]
 
 pay globals list
-pay globals get    <slug> [--draft] [--depth] [--select] [--locale]
-pay globals update <slug> (--data|--data-file|--set) [--draft] [--dry-run] [--yes]
+pay globals get    <slug> [--draft] [--depth] [--select] [--locale] [--richtext json|md|text]
+pay globals update <slug> (--data|--data-file|--set|--set-json|--set-md)
+                   [--draft|--publish|--unpublish] [--reset-nested] [--depth] [--select]
+                   [--locale] [--no-echo-check] [--dry-run] [--yes]
+                   # no data flags + --reset-nested = the orphan-row repair (§10.2.1.5)
 
 pay versions list    <collection>|--global SLUG [--id DOC] [--autosave] [--latest]
                      [--limit] [--page] [--sort]
-pay versions get     <collection>|--global SLUG <versionId> [--depth]
-pay versions restore <collection>|--global SLUG <versionId> [--draft] [--dry-run] [--yes]
-pay versions diff    <collection> <vA> <vB>          # client-side JSON diff
+pay versions get     <collection>|--global SLUG <versionId> [--depth] [--richtext json|md|text]
+pay versions restore <collection>|--global SLUG <versionId> [--draft|--unpublish] [--depth] [--dry-run] [--yes]
+pay versions diff    <collection>|--global SLUG <vA> <vB>
+                     [--ignore PATH]... [--include-timestamps] [--full]   # structural (§9.14.8)
 
-# §9.11's edit pipeline. Every `pay blocks` verb reads ONE document from stdin, edits it and
-# writes it to stdout; `pay apply` is the only stage that reaches the network.
-pay blocks ls  [--field PATH] [--long]
+# §9.11's edit pipeline. Every edit verb reads ONE document from stdin, edits it and writes it to
+# stdout; `pay apply` is the only stage that reaches the network. --field takes nested paths
+# (layout[2].blocks, layout[id:…].blocks, layout[type:group[1]].blocks) — §9.11.3.
+pay blocks ls  [--field PATH] [--long] [--recursive|-r]
 pay blocks mv  <selector> (--at N | --before SEL | --after SEL | --first | --last) [--field PATH]
 pay blocks rm  <selector>... [--all] [--field PATH]
-pay blocks add <blockType> [--data JSON|@F] [--set k=v]... [--set-json k=JSON]... [--name NAME]
-               [--at N | --before SEL | --after SEL | --first | --last] [--field PATH]
+pay blocks add <blockType>|- [--data JSON|@F] [--set k=v]... [--set-json k=JSON]... [--set-md k=…]...
+               [--name NAME] [--template] [--at N | --before SEL | --after SEL | --first | --last]
+               [--field PATH]                 # `-` = a plain array row without blockType (§9.11.9)
 pay blocks cp  <selector> [--at N | --before SEL | --after SEL | --first | --last] [--field PATH]
-pay blocks set <selector> [--set k=v]... [--set-json k=JSON]... [--unset KEY]... [--field PATH]
+pay blocks set <selector> [--data JSON] [--set k=v]... [--set-json k=JSON]... [--set-md k=…]...
+               [--unset KEY]... [--name NAME] [--field PATH]
 pay apply [collection] [id] [--field PATH]... [--all-fields] [--depth] [--select]
-          [--draft|--publish|--unpublish] [--locale CODE] [--no-echo-check] [--dry-run] [--yes]
+          [--draft|--publish|--unpublish] [--reset-nested] [--locale CODE] [--no-echo-check]
+          [--dry-run] [--yes]
+
+# The block catalog (§7.10c): the site's blocks, learned from real documents. Only `validate`
+# reads stdin; none writes to Payload.
+pay blocks types    [collection|global] [--field PATH] [--census-max-docs N]
+pay blocks schema   <blockType> [--collection C] [--field PATH] [--census-max-docs N]
+pay blocks example  <blockType> [--collection C] [--field PATH] [--n 1..8] [--census-max-docs N]
+pay blocks new      <blockType> [--collection C] [--field PATH] [--set k=v]... [--set-json k=JSON]...
+                    [--set-md k=…]... [--from-example] [--census-max-docs N]
+pay blocks validate [--data-file F | stdin] [--collection C] [--field PATH] [--census-max-docs N]
+pay blocks learn    [collection|global...] [--census-max-docs N]
+
+# §12.8 automatic pre-write backups
+pay backups list    [-n N] [--since D] [--collection C] [--id ID] [--global G] [--command C] [--all-profiles]
+pay backups show    <file>
+pay backups restore <file> [--draft|--publish] [--recreate] [--ignore-target] [--depth N]
+                    [--no-echo-check] [--dry-run] [--yes]
+pay backups prune   --older-than D [--collection C] [--global G] [--id ID] [--all-profiles]
+                    [--dry-run] [--yes]
 
 pay raw <GET|POST|PATCH|DELETE> <path> [--query k=v]... [--data JSON] [--file F] [--raw-body]
 pay config get|set|unset|list|paths|explain
@@ -2032,7 +2564,10 @@ pay skills list | status | print [NAME] | update [--project-only] | uninstall
 pay completion bash|zsh|fish|powershell
 pay version [--check]
 pay update-self [--check] [--apply] [--force]
-pay audit tail [-n N] [--since D] [--action delete]
+pay audit tail [-n N] [--since D] [--action ACTION] [--phase pre|post] [--command C] [--collection C]
+               [--profile-filter P] [--rotated]
+               # ACTION ∈ create update delete trash restore publish unpublish upload
+               #          restore_version raw restore_backup
 ```
 
 ### 9.3 Client-side validation (before any network call)
@@ -2056,6 +2591,11 @@ inputs ranges from unhelpful to silently wrong:
 | `--locale X` not in this project's locales | **200, silently the DEFAULT locale** | `invalid_option` (exit 5) **only** when `locales_source` ∈ `{configured, locale-all}`; otherwise pass through + `locale_unverified` (§7.9c) |
 | `--date-field F` not a date field | `QueryError` or silent | `unknown_field` (exit 5) + the date-field list |
 | `--limit` on a bulk-write verb | n/a | `invalid_args` (exit 5), hint `use --max-docs N to cap the blast radius, or --all` |
+| `--richtext` value other than `json`/`md`/`text` (aliases `lexical`, `markdown`, `plain`, `plaintext`) | n/a | `invalid_option` (exit 5), 0 requests |
+| a `{"$ref": …}` naming a field the target's shard does not know | the reference is sent verbatim; `validation_failed` or a masked 500 | `unknown_field` (exit 5) + `did_you_mean`, 0 requests (§9.15.1) |
+| `--set-md` on a field the shard types as neither `richText` nor `json` | **stored** — an editor state in a text field becomes JSON text | `invalid_args` (exit 5), 0 requests (§9.12.8.1) |
+| `--draft --publish` together | contradictory | `invalid_args` (exit 5) before anything is read (§10.2.2) |
+| `--draft --unpublish` together (update, apply, globals update, versions restore) | `?draft=true` saves a draft version; the live document stays published while the echo says `draft` | `invalid_args` (exit 5) before anything is read (§10.2.2) |
 
 `--no-validate-sort` / `--no-validate-where` bypass the check for escape-hatch cases.
 
@@ -2068,6 +2608,16 @@ the id is malformed when the truth is that PayCLI could not determine the id typ
 
 A unit test loads `testdata/fixtures/manifest_id_unknown.json` (`id_type: "unknown"`) and asserts that
 `pay get <coll> 66f1a2b3c4d5e6f708192a3b` **issues an HTTP request** rather than exiting 5.
+
+**Canonical ids on writes.** Payload casts a numeric id in the URL path and in `where id in`, so `0108`
+and ` 108` reach document 108. The write commands that take an id (`update`, `apply`'s id, `delete`,
+`publish`/`unpublish` — one or several ids —, `restore`, `upload --replace`) therefore rewrite a
+numeric id to the decimal the server reports (`108`) right after validation, when `id_type` is
+`number`, and use that form for the request path, the backup, the dry-run diff and the audit.
+`016 16` in one publish list is one document. String and unknown id types are never rewritten
+(`0108` and `108` are two documents there). Found on localhost:3900: `pay delete pages 0108 --yes`
+deleted page 108 while the backup, pairing the returned document `108` with the requested `0108` by
+string, recorded it as skipped (§12.8.3).
 
 ### 9.4 Filter DSL
 
@@ -2178,7 +2728,9 @@ Bracket notation stays for `select[title]=true`, `populate[crm-companies][name]=
 2. **`--draft` on write** skips required-field validation — this is how an agent creates a stub.
    Publishing later **re-runs exactly the validation `--draft` skipped** (verified:
    `PATCH /api/pages/1 {"_status":"published"}` → 400 on `layout`), so a draft is a deferral, not an
-   escape.
+   escape. A body that itself carries `_status: "published"` would publish despite `--draft`; PayCLI
+   strips it and warns (§10.2.2). A write **without** `--draft` to a published document that has a
+   pending draft is refused until the outcome is stated (§10.2.3).
 
    **On read, `--draft` is NOT a published filter and its absence is NOT one either.** The original
    blanket rule ("omitting `draft=true` returns the last published snapshot, so draft edits are
@@ -2202,6 +2754,13 @@ Bracket notation stays for `select[title]=true`, `populate[crm-companies][name]=
 
    `_status` is always shown in table output for versioned collections. PayCLI does **not** infer
    `draft` from prior commands (§1 conflict 21).
+
+   **`pay get … --published-only` is an assertion, not a filter.** It reads without `draft` (the
+   stored main row, §2.9) and returns the document when its `_status` is `published`; otherwise it
+   fails `not_published` (exit 4) — "has no published state (never published, or unpublished)" —
+   with the hints `pay get <c> <id>` / `pay get <c> <id> --draft`. `--published-only --draft` is
+   `invalid_args`; on a collection proven to have no drafts it is `feature_unavailable` (as for
+   `find`). A `--select` that lacks `_status` gets `_status` added so the assertion can be made.
 3. **`count` ignores `draft`** — use `--published-only` / `--draft-only`.
 4. **Join fields** are always present as `{docs:[…], hasNextPage:bool}` even at depth 0, are queryable
    by dotted path, and `joins=false` does not disable them over the query string. Drop them with
@@ -2229,10 +2788,65 @@ values → unknown**, exactly as specified in §7.10 — the project-source scan
 common case solvable, because the "harvest observed values" fallback yields nothing on a project whose
 `layout` arrays are all empty (verified: all 12 live pages have `layout: []`).
 
-When the value being written cannot be resolved, PayCLI emits an `unknown_block_type` **warning**
-before sending and an `input_silently_dropped` warning after (§10.2). When the collection's *required*
-paths include an unresolvable blocks field, the collection is `publishable: false` and
-`pay publish` refuses locally (§9.10.4) rather than relaying a 400 the agent cannot act on.
+When the collection's *required* paths include an unresolvable blocks field, the collection is
+`publishable: false` and `pay publish` refuses locally (§9.10.4) rather than relaying a 400 the agent
+cannot act on.
+
+**The write check (replaces the pre-census rule).** The original rule — emit `unknown_block_type`
+for every blockType the discovered slug list does not contain — fired on **every** block of **every**
+write on an introspection-disabled project, where the list is always empty, and ignored nested rows
+entirely; the agent grep'd the warnings away and the real ones drowned. Now `create`, `update` (by id
+and bulk), `upload`, `globals update`, `apply` (collection and global), `upsert`, `sync` and the body
+form of `pay diff` run `ValidateBlocks` (§7.10c.4) over the body whenever it holds a block row at any
+depth **or a non-empty array at a position known to be a blocks field** (a census pattern with rows,
+or a top-level field the schema declares as blocks — `discovery.TouchesBlocks`), and emit the findings
+as **warnings only**. The second half catches `layout=[{}]` / `layout=[{"heading":"x"}]`: no row is
+typed, Payload drops every one with a 2xx and the layout becomes `[]`; before, dry-run, plan and apply
+said nothing (stage page 69, dry-run: now `empty_row` / `missing_block_type`) — a write is never blocked on observation. Findings
+fold to one warning per code (first three messages; `paths` lists all; "… and N more (pay blocks
+validate lists every one)"). An observation-based warning names the command that renews the evidence
+first and states the census age ("`pay blocks learn pages` first if the site's blocks changed since
+the block census was read (32m0s ago); then …"). `input_silently_dropped` after the write (§10.2) is
+unchanged.
+
+**Writes never build the census** (§1 conflict 42). They use a cached census of any age within the
+7-day hard max — of **this entity**: another entity's census is not enough (a slug is not globally
+unique, §7.10c.3). With neither a cached census with block rows for the entity nor an authoritative
+declared list for every blocks field written, the body gets **one** `blocks_unchecked` warning
+(hint `pay blocks learn <slug>`) and no observation-based finding.
+
+**The document in hand outranks the census.** During a migration the site changes under a census,
+often through PayCLI itself (stage: a restructure moved six `questions` rows into `group.blocks`; a
+later plan against the still-fresh census warned `block_type_not_observed_here` for rows it had just
+fetched). Two rules close the gap at no request cost:
+
+* **Pre-image overlay.** When a write already holds the document's current state — `pay plan`/`sync`
+  (the fetched match), `pay upsert` (the matched document), `update <id>`/`apply`/`globals update` with
+  `--dry-run` (the diff's pre-image), and their real writes when a backup was taken — it is folded into
+  the entity's census in memory (`discovery.OverlayDocs`) before the body is checked. An overlay only
+  ADDS evidence; it never makes a field select-like, and a type no document carries stays unknown.
+  With no census for the entity it does nothing (one document is not a census).
+* **Each document counts once.** The entity records `doc_keys` (the ids its read counted) and
+  `folded_keys` (ids folded in since). A fold or pre-image of a document in neither is new evidence and
+  raises counts and presence like a read row. One already counted (the page an agent iterates on, the
+  pre-image of a page the census read) only **refreshes**: a position, type, field or value it shows
+  for the first time is recorded (a new field capped at the type's count), a known field it leaves
+  empty is marked `optional` (never `likely_required` again), and no count grows. A census written
+  before `doc_keys` existed treats every document as counted. Localhost (formBlock on one real page):
+  create + three title-only updates of a test page used to give count 2→5 and a false
+  `likely_required introContent`; now count 2 after all four, `folded_docs: 1`, and the folded census
+  equals a fresh `blocks learn` exactly.
+* **Echo fold.** The echo of every successful write (`create`, `update <id>`, `apply`, `upsert`,
+  `sync`, `globals update`; read like the census reads: depth 0, not `locale=all`) is folded into the
+  **cached** census of that entity when the invocation ends (read-modify-write under the scope lock;
+  only an entity that is cached, read without error and within the hard max; `folded_docs` counts the
+  distinct documents folded;
+  `built_at` unchanged). A value seen once is dropped unless the field is already a vocabulary, so no
+  content reaches the disk. A dry run folds nothing.
+
+A string in a block row's field the census observed as `richText` warns `richtext_as_string`
+(§9.12.8.3); `pay blocks add <slug>` on a field known to be a plain array warns `block_type_omitted`
+(§9.11.9).
 
 ### 9.8 `pay raw`
 
@@ -2263,9 +2877,25 @@ any project size: index decode is 1.44 ms at 150 collections and 4.79 ms at 500 
 original consolidated layout cost 282 ms at 150 × 200 fields — it could not have met the budget above
 roughly 10 MB, and §9.9 requires `--where`/`--sort`/`--select` path suggestions.
 
+**Block slugs and blocks fields come from the cached census too** (never built at TAB time; measured
+14–21 ms on stage with a 315 KB `census.json`):
+
+| where | candidates |
+|---|---|
+| `pay describe <e> --block` | the entity's merged knowledge (§7.10c.3): each top-level field's reconciled accepted set (an inferred interface-name slug the census matched is replaced by the real one, `callToActionBlock` → `cta`) plus every type seen at a nested level; no census → the declared list |
+| `pay blocks schema\|example\|new <TAB>` | with `--collection C`: as above for C; without: every census slug across entities |
+| `pay blocks add <TAB>` | every census slug (the piped document's collection is unknown at TAB time) |
+| `--collection` on `schema/example/new/validate`; `pay blocks types <TAB>`; `pay blocks learn <TAB>…` | collection and global slugs (`learn`: those not already given) |
+| `--field` on `types/schema/example/new`, and `pay describe <e> --field` | declared blocks fields + every census pattern (`layout[].blocks`) + parent-scoped `type.field` (`group.blocks`); describe keeps its ordinary field paths |
+
+A declared slug keeps the project's label/description as the candidate description; a slug known only
+from documents says `observed: 167 rows in pages`. The pipe verbs' `--field` is not completed: the
+document is on stdin, so there is no collection at TAB time.
+
 ### 9.10 Write input semantics
 
-Referenced identically from `create`, `update`, `upload` and `globals update`. The original spec
+Referenced identically from `create`, `update`, `upload`, `globals update`, `upsert` and the body form
+of `pay diff`. The original spec
 defined value typing for `--where` only (§9.4) and said nothing about `--set`, which left the most
 common write in the CLI — `pay update posts 1 --set heroImage=4` — working or failing on an unstated
 implementation choice. Verified live: `PATCH /api/posts/1 {"heroImage":"4"}` → 400
@@ -2302,11 +2932,16 @@ not alternatives. They are deep-merged in this order, later winning on a key col
 --data / --data-file   (base object)
 --set                  (typed + coerced scalars)
 --set-json             (raw JSON)
+--set-md               (Markdown → a Lexical editor state; §9.12.8.1)
 ```
 
+`--set-md` **replaces** the value at its key — it never deep-merges an editor state into an earlier
+one, so no stale key of an earlier state survives. The same order holds for `upsert` and the body form
+of `pay diff`; `pay blocks add|set` use `--data` → `--set` → `--set-json` → `--set-md` → `--name`.
 Arrays are **replaced**, never merged element-wise. The `|` in §9.2's `create`/`update` grammar that
 implied mutual exclusion is removed. `pay upload` uses the identical order with `--alt` slotted in as
-the lowest-precedence contributor (`--alt` → `--data`/`--data-file` → `--set` → `--set-json`), which
+the lowest-precedence contributor (`--alt` → `--data`/`--data-file` → `--set` → `--set-json` →
+`--set-md`), which
 is the same "later wins" rule, stated explicitly because §13 previously said "merged in that
 precedence order" without saying which end won.
 
@@ -2321,7 +2956,33 @@ and fails with `validation_failed` (exit 5) naming every missing path — **befo
 instead of relaying an opaque server 400. When the collection is `publishable: false` (§7.10), it
 fails with `feature_unavailable` (exit 10) carrying `publishable_reason` and the
 read-them-from-source instruction, because no amount of retrying will make an unknown `blockType`
-knowable from the API.
+knowable from the API. `--no-pre-validate` skips the check and lets the server decide.
+
+*Required paths through arrays.* A required path may run through an array or blocks field
+(`hero.links.link.label`: `label` is required in every row of `hero.links`). The check walks each
+required path through objects and arrays: through an array it is required in **every row that
+exists** and reported per row (`hero.links[1].link.label`); an **empty** array makes it vacuous; a
+missing or null object on the way reports the remaining path (`hero.type` when `hero` is null); a
+required list itself is missing when empty. The pre-release rule reported `hero.links.link.label`
+missing on every fresh website-template page (`hero.links: []`) — a false refusal; verified fixed on
+localhost (the server then published the page with `hero.links` still `[]`). The same walk feeds
+`created_as_draft`'s `still_missing`.
+
+*The batched pre-check* of the several-ids and `--where` forms reads every document in one `find`
+whose `select` is `id` plus the **top-level** key of each required path (`id,hero,slug,title`), never
+the paths themselves: selecting a group together with its own sub-paths makes Payload return the group
+narrowed to the scalar sub-paths (`hero: {type}`, `links` dropped), which the walk would read as a
+missing array. Blocked ids become per-id failures ("cannot be published: missing required field(s)
+…", warning `publish_blocked` in a dry run). **When every id is blocked, nothing is sent** and the
+answer is `validation_failed` (exit 5) with one `error.failures[]` entry per id and the hint "set the
+missing fields first (pay describe <c> --required-only lists them), or pass --no-pre-validate" —
+never `partial_failure` with its "already committed" hint. Some blocked → `partial_failure` (exit 7)
+as before.
+
+**9.10.5 References.** Every write body — `create`, `update` (by id and `--where`), `globals update`,
+`upload` metadata, the body form of `pay diff`, `apply`, `upsert` and every `sync` item — may hold
+`{"$ref": …}` objects anywhere, replaced by the id (or `{relationTo, value}`) they resolve to before
+anything is previewed or sent. Grammar, lookup, errors and cost are §9.15.1.
 
 ### 9.11 The edit pipeline (`pay blocks` + `pay apply`)
 
@@ -2334,7 +2995,7 @@ commands, a temp file, and four failure modes PayCLI can see and jq cannot:
 |---|---|---|
 | The moved row lands past its anchor | "move row 0 after row 3" is an insert at index **2** of the remaining three rows, not at 4; the anchor shifts when the row is lifted out | `rows.Move` resolves the anchor **before** the removal and recomputes the destination **after** it; every direction is a table test |
 | A duplicated row overwrites its original | Payload matches a row by `id`, so a copy that kept its ids rewrites the row it came from and the array **loses** an entry | `pay blocks cp` strips every `id` at every depth, unconditionally |
-| A mistyped `blockType` vanishes | Payload **drops** a row whose `blockType` it does not recognise and still answers **201** | `block_type_unknown` (exit 10) against the field's own resolved slugs (§7.10), with `did_you_mean` |
+| A mistyped `blockType` vanishes | Payload **drops** a row whose `blockType` it does not recognise and still answers **201** | `block_type_unknown` (exit 10) against the field's own resolved slugs (§7.10) when they are declared and complete, with `did_you_mean`; otherwise the census warnings of §9.7 |
 | A relationship is written back expanded | a read above `--depth 0` replaces `"media": 7` with the whole media document | `populated_relationship` warning naming `field[i].key`, hinting at `--depth 0` |
 
 **9.11.1 The stage contract.** Each stage reads one JSON value on stdin and writes one envelope on
@@ -2348,15 +3009,34 @@ against a file. Three rules hold at every hand-off:
 2. **Upstream warnings are carried forward.** A locale-fallback warning raised by the read is about
    the document the LAST stage will write.
 3. **The edit is recorded, not the document.** Every stage appends to `envelope.edits`
-   (§10.1), which is the list `pay apply` narrows its write to.
+   (§10.1), which is the list `pay apply` narrows its write to. `edits.fields` records the **root**
+   of the edited location — the object-key prefix up to the first array row: `--field
+   layout[2].blocks` records `layout`, `--field hero.items` still records `hero.items`. Payload has no
+   per-row endpoint and replaces a whole top-level array on PATCH, so `pay apply` sends all of
+   `layout` with the nested change inside it — one key, same as a top-level reorder.
+   `edits.ops[].field` records the positional path actually edited (`layout[4].blocks[1].blocks`);
+   `next.args.field` is the root. The edited rows are written back **copy-on-write** along the location
+   (`rows.Replace`): everything outside the edited array is byte-for-byte the input (verified on stage
+   pages 2 and 47 for mv/rm/add/cp/set: `jq 'del(<edited array>)'` of input and output identical).
+4. **A rendered document is refused.** An envelope whose `meta.richtext.format` is `md` or `text`
+   (§9.12.8.3) fails every stage that passes a document on (mv, rm, add, cp, set, apply) with
+   `richtext_rendered` (exit 5); the reading stages (`ls`, `validate`, `pay outline`) accept it.
 
 **9.11.2 `edits` is why `apply` is safe.** The obvious implementation of "write the piped document
 back" is to PATCH all of it, and that also rewrites `_status`, `createdAt` and every expanded
 relationship — a one-block reorder silently republishing a page. `apply` instead sends
 `{field: value}` for each path in `edits.fields`, so a pipeline that moved one block writes one key.
-`--all-fields` opts out, drops `id`/`createdAt`/`updatedAt` and **warns**; `--field` narrows further
-and can never widen beyond the piped document. An envelope with no `edits` is `no_edits` (exit 5),
-never a silent fall back to writing everything.
+`--all-fields` opts out, drops `id`/`createdAt`/`updatedAt` and **warns** (`apply_all_fields`);
+`--field` narrows further and can never widen beyond the piped document. An envelope with no `edits`
+is `no_edits` (exit 5), never a silent fall back to writing everything. `pay apply --field PATH`
+accepts **top-level** fields only: a path that resolves through a row (`--field layout[1].columns`)
+is `invalid_args` ("… is inside a row of layout, and Payload can only write layout as a whole", hint
+`pass --field layout`).
+
+`apply` also resolves `{"$ref": …}` objects a `pay blocks … --set-json` stage put into the document
+(§9.15.1; before, it sent them verbatim: `validation_failed` on a plain save, a masked 500 with
+`--draft`), and runs the §10.2.2/§10.2.3 publication rules and `--reset-nested` (§10.2.1) exactly like
+`pay update <id>`.
 
 `apply` is `pay update <id>` with the body assembled from a pipe: same L1 risk level, same
 confirmation policy, same audit record, same echo-diff, and literally the same `runUpdateOne`. A
@@ -2377,16 +3057,81 @@ not-found class a missing document gets) with the rows that DO exist in the hint
 emits, per row, the shortest selector that addresses it and no other — `id:` whenever the row has
 one, because an index is stale the moment another stage inserts or removes a row.
 
-**9.11.4 Field resolution** is explicit `--field` → the project's schema → the document's own shape.
-The last step picks the one array whose rows **all** carry a `blockType` and warns
-(`blocks_field_inferred`); more than one candidate is `field_ambiguous` (exit 5) with both named,
-never a guess. A collection with no discovered schema still edits, with
-`local_validation_skipped` saying that `blockType` was not checked.
+**The field-path grammar.** Real pages nest (stage pages 2: `layout[2]` is a `group` whose `blocks`
+holds six `processStep` rows; pages 47: a `grid` inside a `group` whose five `text` rows each carry a
+`buttons` array). Before this release `pay blocks ls --field layout.2.blocks` answered `ok:true`,
+`count:0` and a `field_absent` warning — it looked for the object key `"2"` on the `layout` array — and
+`add` on the same path would have written a one-row array over the six rows. `--field` (every
+`pay blocks` verb, and `pay lexical --field`) and every `--set`/`--set-json`/`--set-md`/`--unset` KEY
+now take a **field path** that passes through rows:
 
-**9.11.5 Every `pay blocks` verb is L0** and uses a lenient runtime: no profile, no credential and no
-cache are required, because none of them is needed to rewrite an array. Discovery is used when it is
-there and is what turns a typo into a local failure. `pay blocks ls` alone ends the pipe — its data is
-a listing, reported as `op_result` so it cannot be mistaken for a document to apply.
+```
+PATH := KEY ( "." KEY | "." N | "[" SELECTOR "]" )*
+```
+
+* A step is an object key or a row, decided by **what the document holds at that point**, never by
+  the spelling: an array is always entered by a row selector, an object always by a key.
+  `layout.2.blocks` and `layout[2].blocks` are the same path.
+* Inside `[...]` the full selector grammar applies (brackets nest: `layout[type:group[1]].blocks` is
+  the second group). A bracketed selector is parsed eagerly — a malformed one fails before stdin is
+  read. A bare dotted step on an array is parsed as a selector lazily (`layout.first.blocks`,
+  `layout.id:6ab8….blocks`); `layout.type:group[1].blocks` is ONE step (a key never contains `:`).
+* A path starts with a key. Empty segments, a leading/trailing `.`, `[]`, an unclosed `[`, a stray
+  `]` are `invalid_args` (exit 5) with the grammar in the hint. Keys cannot contain `.`, `[` or `]`
+  (Payload field names do not); a `name:` value with an unbalanced `]` cannot be written inside
+  brackets — use `id:` or an index.
+
+A resolved path has three renderings, all reported: **positional** (`layout[2].blocks`, exact for the
+document this stage read; what `edits.ops[].field` and errors name), **stable** (`layout[id:6ab8…].blocks`,
+each row by its shortest selector — what a LATER stage should be given, because it survives a reorder
+of the parent array) and **root** (`layout`, the write unit of §9.11.1 rule 3).
+
+**9.11.4 Field resolution.** `--field` given → parse, then walk the document (`rows.Resolve`). Not
+given → (1) the shard's declared blocks fields; (1b) **the cached block census**: the top-level blocks
+patterns it recorded for the piped document's collection (same rule as (1): the one the document
+carries wins, several carried → `field_ambiguous`, exit 5; none carried and exactly one known → that
+one); (2) only then the document's own shape — the one array whose rows **all** carry a `blockType` —
+which alone warns `blocks_field_inferred` (hint: ``run `pay blocks learn <slug>` once … or name the
+field explicitly with --field``; a bare document without a target gets only the `--field` advice).
+More than one shape candidate is `field_ambiguous` with both named, never a guess. Only top-level
+fields are ever inferred; a nested field is always named. A pipe stage never builds the census.
+
+The accepted blockType set is looked up by the path's **pattern** (`layout`, `layout[].blocks`, or the
+parent-scoped `group.blocks`). `rowField.Accepts` — the list that makes `pay blocks add <slug>` fail
+locally with `block_type_unknown` (exit 10) — is set **only** when every slug of the field comes from
+a source that is not a guess; slugs sourced `inferred-from-interface-name`, `observed`,
+`observed-census`, `mixed` or `unknown` never gate (before, the inferred list refused the real slug on
+localhost: `pay blocks add cta` → `block_type_unknown`). A collection with no discovered schema and no
+census still edits, with `local_validation_skipped` saying that `blockType` was not checked.
+
+Resolution outcomes, first match wins:
+
+| situation | result |
+|---|---|
+| the path resolves to an array | edit it |
+| `null` at the end of a single top-level key (`layout: null`) | empty array + `field_absent` warning (a null layout is what `add` must fill) |
+| `null` at the end, on a row | empty + `field_absent` only when the block schema, the census or another row of the same blockType knows it as an array; otherwise `invalid_args` ("… is null, and nothing says it is an array"), `did_you_mean` = the arrays the row carries. Postgres reads an empty blocks/array field back as `[]`, never null (stage pages 47: every null is a scalar) |
+| absent or `null` inside a present top-level group (`hero.linsk`) | when the schema lists the group's sub-fields: a known array → empty + `field_absent`; a known non-array → `invalid_args`; an unknown key → `unknown_field` (exit 5) with did_you_mean among the group's arrays. Without such a schema: empty + `field_absent`, the hint naming the arrays the group does carry |
+| a row selector matches no row (`layout.9.blocks`) | `selector_no_match` (exit **4**) naming the array, with the rows that exist in the hint |
+| a row selector matches several (`layout[type:text].blocks`) | `selector_ambiguous` (exit 5), matches as ready-to-paste selectors |
+| a top-level key is absent and the rest is plain keys | `field_absent` warning + empty array (a `--select` on the read, or a null layout `add` must fill) |
+| a key is absent/null and the next step addresses a row (`layuot.2.blocks`) | `selector_no_match` (exit 4) — except an ABSENT key on a row nothing knows (`layout[3].blokcs[1].rows`), which is a typo → `unknown_field` (exit 5) |
+| a key absent on a **row** as the last step, and the row's type is known to have it | empty array + `field_absent` naming the source ("other group rows in this document carry it as an array" / "the group block's schema declares it") and an `add … --field <stable>` hint |
+| a key absent on a row and nothing knows it (`layout[2].blokcs`) | `unknown_field` (exit 5); did_you_mean = close matches among the row's arrays as full stable paths |
+| a key step on an array (`layout.blocks`, the commonest mistake) | `invalid_args`; did_you_mean = `layout[<selector>].blocks` for every row that HAS `blocks` |
+| a `[selector]` on an object, a step into a scalar, or a path ending on a non-array (`layout[2]`) | `invalid_args` naming where the walk stopped / the arrays inside that row |
+
+"Known" for an absent row key = the discovered `BlockSchemas[blockType].fields[]` has an entry at
+that path with `payload_type` ∈ {`blocks`, `array`}, **or** any row anywhere in the piped document
+with the same `blockType` carries an array there (Lexical states and expanded relationships are not
+walked). The second is what makes stage work without a schema. No new error codes.
+
+**9.11.5 Every `pay blocks` edit verb is L0** and uses a lenient runtime: no profile, no credential and
+no cache are required, because none of them is needed to rewrite an array. Discovery and a cached
+census are used when they are there. `pay blocks ls` alone ends the pipe — its data is a listing,
+reported as `op_result` so it cannot be mistaken for a document to apply. The catalog verbs of §7.10c
+are L0 too, but `types`/`schema`/`example`/`new`/`learn` read the server and need the data runtime
+(a profile); `validate` is lenient (no profile → structural checks only + `census_unavailable`).
 
 **9.11.6 `--data @-` unwraps an envelope.** `pay get … | pay update … --data @-` is the shape every
 caller reaches for first, and it used to POST `{"ok":true,"data":{…},"meta":{…}}` as the request
@@ -2395,6 +3140,882 @@ PayCLI envelope (`ok` **and** `v` **and** `data_kind` **and** `meta` together, f
 document carries) and use its `.data`, with an `envelope_unwrapped` warning; an error envelope fails
 with the upstream's own code. Detection requires all four so a collection with a boolean `ok` column
 is never mistaken for an envelope.
+
+**9.11.7 Row-internal keys** (`--set`, `--set-json`, `--set-md`, `--unset`, `add --set`). KEY is a
+field path **inside the row** in the §9.11.3 grammar (`link.url`, `links.0.label`,
+`links[id:6ab8…].label`, `buttons[0]`). Before this release `--set links.0.label=Buy` replaced the
+`links` ARRAY with `{"0":{"label":"Buy"}}` (which Payload drops) and `add --set link.url=/x` stored a
+literal `"link.url"` key.
+
+* An array on the way is entered by a row selector and **never replaced**; a selector that addresses
+  no row is `selector_no_match` (exit 4) with the full location.
+* An absent or null object key is created as an object (a group not filled yet), unless the next step
+  addresses a row — then `selector_no_match` (hint `--set-json 'links=[…]'`).
+* A path ending on a row (`--set-json 'links[0]={…}'`) replaces that entry. `--unset` of an absent
+  path is a no-op; of a row selector matching nothing `selector_no_match`; of a whole row
+  (`--unset links[0]`) `invalid_args` pointing at `pay blocks rm --field`; of the row's own
+  `blockType` or `id` `invalid_args`.
+* **`--unset` CLEARS, it never deletes** (`rows.ClearPath`). Payload matches a row by its id and keeps
+  the stored value of every key the row omits, so a deleted key was written back unchanged with a 2xx
+  (`blocks set --unset blockName | apply` changed nothing; the echo check cannot see it because
+  absent and null diff alike). The cleared value, verified on localhost (Payload 3.87, Postgres):
+  `null` for a scalar, rich text or relationship/upload value; `[]` for an array, blocks or hasMany
+  field (`null` there is a 500); a named group gets **every sub-field** cleared (`null` for the group
+  is a 500, `{}` keeps every stored sub-field). The edit log says `blockName (cleared)`.
+* `pay blocks add` expands path keys into the new row (`--set link.url=/x` → `{"link":{"url":"/x"}}`):
+  plain keys first, then path keys in sorted order, so `--set-json buttons=[…] --set
+  buttons.0.style=fill` composes.
+
+**9.11.8 `pay blocks ls --recursive` / `-r`** lists the rows of the resolved field and, depth-first (a
+row, then its children), every row of every array nested inside them — directly on the row or inside
+its group objects, never inside a Lexical editor state or an expanded relationship document. An array
+qualifies when it is empty or all its elements are objects.
+
+```json
+{"field":"layout","count":5,"total":25,
+ "accepts":["hero","text","group",…],"accepts_source":"observed-census","accepts_authoritative":false,
+ "accepts_pattern":"layout",
+ "rows":[
+  {"depth":0,"path":"layout[4]","field":"layout","index":4,"id":"6ab9…c1f","block_type":"group",
+   "selector":"id:6ab9…c1f","fields":["anchor","blocks",…],"nested":{"blocks":2},
+   "arrays":{"blocks":{"kind":"blocks","accepts":["text","grid",…],"accepts_source":"observed-census"}}},
+  {"depth":2,"path":"layout[4].blocks[1].blocks[0]",
+   "field":"layout[id:6ab9…c1f].blocks[id:6ab9…c1e].blocks","index":0,"id":"6ab9…c15",
+   "block_type":"text","selector":"id:6ab9…c15","nested":{"buttons":1},"arrays":{"buttons":{"kind":"array"}}}]}
+```
+
+* Every node's `(field, selector)` pair is directly pasteable: `pay blocks <verb> <selector> --field
+  <field>` addresses exactly that row (tested for every node of the fixture). With bare rows on stdin
+  (`--path .layout` on the read) nodes carry no `field`.
+* `nested` maps each array inside the row to its row count, **including empty arrays** — an empty
+  nested blocks field is exactly where a caller wants to `add`. `arrays` gives each one's `kind`
+  (`blocks|array`) and, when known, `accepts`/`accepts_source`/`accepts_authoritative`.
+* `--long` fills `.row` on every node; `--recursive` composes with a nested `--field`. Without
+  `--recursive`, `data.field` is the stable form and, for a nested field, `data.path` the positional.
+* **`accepts` of the listed field** (`accepts_source`, `accepts_authoritative`, `accepts_pattern`):
+  a declared complete list (`rowField.Accepts`) → the shard's source, `accepts_authoritative: true`;
+  else the cached census merged with the shard — the parent-scoped set first for a nested field whose
+  owning row has a blockType (`group.blocks`), else the position pattern; nothing known → the four keys
+  are absent (not "accepts nothing"). **A census list never gates an edit.** Stage pages 47: `layout`
+  → 21 slugs `observed-census`; `layout[4].blocks` → 14 at `group.blocks`; the grid inside → `["text"]`.
+* **`add <slug>` and `set --set blockType=<slug>` warn from that same set** when it is an observed
+  (non-authoritative) one: `unknown_block_type` (the slug occurs nowhere in the cached census; hint
+  `did you mean "bentoItem"? pay blocks types pages --field layout …`) or
+  `block_type_not_observed_here` (it occurs, but never at this position — e.g. `bentoItem` into a
+  group's `blocks`). Warnings only; a declared list still refuses with `block_type_unknown` (exit 10),
+  and with no cached census nothing is said.
+
+**9.11.9 Plain array fields in `pay blocks add`.** A plain `array` field (a cta's `links`, a card's
+`buttons`) holds rows WITHOUT `blockType`. `rowArrayKind` decides blocks vs array from, strongest
+first: a declared accepted set; the collection or parent block schema; the cached census; the array's
+own rows (all typed → blocks, none → array; `{}` ignored); rows of the same parent blockType elsewhere
+in the document (which decides an EMPTY `buttons: []`).
+
+* `pay blocks add - [--set …|--data …] --field <array>` adds a row with no blockType. On a known
+  blocks field `-` is `invalid_args`; `-` with `--template` is `invalid_args`.
+* `pay blocks add <slug>` on a field known to be a plain array stores the row **without** blockType
+  and warns `block_type_omitted` naming the source and the `-` form.
+* A row that would be `{}` is `invalid_args`: `{}` is what an orphan looks like, and Payload stores it
+  as a row of nulls.
+
+**9.11.10 Row ids on copy** (`cp`, `add`, `new --from-example`). `rows.StripIDs` strips **row ids
+only** — the copied row's own `id` and the `id` of every element of every row array nested in it, at
+every depth. It never enters and never strips a Lexical editor state (block node `fields.id`,
+link/upload node `id` and a block node's populated upload stay: Payload's lexical hooks key
+`nodeIDMap` by them, `richtext-lexical/dist/utilities/recurseNodeTree.js`), nor a relationship/upload
+value (an expanded document, a `{relationTo, value}`). This is exactly what the admin's "duplicate
+row" does (`@payloadcms/ui` `fieldReducer` `DUPLICATE_ROW` regenerates only paths ending in `.id`).
+Before the fix a copied `mediaBlock` with its populated media stripped made `apply` fail with HTTP 500
+(localhost); verified after it on stage pages 35 (`fields.id`, `media.id 848`, `folder.id 7` kept;
+nested `buttons[0].id` dropped).
+
+**9.11.11 Stale positions and cross-array ids.**
+
+* **`stale_index`** warning: a nested `--field` that enters a row BY POSITION (`N`, `first`, `last`,
+  `-N`, `type:SLUG[N]`) of an array an earlier stage of the same pipe moved/removed/added/copied rows
+  in. The message names what the position resolves to now; the hint says to take id-based fields
+  from `ls --recursive` on the unedited document. (Positional SELECTOR arguments of `rm`/`set` after
+  an upstream edit are not checked.)
+* An `id:` that is not in the addressed array but exists elsewhere says where ("the row id:X is at
+  layout[9].blocks[1].blocks[0], in the array --field layout[id:…].blocks[id:…].blocks"); for an
+  anchor, the hint explains that a destination must be in the SAME array.
+* `type:SLUG[N]` out of range suggests the `type:SLUG[i]` that exist, never the ambiguous `type:SLUG`.
+* Cross-array moves are not a verb: `ls --long` + `add --data @row.json --field …` + `rm`.
+
+### 9.12 Rich text ⇄ Markdown (`internal/lexical`, `pay lexical`, `--set-md`, `--richtext`)
+
+The measured migration agent hand-wrote Markdown→Lexical builders in Python (`t()`, `p()`, `h()`,
+`link()`, `root()`) and a jq Lexical→text parser before it could move any content, rediscovering per
+project the node versions, link `fields` shapes, list `start`/`tag` and the wrapper items of nested
+lists. §9.12 puts one tested conversion in the CLI and wires it into the everyday commands.
+
+**9.12.1 Ground truth — the shapes Payload 3.87 stores.** Verified read-only on 351 stage editor states
+(`pages`, `posts`, `customer-stories`, `team-blog`, `jobs`, `lead-magnets`), 23 local ones, and each
+node's `exportJSON()` in `lexical`/`@lexical/*` 0.41.0 and `@payloadcms/richtext-lexical` 3.87.1:
+
+| node | keys (sorted) | notes |
+|---|---|---|
+| root | children direction format indent type version(1) | |
+| paragraph | children direction format indent textFormat textStyle type version(1) | 0.41 derives textFormat/textStyle from the FIRST direct text child |
+| heading | … tag(h1–h6) | no textFormat |
+| quote | element keys | editor import: inline children; imported content also holds paragraphs |
+| list | … listType(bullet\|number\|check) start tag(ul\|ol) | a nested list node has indent 0 |
+| listitem | … value (+ checked only in a check list) | nested items carry indent = depth; a nested list lives in a **wrapper item** whose only child is the list |
+| text | detail format mode style text type version(1) | format bitmask: bold 1, italic 2, strike 4, underline 8, code 16, sub 32, sup 64, highlight 128 (256/512/1024 lower/upper/capitalize) |
+| tab | as text, text `"\t"`, detail 2 | |
+| linebreak | type version(1) | |
+| link | … `fields{linkType,newTab,url}` **or** `fields{doc:{relationTo,value},linkType:"internal",newTab}`, version 3, optional id | `exportJSON` deletes `doc` for custom and `url` for internal |
+| autolink | … `fields{linkType:"custom",url}`, version 2 | |
+| upload | fields relationTo value format version(3) [id] [pending] | 10 stage uploads are `pending` (unfinished imports) |
+| relationship | relationTo value format version(2) | |
+| block / inlineBlock | fields{blockType,blockName,id,…} format version(2) / fields version(1) | 230 blocks on stage |
+| horizontalrule | type version(1) | |
+| table/tablerow/tablecell | Lexical table nodes | 4 on stage |
+
+`direction` is `"ltr"` on 431 stage paragraphs and **null** on 3,129 (imported content); both are
+accepted and Lexical's reconciler recomputes it. FromMarkdown writes what the reconciler would.
+
+**9.12.2 The dialect.** CommonMark restricted to what Lexical can hold, plus five extensions (full
+table in `internal/lexical/doc.go`):
+
+* Blocks: ATX/setext headings, paragraphs (soft break → space), block quotes with lazy continuation,
+  bullet/ordered/task lists nested by indentation, thematic breaks (`---`, `***`, `___`;
+  ToMarkdown writes `***`), fenced/indented code (→ a paragraph of code-formatted lines +
+  `code_block_flattened`), HTML-comment blocks (placeholders; other comments dropped).
+* Inlines: CommonMark's delimiter-stack emphasis, code spans, backslash escapes, entities, hard breaks
+  (`\`, two spaces, `<br>`), links with `<…>` destinations and titles (titles dropped), autolinks;
+  link reference definitions and reference links (`[text][label]`, `[label][]`, `[label]`; an
+  undefined full/collapsed reference raises `link_reference_undefined`). ToMarkdown never writes
+  reference links and always escapes `[`/`]`.
+* Extensions: `~~strike~~`; format tags `<u>`, `<sub>`, `<sup>`, `<mark>` (the only spelling of those
+  formats) and `<strong> <b> <em> <i> <s> <del> <ins> <code>`; **internal links**
+  `[t](pay:COLLECTION/ID)` (all-digit ids → number), or by field `[t](pay:COLLECTION/FIELD=VALUE)`
+  → `doc.value` `{"$ref": COLLECTION, FIELD: VALUE}` (a reference the write verbs resolve, §9.15.1;
+  to-md renders it back); link attributes
+  `{target=_blank key=value key="str" key='{json}' autolink}` directly after `)`; **uploads**
+  `![COLLECTION:ID]()` (Payload's own Markdown export form); **placeholders** `<!-- lexical:TYPE {json} -->`.
+* A bullet list with any task item is a check list (its plain items become unchecked checkboxes:
+  `list_became_checklist`, naming the task item's line). Changing the bullet character or ordered
+  delimiter starts a new list. A block quote (or code block) inside a list item is flattened
+  recursively: its paragraphs/headings — at any quote depth — become the item's inline text joined
+  by line breaks, a nested list becomes a wrapper item; a listitem never gets a block child.
+  Reference images (`![x][r]`, `![x][]`, `![x]` with a definition) are kept verbatim as text with
+  `image_as_text`, like inline images. Quotes/lists nest at most 100 levels; deeper lines are
+  paragraph text (`nesting_capped`; 20 000 `>` took 39 s / 400 MB before, now 0.02 s). Input is
+  normalised: CRLF/CR → LF, invalid UTF-8 → U+FFFD, a leading U+FEFF byte order mark is dropped.
+
+**9.12.3 Placeholders** carry any node Markdown cannot spell: the node minus `type` and minus the keys
+at their export default, so `<!-- lexical:upload {"relationTo":"media","value":12} -->` is a complete,
+hand-writable upload node. The JSON is HTML-escaped (no value can contain `-->`); a populated `value`
+(read at depth > 0) is reduced to its `id`. A `lexical:` comment that does not hold one JSON object is
+an **error** (`bad_request_body`, exit 5) — turning it into text would silently delete a node.
+`<!-- -->` and `<!-- pay:… -->` are dropped silently, any other comment with `comment_dropped`.
+
+**9.12.4 ToMarkdown is lossless by construction and verified per paragraph.** Every block is rendered,
+**read back** with FromMarkdown and compared in canonical form; a delimiter run CommonMark's flanking
+rules defeat in its final context (`**Tier 1 (**0,4 %`, 11 such runs on stage) switches to its HTML
+tag, then an all-tags attempt, and only if that fails too is the block written as a placeholder. On
+the 351 stage states the only 10 placeholder paragraphs are exactly those holding a `pending` upload.
+Properties (tested): lexical→md→lexical is equal in canonical form, and ToMarkdown is a fixed point,
+for all 351 stage states (checked during development, not committed — the content is the customer's),
+the golden fixtures, 3,000 random adversarial paragraphs and a native fuzz target
+(`FuzzMarkdownRoundTrip`, 5 min / 1.7 M inputs clean; the 7 regressions it found are seeds).
+Findings (`ToMarkdownIssues`): `lossy_alignment`, `lossy_style`, `lossy_format`, `placeholder`,
+`normalized`, `lossy_state_keys` (a non-null key next to `root`, e.g. `{"media": 12, "root": …}`).
+
+**9.12.5 FromMarkdown findings:** `html_as_text`, `comment_dropped`, `image_as_text`,
+`code_block_flattened`, `table_as_text`, `list_item_paragraphs_joined`, `list_item_block_flattened`,
+`list_became_checklist`, `nesting_capped`, `link_reference_undefined`, `link_url_invalid` (empty or space-containing URL: `linkValidation` runs
+for every link node, and a draft save skips it so the failure would surface at publish),
+`link_url_relative` (`../brief.md`, `page.html`, `www.example.com` resolve against the page URL on
+the site). FromMarkdown writes links without `id`, so the url field's `beforeChange` re-encoding hook
+(which runs only for id'd nodes) never rewrites them.
+
+**9.12.6 Package API** (pure): `FromMarkdown(Issues)`, `ToMarkdown(Issues)`, `PlainText`,
+`PlainTextWithPlaceholders`, `IsEditorState` (object with `root.type == "root"` and array
+`root.children`), `Walk(state, fn(node, path) bool)`, `NodeTypes`, `StripFrontmatter`.
+`PlainText` separates blocks by `\n\n`, list items and table rows by `\n`, cells by ` | `; uploads,
+blocks, relationships and rules contribute nothing. `PlainTextWithPlaceholders` shares the walker
+(`textWalker{placeholders}`) and renders every text-less node instead: `[upload media:12]`,
+`[relationship pages:47]`, `[block cta]`, `[inlineBlock badge]`, `***`, `[TYPE]` — for reading only
+(it is what `pay diff`'s `from_text`/`to_text` and `pay outline`'s summaries use). Derived keys
+FromMarkdown recomputes and ToMarkdown does not preserve: `direction`, paragraph
+`textFormat`/`textStyle`, list item `value`/`indent`, link `id`.
+
+**9.12.7 `pay lexical`** — three verbs, `op_result`, **L0**, run with `runOffline` (a lenient runtime
+that does not even construct the client or discovery; tested with a transport that fails the test on
+any request). Input: `FILE`, or stdin for none/`-`. An upstream error envelope is re-raised with its
+own code (§9.11.1). Exit codes 0, 1, 5 (`no_input`, `file_missing`, `bad_request_body`,
+`invalid_args`, `not_rich_text`, `richtext_rendered`).
+
+* `from-md [FILE|-] [--as FIELD] [--keep-frontmatter]`: `data` = the editor state; `--as FIELD`
+  (dotted for groups) makes `data` the write body `{FIELD: state}`, which `--data @-` accepts via the
+  §9.11.6 unwrap (`pay lexical from-md body.md --as content | pay update posts 12 --data @- --draft`).
+  An array hop (`layout.0.content`, `layout[0].content`) is `invalid_args` with the `pay blocks set
+  --set-md` pipe as hint, as for `--set-md` (it built `{"layout":{"0":…}}`, which empties the array).
+  **Front matter** (`lexical.StripFrontmatter`) is stripped with `frontmatter_stripped` (the message
+  gives the line count and the first line) unless `--keep-frontmatter`: a `---` line, a body whose
+  first line directly follows the fence and whose every line is a YAML `key:` line, list item, comment,
+  blank or indented continuation, and a closing `---`/`...`. Anything else is Markdown that starts
+  with a thematic break and is converted in full (verified: all 67 real-world Markdown source files strip as
+  intended; all 565 stage states render to Markdown that is not taken for front matter).
+* `to-md [FILE|-] [--field PATH] [-o|--out FILE|-]`: input is an editor state, a document, a `pay get`
+  or a `pay find` envelope — every editor state at any depth is found (`content`,
+  `layout[2].blocks[0].content`, `[1].content` in a list). `data = {markdown, fields:[{path, markdown}],
+  count, out?}`; several fields are joined, each introduced by `<!-- pay:field PATH -->`. `--field`
+  takes the §9.11.3 nested grammar (`layout[id:…].blocks[type:grid].blocks[0].content`); a selector
+  that matches no row is `selector_no_match` (4), several `selector_ambiguous` (5), a non-state or
+  missing key `not_rich_text` (5, `did_you_mean` = every rich-text path), a malformed path
+  `invalid_args`. `-o FILE` writes atomically (0644); `-o -` writes the bare Markdown to stdout and
+  moves the envelope to stderr. Findings → `lexical_<code>` warnings with paths
+  `FIELD > root.children[3]`.
+* `text …`: same input and flags; `data = {text, fields:[{path, text, chars}], count}`.
+
+Findings of every verb are warnings named `lexical_<code>`, one per code, `paths` ≤ 20
+(`line N` for from-md, file lines including front matter).
+
+#### 9.12.8 Rich text in the everyday commands
+
+**9.12.8.1 `--set-md KEY=VALUE`** (repeatable) on `create`, `update` (by id and `--where`),
+`globals update`, `upload`, `upsert`, the body form of `diff`, and `pay blocks add|set|new`.
+
+* VALUE: `@FILE`, `@-` (stdin), anything else is the Markdown itself (a literal leading `@` is written
+  `\@`). `@-` is `invalid_args` when stdin is already taken (`--data @-`, the document of a
+  `blocks add|set` stage, a second `@-`; `--data-file -` and `/dev/stdin` count as taking stdin, and
+  `--data-file -` reads it). `@-` that reads nothing but whitespace is `no_input` (as `pay lexical
+  from-md`): a closed stdin would otherwise clear the field. An `@FILE` with no Markdown (empty, or
+  only front matter) converts but warns `set_md_empty`; inline `KEY=` is the silent deliberate clear.
+  Inline Markdown holding the two characters `\n` and no real
+  line break warns `set_md_literal_newline` (the hint names `@file.md`, a heredoc and `$'…'`).
+* The conversion is exactly `pay lexical from-md` (the stored shape is byte-identical, verified), with
+  front matter stripped (`frontmatter_stripped`), findings as `lexical_<code>` warnings with
+  `paths: ["KEY line N"]`, a broken placeholder `bad_request_body`, a missing file `file_missing`.
+* **Write commands — key rules.** A dotted key reaches a GROUP field (`hero.richText`,
+  `meta.body`). A key with an array hop (`layout.2.content`, `layout[id:…].content`) is `invalid_args`:
+  a write body replaces a whole array, so a row cannot be addressed without it; the hint names the pipe
+  (`pay get … | pay blocks set <selector> --set-md <field>=@file.md --field <array> | pay apply`)
+  and `pay outline`.
+* **Write commands — field check.** A field the shard types as neither `richText` nor `json` (nor
+  unknown) is `invalid_args` with no request. A field the shard does **not** type (on an
+  introspection-disabled site every group sub-field) is checked against stored values before
+  anything is previewed or sent, because Payload stores an editor state sent to a text field as JSON
+  text (§2.9): (1) the target document's newest version (update by id, upsert's match, `upload
+  --replace`, the global), (2) else up to 10 documents holding the key
+  (`GET /COLL?where[KEY][exists]=true&select[KEY]=true&limit=10&depth=0&draft=true`). A non-empty
+  string/number/boolean/array there **refuses** the write (`invalid_args`, naming the document and
+  the deliberate path `pay lexical from-md FILE.md --as KEY | pay update COLL ID --data @-`, keeping
+  the command's `--draft`/`--locale`); a
+  non-editor object warns `set_md_not_richtext`; no evidence at all warns `set_md_field_unchecked`; a
+  failed read never blocks. A known richText/json field costs no request; `pay diff` only warns (after
+  the same sampling, naming the sampled document).
+* **`pay blocks add|set` — row-relative keys** in the §9.11.7 grammar (`content`, `section.body`,
+  `items[0].answer`); `pay blocks new` takes dotted keys into the template row; with `add --template`
+  the converted state replaces the template's empty rich text. `set_md_not_richtext` when the key
+  holds a non-empty non-rich-text value, or the cached census observed the key of that blockType with
+  another kind. `pay blocks set` counts `--set-md` as something to change.
+
+**9.12.8.2 `--richtext json|md|text`** (read) on `get` (id and `--slug`), `find`, `globals get` and
+`versions get`. Default `json` (the stored state; nothing recorded). Aliases: `markdown` → md,
+`plain`/`plaintext` → text, `lexical` → json; anything else `invalid_option` before any request.
+Every editor state anywhere in `data` (groups, blocks at any depth, array rows, `version.*`, every
+document of a list) is replaced by a string — `md` = `lexical.ToMarkdown`, `text` = `lexical.PlainText`
+— and `meta.richtext = {format, rendered, paths[, paths_truncated]}` records it (paths ≤ 100). Only
+the lossy `lexical_lossy_*` findings are raised on a read. `--output raw` prints the rendered data;
+`--output jsonl` prints rendered bare documents with `meta.richtext` on the stderr summary; `find`'s
+`next.cmd` re-emits `--richtext`. Verified on stage: `pay get pages 47 --draft --richtext md` →
+`rendered: 19`.
+
+**9.12.8.3 A rendered document is never written back.** `richtext_rendered` (exit 5), nothing sent,
+when (1) an ENVELOPE whose `meta.richtext.format` is `md`/`text` reaches `pay apply`, a `pay blocks`
+stage that passes a document on, `--data @-`/`--data @FILE`/`--data-file` of
+create/update/globals update/upload/diff, or `pay lexical to-md|text` (reading verbs — `blocks ls`,
+`blocks validate`, `pay outline` — accept it; refusing at the first edit stage is deliberate, because
+that stage's own output would no longer carry the marker); or (2) a BARE body (jsonl, a jq extract)
+holds a string where the shard declares a `richText` field — on the write paths and `pay apply`; or
+(3) the body holds a non-empty string where the **stored document** holds an editor state (rows matched
+by `id`, else by index when the `blockType` agrees; `""` is Payload's empty rich text and passes). (3)
+needs no schema and no census, so it covers block rich text on introspection-disabled sites: a dry run
+uses its pre-image, `upsert`/`plan`/`sync` their match, and a real `update <id>`, `apply` or `globals
+update` whose body holds block rows (or an index-keyed object) reads the newest version once before the
+confirmation (a failed read never blocks). Verified on stage (read-only): `pay get pages 35 --richtext md
+--output raw` written back → refused, 58 paths, with and without a cached census. The same comparison
+refuses an OBJECT where the document holds an ARRAY (`bad_request_body`, exit 5): `{"layout":{"0":…}}`
+(what `--set layout.0.x=…` builds) makes Payload replace the whole array — verified on localhost
+(Payload 3.87 / Postgres: 2 rows → 0, still 200). Before any read, an object with an all-digit,
+`blockType` or `id` key at a path the shard types `array`/`blocks` or the cached census knows as a blocks
+field is refused the same way (an object keyed by locale, `--locale all`, is not). `pay diff` warns
+(`richtext_as_string`, `array_as_object`) instead of refusing. `update --where` and `create` have no
+per-document pre-image: a string in a block row's field the cached census observed as `richText` is
+only a warning there, `richtext_as_string` (§9.7). A `pay plan`/`sync` manifest item hits the same error with the
+manifest's hint (re-export without `--richtext`, or convert with `pay lexical from-md`).
+
+### 9.13 `pay outline`
+
+```
+pay outline <collection> <id> [--draft]
+pay outline <collection> --slug SLUG [--draft]
+pay outline --global SLUG [--draft]
+pay get <collection> <id> --depth 0 [--draft] | pay outline      # any envelope or bare document
+```
+
+The agent used 54 of 77 `pay` calls through jq, mostly to find out what a page contains and how to
+address a row. `pay outline` answers that in one call. `op_result`, **L0**.
+
+* **Reading:** always `depth=0`; `--draft` adds `draft=true`. `--slug` uses §9.17's resolver. 1 request
+  (2 with `--slug`). With no arguments the document is read from stdin with the lenient runtime (no
+  profile, no request; an envelope's warnings and target are carried); an array on stdin is
+  `bad_request_body`, empty stdin `no_input`. Invalid combinations are `invalid_args` before any request.
+* **Rows** (`rows.DocTree`): every row of every array of objects — top-level fields and group fields,
+  at every depth, never into rich text or an expanded relationship — in document order (a row, then its
+  nested rows); arrays holding blockTypes first, then the other row arrays; scalar arrays are not rows.
+* **Row object:** `depth`, `path` (positional), `field` (the stable `--field` for the row's array),
+  `selector` (shortest, `id:` whenever the row has one), `index`, `id`, `block_type`, `block_name`,
+  `label`, `summary`, `children`, `nested` (each array inside → its row count, empty included),
+  `flags` (always an array). `field` + `selector` are exactly what `pay blocks … --field '<field>'
+  <selector>` accepts (verified for all 75 rows of stage pages 47 and 2).
+* **summary:** the first non-empty of `heading, title, headline, eyebrow, name, label, question, phase,
+  caption, tag, alt` (rich text read as plain text), then the same one group level down, then the first
+  rich-text field as `PlainText` (or `PlainTextWithPlaceholders` when it has no text), then
+  `[image 5]`-style for media keys, then `url`; joined with ` · `, whitespace collapsed, ≤ 80 chars.
+* **flags:** `empty_row` (a `{}` row — the orphan of §10.2.1), `no_block_type` (an untyped row in a
+  blocks array), `unknown_type` (a blockType the knowledge does not name — only when there IS knowledge).
+* **label/knowledge:** `discovery.NewBlockKnowledge` over the **cached** census (never built) and the
+  entity's shard; `label` is the declared block label and absent when unknown.
+* **counts:** `{rows, blocks, by_type{slug: n}, flagged{flag: n}}`. `--output table` renders an
+  indented tree (`OUTLINE SUMMARY FLAGS`).
+
+Verified on stage: `pay outline pages 47 --draft` → 48 rows (26 blocks), 1 request; the piped form → 0
+requests.
+
+### 9.14 `pay diff` — structural diff of two documents
+
+Proving that a write touches exactly the one block it should used to take a read to a file, a hand
+edit, a second read and `diff <(jq -S …) <(jq -S …)` — a line diff that reports every re-indented line
+and every index shifted by an insert, and knows nothing about how Payload applies a partial body.
+`pay diff` is that comparison done structurally by `internal/docdiff`, with Payload's write semantics
+applied. The same engine produces every dry-run `data.diff` (§12.2), `pay plan`'s per-item diff
+(§9.15) and `pay versions diff` (§9.14.8).
+
+#### 9.14.1 Forms
+
+| Form | left | right | requests |
+|---|---|---|---|
+| `<c> <id>` + body (`--data-file`/`--data`/`--set`/`--set-json`/`--set-md`, combined as §9.10.2) | server, `?depth=0&draft=true` | `docdiff.ApplyPatch(left, body)` | 1 GET |
+| `<c> <id> --draft-vs-published` | server, `?depth=0` (no draft: the stored row) | server, `?depth=0&draft=true` | 2 GET |
+| `<c> <idA> <idB> [--draft]` | server `idA` | server `idB` | 2 GET |
+| `--global <slug>` + body or `--draft-vs-published` | as above, against `GET /globals/{slug}` | | 1–2 GET |
+| `--left FILE --right FILE` | file (or `-`) | file (or `-`) | 0 |
+
+* Every form is **L0**: nothing but GETs is ever sent, the body form included; nothing is audited;
+  `--dry-run` is accepted as a no-op. The flag combination is validated **before** any dependency is
+  built (an impossible one is `invalid_args` listing the five forms, under a panicking transport); the
+  file form builds no client and needs no profile.
+* `--draft-vs-published` on an entity whose manifest says `drafts: false` → `feature_unavailable`
+  (exit 10) before the read; unknown drafts support is attempted (§9.3 tri-state).
+* Local sides accept a bare value or a PayCLI envelope (`.data`; a `version` envelope by its `version`
+  sub-document; an error envelope re-raises the upstream code). Unreadable file → `file_missing`,
+  invalid JSON → `bad_request_body`, empty → `no_input` (exit 5).
+* Exit status is **0 whether or not the sides differ**; callers branch on `data.identical`.
+
+#### 9.14.2 Output
+
+```json
+{"left":  {"source":"server","collection":"pages","id":2,"draft":true,"status":"published","updated_at":"…"},
+ "right": {"source":"server+patch","path":"page-2.json","collection":"pages","id":2,
+           "semantics":"payload-patch","body_keys":["_status","layout","meta","title"]},
+ "identical": false,
+ "summary": {"total":1,"added":0,"removed":0,"changed":1,"moved":0,"rich_text":0,"fields":["layout"]},
+ "changes": [{"op":"change","path":"layout[2].blocks[3].question","from":"Welche Angabe fehlt …?","to":"Welche Angabe fehlt … (lokal)?"}]}
+```
+
+* `source` ∈ `file | stdin | server | server+patch`. `summary.fields` — the sorted top-level fields any
+  change touches: exactly the keys a minimal PATCH must carry.
+* `changes[]`: `add` → `to`; `remove` → `from`; `change` → `from`/`to`; `move` → `from_index`,
+  `to_index`; row-level changes carry `kind: "row"`, `id`, `block_type`; rich-text changes carry
+  `kind: "richtext"`, `from_text`/`to_text` and (unless `--full`) no `from`/`to`; `detail: "formatting"`
+  marks a rich-text change whose plain text is identical.
+* `--output table` renders `OP PATH FROM TO` (or `(no differences)`); `--path` works on the object.
+* Warnings: `never_published` (the `--draft-vs-published` left side is not published),
+  `field_not_on_document` (body top-level keys the stored document does not have — Payload returns
+  every field it defines, so an absent key is almost always a typo it would drop), `body_id_mismatch`,
+  `body_publishes` (§10.2.2), `envelope_unwrapped`, the §9.10 coercion warnings, the §9.7 block
+  warnings, locale warnings, `set_md_not_richtext`, and `data_redacted` (§9.14.6).
+
+#### 9.14.3 PATCH semantics (`docdiff.ApplyPatch`) — verified against payload@3.87.1
+
+The right side of the body form is what Payload would STORE, not the body itself:
+
+1. **Absent keys keep their stored value** (`fields/hooks/beforeValidate/promise.js`:
+   `getFallbackValue` → `cloneDataFromOriginalDoc(siblingDoc[field.name])`).
+2. **Named groups merge key by key** (rule 1 recursed with the stored group as sibling document).
+3. **Arrays/blocks replace; rows merge by id** (`fields/hooks/beforeChange/getExistingRowDoc.js`):
+   a body row whose `id` equals a stored row's gets that row as its sibling document; any other row
+   is new; rows the body omits are gone.
+4. **Non-object rows are stripped** (`fields/hooks/beforeValidate/stripNullRows.js`).
+5. **The base is the newest version** (`updateByID.js` l.79), and a draft save does not update the main
+   row (`utilities/update.js` l.29/l.253). Hence the body form reads `?draft=true`, and
+   `--draft-vs-published`'s left side (no `draft`) is the stored main row.
+6. **A body `_status: "published"` publishes, even with `?draft=true`** (`isSavingDraft`, §2.9).
+   `pay diff` warns `body_publishes`; the write commands act on it (§10.2.2).
+
+`ApplyPatch` models 1–4 exactly, ignores the body's top-level `id`, and replaces rich text, scalars and
+scalar lists wholesale. It deliberately does not merge a stored row into a body row with the same id
+but a different `blockType` (one whole-row change). Not modelled without the schema, and stated where
+results are shown: a `json` field holding an object merges like a group unless passed in
+`Options.LeafPaths`, and a NEW row's unsent keys are absent where Payload fills in defaults. Flags
+(`--draft`/`--publish`) and server hooks (`publishedAt`) are not part of the body and not predicted.
+Verified on localhost: predicted and actual change lists of a partial body were identical
+path-for-path and value-for-value except those two stated limits.
+
+#### 9.14.4 The diff algorithm (`docdiff.Diff`)
+
+* Paths use the §10.2 notation (`layout[2].blocks[1].title`); every index addresses the RIGHT document
+  except the last index of a row removal (its LEFT position). Order is deterministic: keys sorted;
+  within an array, removed rows first, then the right rows in order.
+* **Ignored by default:** `createdAt`, `updatedAt` at every depth (`--include-timestamps` keeps them);
+  the documents' own root `id` in the two-id form. `--ignore PATH` (repeatable) ignores a path and its
+  subtree; `[]`/`[*]` match any index; a pattern never matches a sibling that merely shares a prefix.
+* **Null ≡ absent** as values; the op follows key presence (`Options.NullDistinct` reports the
+  difference; not a CLI flag). **Numbers** compare by value. **Scalar arrays** are one value.
+* **Row arrays** are matched **by id** when every id on each side is unique and at least one is
+  shared; otherwise **by position**, and each row's own `id` is then not compared (two independently
+  generated ids are noise). In id mode: unmatched left rows → `remove`, unmatched right → `add`,
+  matched rows outside one longest increasing subsequence of left indices → `move` — so one insert is
+  one `add`, never a cascade of moves. A **`blockType` change** of paired rows is ONE `change` with
+  `kind: "row"`.
+* **Rich text** (an object whose `root.type` is `"root"`) is compared structurally; a difference is ONE
+  `change` with `kind: "richtext"` and `from_text`/`to_text` from `lexical.PlainTextWithPlaceholders`
+  (§9.12.6), so a swapped image or block is visible. States nested inside a reported value are
+  replaced by `{"$richtext": "<plain text>"}` unless `--full` (the marker key cannot be a field name).
+* Inputs are never mutated and reported values never alias them.
+
+#### 9.14.5 Package API (`internal/docdiff`, pure)
+
+```go
+type Op string   // OpAdd "add" | OpRemove "remove" | OpChange "change" | OpMove "move"
+const KindRichText = "richtext"; const KindRow = "row"; const RichTextMarker = "$richtext"
+var DefaultIgnoreKeys = []string{"createdAt", "updatedAt"}
+type Change  struct { Op Op; Path, Kind string; ID any; BlockType string; FromIndex, ToIndex *int;
+                      From, To any; FromText, ToText *string; Detail string }
+type Summary struct { Total, Added, Removed, Changed, Moved, RichText int; Fields []string }
+type Result  struct { Identical bool; Summary Summary; Changes []Change }     // Changes never nil
+type Options struct { IncludeTimestamps bool; IgnoreKeys, IgnorePaths, LeafPaths []string;
+                      NullDistinct, Full bool }
+func Diff(left, right any, opts Options) Result
+func ApplyPatch(current, body map[string]any, opts Options) map[string]any
+func DiffPatch(current, body map[string]any, opts Options) Result   // Diff(current, ApplyPatch(…))
+func Equal(a, b any) bool; func JoinKey(path, key string) string; func JoinIndex(path string, i int) string
+func RootField(path string) string                                   // "layout" for "layout[2].x"
+```
+
+Consumers (dry-run diffs, `plan`/`sync`, `upsert`'s unchanged test) call `DiffPatch(current, body,
+opts)` with the current document read at `depth=0` (`draft=true` where drafts exist);
+`Result.Identical` is "no write needed" and `Summary.Fields` the minimal PATCH key set.
+
+#### 9.14.6 Redaction
+
+The envelope's redaction is key-based, and in a diff a secret's field name appears only in `path`:
+without an extra rule `pay diff users 1 2` printed API keys (reproduced before the fix). Every
+structural diff therefore masks `from`/`to` of a change whose path ends in a `redact.Key` (`apiKey`,
+`sessions[0]`, anything matching `token|secret`), keeps the change, and raises `data_redacted` naming
+the paths. `--no-redact` shows the true values.
+
+#### 9.14.7 Verified live (read-only on stage)
+
+`pay diff pages 47 --draft-vs-published` → identical, 2 GETs; pages 69 → 3 changes + `never_published`;
+the unmodified `pay get pages 2 --depth 0 --draft` envelope as `--data-file` → `identical: true` +
+`envelope_unwrapped`; the same export with one nested question edited → exactly one change, 1 GET; a
+rich-text edit plus a row move compared with `--left/--right` → `move layout[1]` + one `richtext`
+change, 0 requests.
+
+#### 9.14.8 `pay versions diff` on docdiff
+
+`pay versions diff <collection>|--global SLUG <vA> <vB> [--ignore PATH]… [--include-timestamps]
+[--full]` compares `docdiff.Diff(versionBody(A), versionBody(B))` with the records' own `id`/`_id`
+ignored. Two GETs, unchanged; redaction as §9.14.6. The output is a **compatible extension** of the
+v0.1.0 shape — `a`, `b`, `changed`, `changes[].path|kind|a|b` keep their meaning:
+
+```json
+{"a":"20","b":"37","identical":false,"changed":3,
+ "summary":{"total":3,"added":0,"removed":0,"changed":2,"moved":1,"rich_text":1,"fields":["layout","slug"]},
+ "changes":[{"path":"slug","kind":"changed","a":"old","b":"new","op":"change"},
+  {"path":"layout[1]","kind":"moved","a":null,"b":null,"op":"move","value_kind":"row","id":"6ab8…","block_type":"cta","from_index":3,"to_index":1},
+  {"path":"layout[2].content","kind":"changed","a":"Alter Text","b":"Neuer Text","op":"change","value_kind":"richtext","a_text":"Alter Text","b_text":"Neuer Text"}]}
+```
+
+`kind` is the v0.1.0 word `added|removed|changed` plus new `moved`; `a`/`b` are docdiff's `from`/`to`
+(a rich-text change carries its plain text there too; `--full` the editor states); new keys `op`,
+`value_kind`, `id`, `block_type`, `from_index`/`to_index`, `a_text`/`b_text`, `detail`, and top-level
+`identical`, `summary`; `changed` = `len(changes)`. `--output table` renders like `pay diff`.
+**Semantic changes** (documented, keys unchanged): rows matched by id when shared, else by position
+with row ids ignored — Postgres gives version snapshots different row ids, so the old leaf diff
+reported **111** changes for stage pages 47 versions 699 vs 687 where there are **7**; a blockType change
+is one row change; a rich-text edit is one change; timestamps ignored at every depth; null equals absent.
+
+### 9.15 Idempotent writes — `$ref`, `pay upsert`, `pay plan`, `pay sync`
+
+The migration agent wrote by hand a "find by slug → update, else create" script with an `ids.json`
+state file, a manual `pay find … --where 'slug eq x'` for every relationship id, and a manual
+`diff <(jq -S …)` to see whether a re-run would change anything — and published pages by accident,
+because an edited export carries `_status: "published"`. §9.15 replaces all of it with declarative,
+idempotent writes. `internal/manifest` (reading, `$ref` grammar, ordering) is pure apart from file
+reads; resolution and writes live in `internal/cli/{refs,upsert,plan,sync}.go`.
+
+#### 9.15.1 References: `{"$ref": …}` in every write body
+
+| Form | Replaced with |
+|---|---|
+| `{"$ref":"pages","slug":"about"}` | the id: `12` |
+| `{"$ref":"pages","slug":"about","$as":"polymorphic"}` | `{"relationTo":"pages","value":12}` |
+| `{"$ref":"pages","slug":"about","locale":"de"}` | several keys = several equals-matches (AND) |
+| `{"$ref":"posts","where":{"title":{"like":"Launch"}}}` | any Payload where object (ANDed with equals keys) |
+| `{"$ref":"@home"}` / `{"$ref":"@home","$as":"polymorphic"}` | the id of plan item `home` — **plan/sync only** |
+
+Grammar (`manifest.Parse`): `$ref` a non-empty string; `$as` ∈ `id` (default) | `polymorphic`;
+`where` a non-empty object; every other key a field name (dotted keys reach groups) whose value is a
+string, number or boolean; any other `$`-key is an error; at least one criterion; `@key` takes only
+`$as`. Malformed → `bad_request_body` naming the path (`$ref at layout[2].links[0].link.reference: …`).
+
+* Resolved **before anything is previewed or sent**, so `--dry-run` shows the real ids, by the shared
+  bounded lookup `Deps.lookupDocs` (also used by §9.17): `GET /{coll}?where=…&limit=2&depth=0&select[id]=true`,
+  plus `draft=true` where drafts exist (a draft-only document is a valid target) and the write's
+  `locale`. Field names are checked against the shard first (`unknown_field`, 0 requests); a `where`
+  goes through `query.ValidateWhere`; an unknown collection is `collection_unknown`.
+* 0 matches → **`ref_unresolved`** (exit 4) with a runnable `pay find` hint; 2+ → **`ref_ambiguous`**
+  (exit 5) in the `slug_ambiguous` shape (total in the message, ids in `did_you_mean`). Answers are
+  cached per invocation; a body without `$ref` costs nothing (`manifest.HasRefs`).
+* Wired into `create`, `update` (by id and `--where`), `globals update`, `upload` metadata, the body
+  form of `pay diff` (in the locale the document is read in), `upsert`, every sync item, and
+  `pay apply` — all through `Deps.prepareWriteBody` (with §9.15.2's mask handling). A `@key` reference
+  outside a plan is `bad_request_body`. A `$ref` inside a `json` field is still resolved (no escape form).
+* **relationTo check** (`refScope`, server-resolved and plan-local references alike). Postgres ids are
+  small serials, so a posts id written into a categories relationship usually IS some category's id:
+  Payload stores it and the link points at an unrelated document. So the collection a reference names
+  must be one its field accepts: a reference at `X.value` whose sibling `X.relationTo` is a string (a
+  written-out polymorphic value, a Lexical link's `fields.doc`, an upload/relationship node) must name
+  that collection; otherwise the field at the reference's path — `Shard.Field` with indexes stripped, or,
+  below a block row, `Shard.BlockSchemaFor(blockType)` — must list it in `relation_to`. A mismatch against
+  an authoritative `relation_to` (graphql, configured, project-source) is **`bad_request_body`** naming the
+  path, the field and its relationTo, before anything is sent. Where `relation_to` is unknown or only
+  observed (REST-only discovery: stage's `pages.parent` is typed `number`), one **`ref_target_unchecked`**
+  warning lists the paths (per plan: the item keys). References inside rich text without a sibling
+  `relationTo` are not checked.
+* Markdown names documents by slug with `[t](pay:COLLECTION/FIELD=VALUE)`: `doc.value` becomes
+  `{"$ref": COLLECTION, FIELD: VALUE}` (§9.12), resolved like any other reference. A `{relationTo,
+  value}` whose value is a non-numeric string for a collection with `id_type: number` (the dead link
+  `[t](pay:pages/about)` writes) warns **`relation_id_not_numeric`** (0 requests: the id type comes from
+  the discovery manifest).
+
+#### 9.15.2 `pay upsert <collection>` — create or update one document (L1)
+
+1. The body is built exactly like `create`/`update` (§9.10.2, envelope unwrap, §9.7 block warnings).
+   Server-owned top-level `id`, `createdAt`, `updatedAt`, `globalType` are never sent; **`_status` is
+   dropped** with `body_status_ignored` (§9.15.4). Values equal to the redaction mask `"<redacted>"`
+   (an export of a secret-looking key) are never sent (writing the mask back would destroy the stored
+   value), and how depends on how Payload stores what surrounds them (`internal/cli/masked.go`): in a
+   **merged** place — a top-level field, a group key, a key of a row — the key is left out with
+   **`redacted_not_sent`** (a PATCH keeps the stored value; a new document or row gets the default).
+   Inside a **wholesale** value — a Lexical editor state anywhere, or a `json` field of the shard —
+   leaving a key out would DELETE it (Payload stores the value whole), so the masked value is **put back
+   from the matched document** at the same place (rows paired by id, else index and block type; Lexical
+   nodes by index and only between nodes of the same `type`). Only when there is nothing to restore
+   from (a create, a node the stored value lacks) is the key removed, with **`redacted_removed`**. Stage
+   page 35 stores a literal `"<redacted>"` at `layout[16].content…fields.media.ogQuelle.hash`: its
+   unmodified export restores that literal and plans `unchanged`. The same handling runs in every write
+   verb (`create`, `update`, `apply`, `globals update`, `upload`, the body form of `pay diff`) via
+   `Deps.prepareWriteBody`, which reads the document being written (newest version, depth 0) only when
+   a wholesale value holds a mask; a bulk `update --where` has no single document to restore from.
+   A null is never masked on read (§5.3): masking it made a get → edit → write loop store the string.
+   A body `id` that is not the matched id warns `body_id_mismatch`.
+2. References are resolved (§9.15.1).
+3. `--match` (default `slug`; comma-separated or repeated; dotted allowed; `--match id` reads the
+   body's `id`) names fields whose **values come from the body**. A missing/null value →
+   `invalid_args`; non-scalar → `invalid_args`; unknown field → `unknown_field` (0 requests). A match
+   on `id` that finds nothing is `doc_not_found` (exit 4), never a create (the copy would get another id).
+4. One lookup (`lookupDocs`, AND of equals, newest draft where drafts exist, whole documents): 2+ →
+   **`match_ambiguous`** (exit 5, ids in `did_you_mean`); 0 → create; 1 → that document at depth 0 is
+   the diff base.
+5. Decision: `sent = alignToStored(current, body)` (§9.15.5), `docdiff.DiffPatch(current, sent)` —
+   identical and no status change → **unchanged: nothing written, no backup, no audit record**; else
+   update, sending the top-level fields that change (`Summary.Fields`) of `sent`, **plus every
+   top-level string, number or boolean field the body declares whose value equals the stored one**
+   (`unchangedScalars`; never upload fields Payload derives from the file — `url` + `filename` would
+   make it fetch the file again), plus the status body. The re-sent scalars are what keep presence-based
+   hooks from overwriting them: the website template's `populatePublishedAt` sets `publishedAt` to now
+   whenever `req.data` has none, so an edit that sent only the changed label moved the public date and
+   needed a second sync. `fields` still lists only the changed fields. `--force` sends the whole body
+   anyway (`meta.upsert.forced: true`); `--ignore PATH` removes paths from the unchanged test, and an
+   ignored field that differs is not re-sent. After an update at `--depth 0`, the echo is compared with
+   the declared fields the write did not send; a difference (a hook rewriting a group or array) warns
+   **`hook_rewrote_unsent`** — running the upsert again writes the declared value back.
+6. A create in an upload collection is refused before any write (`file_missing`, hint `pay upload …`).
+7. The write goes through `runCreateOne`/`runUpdateOne` with command `upsert`: backups (update half),
+   audit (`command: upsert`, `action: create|update`), echo-diff, `created_as_draft`, the §12.2 dry run
+   and L1 confirmation are the create/update ones.
+8. After the write, each match field of the echo is compared with the value used; a difference (a
+   slug-formatting hook) warns **`match_value_normalized`** naming the stored value — otherwise the next
+   upsert would not find the document and create another. A create failing `validation_failed` on a
+   match field gets a `pay find <c> --where '<f> like <word>'` hint.
+9. `--publish`/`--draft` on a collection without drafts → `feature_unavailable` (exit 10).
+
+Output: `data_kind: doc` (for `unchanged` the current newest version, `changed` all zero) and
+`meta.upsert = {action: created|updated|unchanged, matched_by: {field: value}, id, forced?}`.
+`--dry-run` → `op_result` with `action` (plan vocabulary `create|update|unchanged`), `matched_by`,
+`id`, `write_mode`, `fields`, `diff`, `would_affect`, `request` and `would_backup`; an unchanged dry
+run has `would_affect: 0` and no `request`.
+
+#### 9.15.3 The manifest format
+
+A manifest **file** holds one item object or a JSON array of items. Arguments: a file; a **directory**
+(every `*.json` below it, recursively, lexical path order, names starting with `.` skipped); or `-`
+(stdin, once). A saved PayCLI envelope is read as items too: `pay get` (`doc`) → one item, `pay find`
+(`doc_list`) → one per document, `pay globals get` (`global`) → one global item; each with status
+`keep`, collection from `target.slug`, match `slug` — or `id` when the document has no slug (stage
+`ctas`, `media`). Any other envelope, an error envelope, an empty file, two JSON values in one file,
+an empty array, or an envelope **read above `--depth 0`** (an expanded relationship outside rich text;
+up to 5 paths named, hint `pay get <c> <id> --depth 0 --draft`) is `manifest_invalid`.
+
+```jsonc
+{
+  "type": "object",
+  "additionalProperties": false,        // except "$"-keys ("$schema", "$comment"): ignored
+  "properties": {
+    "key":        {"type": "string", "pattern": "^[^@\\s][^\\s]*$"},
+    "collection": {"type": "string"},   // exactly one of collection | global
+    "global":     {"type": "string"},
+    "match":      {"oneOf": [{"type": "string"},
+                             {"type": "array", "items": {"type": "string"}, "minItems": 1, "uniqueItems": true}],
+                   "default": ["slug"]},                      // collections only
+    "status":     {"enum": ["keep", "draft", "published"], "default": "keep"},
+    "locale":     {"type": "string"},
+    "data":       {"type": "object"}    // required; may hold {"$ref": …} anywhere
+  },
+  "required": ["data"]
+}
+```
+
+* **Keys** default to `<collection>/<match value…>` (`pages/about`, `@<locale>` appended when the
+  item sets one; globals `globals/<slug>`). Two items naming the same document or global are
+  `manifest_invalid`. Unknown keys are rejected with did_you_mean.
+* **Exported ids** (`body_id_mismatch`): an item's `data.id` is never sent but is compared with the
+  match result — a different id, or no match (a create), warns ("… so this CREATES a new one"; hint
+  `pay update <c> <id> --set slug=<new> --dry-run`). This is the rename trap: editing an export's slug
+  used to plan a silent full copy next to the original.
+* **Every problem is reported at once** — parse, key/duplicate and per-item planning problems — as
+  `error.failures[] {id: "<key> (<file>#<i>)", code, message}`; the error code is the common code when
+  all agree, else `manifest_invalid`.
+* **Linking:** a reference names a plan item when it is `@key`, **or** an equals-reference whose
+  collection, field set and values are exactly another item's collection and match. A linked item that
+  exists resolves with no request; one that does not exist yet is a **dependency** created first. A
+  reference to a global item is refused (globals have no id).
+
+#### 9.15.4 Publication state: `status`, write modes, and `_status` in data
+
+`_status` is **never** taken from the body in upsert and sync (warning `body_status_ignored`, one per
+invocation listing the item keys), because an exported published page written "as a draft" would
+publish (§2.9). The state is the item's `status` (upsert: `--publish` / `--draft` / neither = keep):
+
+| status | document exists, newest version | write mode | request |
+|---|---|---|---|
+| `published` | any | `publish` | body `_status: "published"`, no `?draft` — live, full validation |
+| `draft` | any | `draft` | `?draft=true` — a draft version; **never unpublishes** |
+| `keep` (default) | `published` | `save` | plain save, no `_status` — stays published |
+| `keep` | `draft` | `draft` | `?draft=true`; on a **published** document with a pending draft the live version does not change: warning `saved_as_draft` |
+| `keep` / `draft` | does not exist | `draft` | `POST ?draft=true` (`created_as_draft` says what publishing will need) |
+| `published` | does not exist | `publish` | `POST` with `_status: "published"` |
+| any | entity without drafts | `save` | plain; `draft`/`published` there is `feature_unavailable` at plan time |
+
+Drafts support unknown: the document's own `_status` decides. A status-only change is an `update` with
+`fields: []` and body `{"_status":"published"}`. `keep` on a published document with a pending draft
+is a `draft` write (the newest version is a draft), so a sync never trips §10.2.3's refusal — and it
+never takes the change live either. Because the match reads only the newest version, an update item
+whose newest version is a draft costs **one more read**, the stored row's `_status`
+(`select=_status`, no `?draft`), so the envelope can say what that write does to a live document:
+
+* `keep` over a published row → **`saved_as_draft`** ("… saves this change into that draft: the live
+  document does not change"; hint `--publish` / `"status": "published"` and
+  `pay diff <c> <id> --draft-vs-published`) — on `plan`, `sync --dry-run`, the real sync and
+  `upsert` (dry run and real run). A draft write never reaches §10.2.3's guard, so nothing else says it.
+* `published` over a published row → **`publishes_pending_draft`** (§10.2.3's warning) on `plan` and
+  `sync --dry-run`, which never reach the update path; the real sync and `upsert --publish` get it
+  from `runUpdateOne`'s guard, once.
+
+The plan item then also carries `stored_status: "published"` next to `current_status: "draft"`.
+A failed read adds no warning (a publish still runs the guard; a draft save cannot take anything
+offline).
+
+#### 9.15.5 The plan (`buildPlan`)
+
+1. **Load** (`manifest.Load`): files, envelopes, keys, duplicates.
+2. **Target**: entity lookup, status vs drafts, data hygiene (server-owned keys, `_status`, the mask),
+   locale (the item's or the root one, validated), match values.
+3. **Read**: collections — one `lookupDocs` per item (limit 2, depth 0, newest draft, whole documents):
+   0 → create, 1 → current + id, 2+ → `match_ambiguous`; globals — `GET /globals/{slug}?depth=0[&draft=true]`.
+4. **Link** references to plan items; an edge only towards items that do not exist yet.
+5. **Order** (`manifest.Order`): Kahn's algorithm, lowest load index first among ready items, so an
+   independent manifest keeps load order. A cycle among new documents → **`ref_cycle`** (exit 5) naming
+   it (`pages/a → pages/b → pages/a`). A cycle between existing documents is fine.
+6. **Resolve and decide**: references replaced (a pending create by a placeholder string, so a
+   dependent's diff still shows the change); create → `fields` = every body key; existing →
+   `sent = alignToStored(current, body)`, `DiffPatch(current, sent)`, unchanged or update with
+   `fields = Summary.Fields` — **the write sends those fields of `sent`** (plus the unchanged declared
+   scalars, §9.15.2 step 5), so the diff is exactly the write. Masked values inside rich text or json
+   are restored from the stored document before the diff (§9.15.2 step 1).
+   * **`alignToStored` — row ids.** A body row without an id is a NEW row to Payload, so every key it
+     leaves out falls back to its `defaultValue` and every row id changes (§2.9). A manifest is normally
+     written without row ids, so every id-less body row **adopts the id of a stored row**: the first
+     stored row, in stored order, not claimed by a body row's own id or an earlier adoption, with the
+     same `blockType`. Payload then merges it (unsent keys keep their stored value, the id is stable),
+     recursively. An id-less row with no partner stays new. Consequences: a key **removed** from a
+     manifest row is not a change (write `null` to clear it); deleting a row from an id-less manifest
+     shifts later rows onto their predecessors' ids; an export plus an appended id-less row converges
+     after one sync.
+   * **`alignToStored` — dates.** A body date that names the same instant as a stored
+     `Date.toISOString` string (`"2026-01-01"` = UTC midnight, or a date-time with a zone) is replaced
+     by the stored form; a date-time without a zone is never equated.
+   * **`alignToStored` — numeric ids.** A body string that spells the stored number (`"4"` against
+     `4`, element-wise in `["66"]` against `[66]`: relationship/upload ids from a manifest, which `--set`
+     would have coerced) is replaced by the stored number, so the item converges.
+   * `opts`: `--ignore`, `--full`, the entity's top-level `json` fields as `LeafPaths`.
+   * Warnings for create/update items only (advice about a write that will not happen is noise), lifted
+     to the envelope as `"[<key>] <message>"`: §9.7 block warnings (computed on what the write sends,
+     so an update that leaves `layout` alone has none), `field_not_on_document`, `data_redacted`,
+     `relation_id_not_numeric`; envelope-level `redacted_not_sent`, `redacted_removed` and
+     `ref_target_unchecked` (item keys in `paths`); for update items **`orphan_risk`**
+     (§10.2.1.4) from the state already read (0 requests; reported by `plan` and `sync --dry-run` only —
+     a real sync's writes run their own checks); for update items over a pending draft `saved_as_draft`
+     / `publishes_pending_draft` (§9.15.4).
+7. Items that failed any stage are skipped later; items referencing them are `not_planned` with a
+   `reason`. If anything failed, the plan is an **error envelope** whose `data` still carries the plan —
+   nothing is written.
+
+Cost: one request per collection item and per global, plus one per distinct server-resolved reference,
+plus one per update item whose newest version is a draft (its stored `_status`, §9.15.4).
+Plans are sequential (a 500-item manifest costs ~500 reads). Match lookups exclude trashed documents.
+
+#### 9.15.6 `pay plan <DIR|FILE|->...` (L0)
+
+`op_result` `{summary: {items, create, update, unchanged}, items: [{key, source, collection|global,
+match, action, id, status, current_status, stored_status?, write_mode, depends_on, fields, diff?}]}` in **execution
+order**. `write_mode` is absent for `unchanged`; `diff` only for existing documents (`--brief` drops
+`changes`, keeps `summary`); `current_status` is the newest version's `_status`; `stored_status` (only
+when it was read, §9.15.4) is the stored row's — `published` there with `current_status: "draft"` is a
+live document with a pending draft. `--output table` →
+`ACTION KEY TARGET MODE FIELDS`. Verified read-only on stage: 41 pages as one `pay find … --depth 0
+--draft` envelope → 41 × unchanged (41 requests); page 47's export with one nested title edited →
+exactly that change, `fields: [layout]`, mode `save`.
+
+#### 9.15.7 `pay sync <DIR|FILE|->...` (L2)
+
+1. Plan exactly as §9.15.5 (any problem → the plan error, nothing written).
+2. `--dry-run` → the plan plus `dry_run: true` and an aggregated `would_backup`; 0 writes, no audit.
+3. Every item unchanged → success, **no confirmation needed**, nothing written.
+4. Otherwise **one confirmation** for the whole sync (L2: exit 11 in a non-TTY without `--yes`),
+   "sync will create N and update M document(s) and K global(s) …". The per-item writes then run
+   without asking again.
+5. Items are written in plan order through `runCreateOne` / `runUpdateOne` / `runGlobalUpdateOne` with
+   command `sync`: each update item is backed up (`…--sync.json`), audited (`command: sync`,
+   `action: create|update`), echo-checked; warnings are lifted as `[key] …` (a write's warnings that
+   repeat the plan's are not added twice). An update item also gets `hook_rewrote_unsent` (§9.15.2).
+   An item with dependencies is re-resolved with the real ids just before its write and re-decided.
+   A failed item's `validation_failed` hint is rewritten in manifest terms: set `"status": "draft"` on
+   the item (sync has no `--draft`), `pay describe <slug> --required-only`.
+6. A failed item does not stop the others; items that reference it are `not_attempted` with a
+   `reason`. `--fail-fast` makes every later item `not_attempted`.
+7. Result `op_result` `{summary(+created, updated, failed, not_attempted), items (result:
+   created|updated|unchanged|failed|not_attempted), succeeded, failed, not_attempted}`, `changed`,
+   `next: {reason: verify_write, cmd: "pay plan <args> --brief"}`. Failures:
+   * ≥ 1 write committed → **`partial_failure` (exit 7)**, hint "… Re-running `pay sync <args> --yes`
+     is SAFE: a sync re-plans against the server, skips every item that is already in place and writes
+     only what is still missing or different", `next.reason: retry_failed_subset`. **Unlike §12.5's bulk
+     update, re-running a sync is idempotent.**
+   * nothing committed → the first failed item's own error (e.g. `validation_failed`, exit 5), message
+     "sync wrote nothing" — unless a failure is `server_error`/`timeout`, whose write may have committed:
+     then "no write of this sync was confirmed" and a hint to run `pay plan <args> --brief` first.
+   * nothing committed and nothing failed (interrupted) → `timeout` (exit 6).
+
+Verified on localhost (6-item manifest: category parent/child by `@key`, posts by equals-reference, a
+page with a polymorphic reference, the `header` global): plan → 5 create + 1 update in dependency
+order, 6 requests; `sync --yes` → 13 requests, 1 backup; plan again → 6 × unchanged; a one-label edit
+→ exactly that change, the write sends only `hero`.
+
+### 9.16 Frontend URLs and draft preview — `pay url`
+
+The migration agent **published pages to stage on every iteration only to screenshot them**, because a
+draft could not be viewed. The website template already ships the answer
+(`src/app/(frontend)/next/preview/route.ts`: checks `previewSecret`, authenticates the caller with
+`payload.auth({headers})`, `draftMode().enable()`, `redirect(path)`); what was missing is a client that
+performs that GET with the profile's credential **without** following the redirect and keeps the
+`Set-Cookie`.
+
+```
+pay url <collection> <id> | <collection> --slug SLUG [--draft] [--locale CODE]
+        [--preview [--cookie-file FILE]]
+```
+
+**L0** (the handshake changes no content). `op_result`:
+
+```json
+{"url":"https://stage.example.com/skills/data-ai-engineering/dashboards",
+ "path":"/skills/data-ai-engineering/dashboards","path_source":"breadcrumbs",
+ "site_url":"https://stage.example.com","site_url_source":"derived:base_url",
+ "collection":"pages","id":47,"slug":"dashboards",
+ "status":"published","has_unpublished_changes":false,"draft":false,
+ "preview":{"url":"…","cookie_file":"…/state/preview/<profile>.cookies.json",
+   "cookies":[{"name":"__prerender_bypass","domain":"localhost","path":"/","expires":null,
+               "http_only":true,"secure":false,"same_site":"Lax"}],
+   "handshake":{"url":"…/next/preview?path=%2Fx&previewSecret=<redacted>","status":307,
+                "location":"/x","credential_sent":true},
+   "key_source":"env:PAY_PREVIEW_SECRET","key_fingerprint":"f6ea7f7a3a58a0d6",
+   "load":{"agent_browser":"agent-browser cookies set --curl FILE --domain HOST && agent-browser open URL",
+           "curl":"curl -sS -H \"Cookie: …\" URL"}}}
+```
+
+**9.16.1 Status.** For a drafts collection: GET `?draft=true` first; if the newest version is
+`published` it IS the stored row (1 request, `has_unpublished_changes: false`); otherwise a bare GET
+supplies the stored state (`status` = its `_status`, `has_unpublished_changes: true`). No drafts: 1
+request, `status: null`. `--draft`/`--preview` resolve the path from the newest version (`draft: true`)
+and report `published_path` when it differs.
+
+**9.16.2 Path ladder** (`resolveFrontendPath`, pure): the last `breadcrumbs[].url` starting with `/`
+(nested-docs plugin) → the profile's `url_paths[collection]` template → `"/" + PathEscape(slug)` →
+otherwise `feature_unavailable` (exit 10) with a `pay config set profiles.<p>.url_paths.<c> '/<c>/{slug}'`
+hint. A resulting `/home` becomes `/` (`path_source: home`). Template placeholders: any document field
+or dotted scalar path (`{slug}`, `{category.slug}`, `{id}`) and `{locale}`; path-escaped before the
+first `?`, query-escaped after it; a placeholder without a value is `invalid_option` (no URL with a
+hole). Warnings: `url_path_guessed` (`/{slug}` on a collection other than `pages`), `url_not_live` (no
+published version and not `--draft`/`--preview`; hint `pay url <c> <id> --preview`).
+
+**9.16.3 `--preview`.** Resolve the secret first (§5.5; `preview_secret_missing`, exit 9, before any
+request when `{secret}` is needed); expand `preview_path` (`{path}`, `{secret}`, `{collection}`,
+`{id}`, `{slug}`); `SiteGet` (§6.3); map 401/403 → **`preview_denied`** (exit 8; the message says
+whether the credential was withheld cross-origin), 404 → **`preview_failed`** (exit 10, "no preview
+route"), no usable cookie → `preview_failed`. A cross-origin handshake that still succeeded warns
+`preview_credential_withheld`. Cookies deleted by the response are dropped. The cookie file is written
+through `fsatomic` at 0600 (dirs 0700): a JSON array in the Playwright/agent-browser shape
+`{name, value, domain, path, expires, httpOnly, secure, sameSite}` (host-only cookies get the site host
+as `domain`, `expires` is unix seconds or `-1`, `sameSite` defaults to `Lax`); default
+`<state_dir>/preview/<profile>.cookies.json`. **Cookie values never appear in the envelope.** The
+emitted `agent-browser` hint carries `--domain` because agent-browser's JSON import fails without it
+(`CDP error (Network.setCookies): Invalid cookie fields`).
+
+Verified on localhost: never-published page → 404 without a cookie; `pay url pages 46 --preview` →
+`307`, one `__prerender_bypass` cookie written 0600; `curl` with it → 200 with the draft's title; the
+secret appeared in no output, log, audit record or file under `PAY_HOME`. Stage (read-only):
+`pay url pages 47` → the breadcrumbs URL, 1 request; page 1 (`home`) → `/`. `--output id` prints the
+document id; the URL is `--path .url --output id`.
+
+### 9.17 Addressing one document by slug
+
+`(*Deps).ResolveDocBySlug(ctx, t, slug, SlugLookup{Field, Draft, Trash, Locale})` in
+`internal/cli/docresolve.go` is the one implementation (`get --slug`, `url --slug`, `outline --slug`),
+built on the same bounded `lookupDocs` as §9.15: one request
+`GET /{c}?where[slug][equals]=S&limit=2&depth=0&select[slug]=true` (+ `draft=true`, `trash=true`,
+`locale` as asked). 0 → `doc_not_found` (exit 4; without `--draft` on a drafts collection the hint says
+a slug changed in a draft is found only with `--draft`); > 1 → **`slug_ambiguous`** (exit 5,
+`did_you_mean` = the ids, the message carries the total); 1 → `DocRef{ID, IDString, Slug}`. A slug field
+the shard does not know is `unknown_field` before any request. `pay get <c> --slug S` = resolve + the
+normal GET (2 requests); exactly one of `<id>` / `--slug` (`invalid_args`).
 
 ---
 
@@ -2459,7 +4080,10 @@ Rules:
 * `data` is the natural shape: a bare array for `doc_list`, a bare object for `doc`, an integer for
   `count`. Payload's `{docs:…}` wrapper is unwrapped into `data` + `page`; a global's
   `{result, message}` is normalised to `data` so globals and collections look identical to a caller.
-* `page` is present iff `data_kind == "doc_list"`. `truncated` is one boolean requiring no arithmetic.
+* `page` is present iff `data_kind == "doc_list"`. `truncated` is one boolean requiring no arithmetic:
+  `true` means more matching documents exist than this envelope holds — another page on a paginated
+  read (it equals `has_next_page`), or `--all` stopped at `--max`. Following `next.cmd` until it is
+  `false` collects the whole set.
 * `edits` is present **only** on §9.11's edit pipeline — the `pay blocks` verbs and `pay apply`. It is
   `{fields, ops}`: `fields` are the document paths the pipeline changed, in first-touched order and
   deduplicated, and `ops` is every transform applied, oldest first. `pay apply` builds its PATCH body
@@ -2481,6 +4105,22 @@ Rules:
 * `meta.date_field` / `meta.since` / `meta.until` are non-null exactly when `--since`/`--until` were
   used, and carry the **resolved** field name and absolute bounds (§9.4).
 * `meta.auth_mode` ∈ `api-key` | `jwt` | `anonymous`.
+* **The agent-ergonomics release adds no `data_kind`** (a new one is a breaking change): every new
+  command reports `op_result` (`diff`, `outline`, `plan`, `sync`, `url`, `lexical *`, the block catalog,
+  `backups list|show|prune`, every dry run), `doc` (`upsert`) or `doc`/`global` (`backups restore`), and
+  the several-ids publish reports `bulk_result`. New information travels in `meta` keys that are
+  **absent unless the command produced them** (all `omitempty`):
+
+| key | set by | shape |
+|---|---|---|
+| `meta.backups` | any write that took a §12.8 backup — on success **and** on a failure after the backup | `["/abs/…/pages/42/20260928T134135.519Z--update.json", …]` |
+| `meta.restored_from` | `pay backups restore` | the backup file written back |
+| `meta.richtext` | a read with `--richtext md\|text` (§9.12.8.2) | `{format: "md"\|"text", rendered, paths[≤100], paths_truncated?}` — its presence is what the write paths refuse |
+| `meta.reset_nested` | a `--reset-nested` write (§10.2.1.6) | `{mode, phases, writes, cleared_block_types, carriers, at_risk, empty_rows_before, history_versions, steps, verified, remaining_empty_rows?, failed_phase?, unresolved?}` |
+| `meta.upsert` | `pay upsert` (§9.15.2) | `{action: created\|updated\|unchanged (dry run: create\|update\|unchanged), matched_by: {field: value}, id, forced?}` |
+
+  Every catalog verb (§7.10c) carries its cost report in `data.census`, and every dry run its preview
+  in `data.diff` / `data.would_backup` / `data.reset_nested` / `data.steps` (§12.2).
 
 ### 10.2 Write envelope and the echo-diff check
 
@@ -2537,6 +4177,298 @@ documented manual answer.
 This check exists because Payload returns 201 `"Page successfully created."` while having thrown away
 an entire `layout` array for one wrong `blockType`. No other Payload client catches this, and an agent
 will believe the success message.
+
+**Three refinements of this release.**
+
+* **`stored_as_string`.** Where the body sent a non-empty object or array and the echo holds a string
+  that is JSON text (starts with `{`/`[`), Payload stored the value in a text column as JSON (§2.9:
+  an editor state sent to `meta.description`). Those paths are reported once as `stored_as_string`
+  (hint: `pay describe <c>` and `--set KEY=…` to write the text back), and their leaves are **not**
+  reported as `input_silently_dropped`, whose "Payload discards unknown fields" names the wrong cause.
+  A string echo that is not JSON text (a populated relationship echoing as its id) is not this case.
+  Every caller of the echo-diff raises it (create, update, apply, globals update, upsert, sync).
+* **`{}` rows never pair with sent rows.** The leaf echo-diff runs on the echo **without** its `{}`
+  rows (`orphans.WithoutEmptyRows`), so an orphan (§10.2.1) is never matched with the body's row at the
+  same index and misreported as `input_silently_dropped`; §10.2.1.3 reports it as `orphan_rows`.
+* **A global update answers `{"message", "result": {…}}`** on Payload 3.87 (§2.9); `payload.writeDoc`
+  unwraps `result`. Before, the wrapper itself was diffed as the document and every field sent to
+  `pay globals update` was reported `input_silently_dropped`.
+
+`--select` narrows the echo; when it hides paths the body sent, the check says so
+(`echo_check_narrowed`) rather than reporting them dropped.
+
+#### 10.2.1 Orphan rows — nested block restructures on Postgres
+
+**The failure.** On a Postgres project, changing the TYPE of a nested block (a `bento` inside a `group`
+becomes a `grid`) leaves the old nested rows (the bento's `bentoItem`s) in the database. They read back
+at their old path: as `{}` rows when the field now at that path does not accept their type, as real
+rows when it does, invisibly when no field has that path. Top-level swaps in `layout` are clean. The
+only fix before this section was deleting and re-creating the document, which changes its id and drops
+its versions.
+
+**10.2.1.1 The adapter's write path** (`@payloadcms/drizzle/dist` 3.87.1 unless marked `payload/`):
+
+* **Storage.** One table per block TYPE per collection (`pages_blocks_bento_item`), whatever depth the
+  rows sit at. A block row's `_parentID` is the **document id** (`upsertRow/index.js` l.257), `_path`
+  records where it sits (`layout.0.blocks.0.blocks`), `_order` its position. An ARRAY row's `_parentID`
+  is the row that holds it, with `ON DELETE CASCADE`.
+* **Which tables an update clears** (`upsertRow/index.js`, `operation === 'update'`):
+
+  | child table | cleared by an update | rule |
+  |---|---|---|
+  | `_locales` | always, for the parent | l.270-285 |
+  | `_rels`, `_texts`, `_numbers` | rows at the paths being written | `deleteExistingRowsByPath` l.289-306, 463-511 |
+  | **block tables** | every table in `blocksToDelete`, **all paths** | l.516-525 `DELETE WHERE _parentID = <document id>` |
+  | top-level array tables (and arrays in top-level groups/tabs) | always | l.572-581 |
+  | nested array tables | only by CASCADE from a deleted parent row | schema FK |
+
+* **`blocksToDelete`** is filled by `transform/write/traverseFields.js` l.130-134 when the traversal of
+  the data being written REACHES a blocks field — every block table that field accepts, before the value
+  is looked at. Every top-level field is always reached; a blocks field inside a block (or array row) is
+  reached only through a row of that parent type. **Rule:** an update clears block type T's table iff the
+  new document still reaches a blocks field that accepts T — a top-level one always, a nested one only
+  if the new document contains at least one row of the field's parent type. Rows of every other type
+  survive.
+* **Read** (`utilities/createBlocksMap.js`, `transform/read/traverseFields.js`): rows of all block
+  tables are grouped by `_path` and sorted by `_order` (stale rows interleave with new ones); a row whose
+  type the field at that path does not know is pushed as `{}`.
+* **Which write touches which row** (`payload/…/utilities/update.js`, `payload/…/versions/saveVersion.js`):
+
+  | write | stored (main) row | version tables |
+  |---|---|---|
+  | create | insert | new version (insert) |
+  | update `?draft=true` | untouched (l.253) | new version (insert only) |
+  | update `?draft=true&autosave=true` onto an autosave | untouched | latest version updated IN PLACE (the rule applies to the version tables) |
+  | non-draft update, `publish`, `unpublish`, `versions restore`, a non-draft `backups restore` | **updateOne — the rule applies** | new version built from the stored row READ BACK, in which `{}` rows have no blockType and are dropped |
+  | non-draft update with `?unpublishAllLocales=true` (no per-locale status) | updateOne — the rule applies, **validation skipped** (l.154-157) | latest version updated IN PLACE |
+
+  Consequence: on a versioned collection the write's ECHO is the new version and is clean, the draft read
+  is clean, and only the stored row — `pay get` without `--draft`, what the site renders — has the `{}`
+  rows. A plain draft save can neither create nor remove orphans; the write that creates them after a
+  draft restructure is the **publish**.
+
+**10.2.1.2 Verified live** on the klixpert stage, on the one approved scratch page (`paywt-orphan-test`,
+id 71, draft only, never published, permanently deleted afterwards — `find --draft` → 0, `get` →
+`doc_not_found`, `versions list --id 71` → 0): `layout: [group{blocks:[bento{blocks:[bentoItem×3]}]}]`
+restructured by a plain update to `[group{blocks:[grid{blocks:[text A, text B]}]}]` → echo clean,
+`pay get --draft` clean, `pay get` → `layout[0].blocks[0].blocks = [{}, text A, {}, text B, {}]` — exactly
+the rule (`group` still reached, so `bento`'s table was cleared; `bento.blocks` not, so `bentoItem`'s was
+not). A first remedy attempt sent as a normal validated write was rejected (`bento.blocks` requires rows)
+— hence the validation-free phases. The shipped remedy then: `verified: true`, same id, no `{}` in the
+stored or the draft read, every version in the history with exactly one layout row. On localhost
+`?unpublishAllLocales=true` accepted a required-field-empty body and kept `_status` and the version count
+(§2.9); the template has no nested blocks, so the orphan itself was reproduced on stage only.
+
+**10.2.1.3 Detection after a write — `orphan_rows`.** After `update <id>`, `apply`, `globals update`,
+`publish`/`unpublish <id>`, `backups restore` and `versions restore`, PayCLI compares every row list of
+the request body with the same list in (1) the echo and (2) for a write that overwrote the stored row of
+a versioned entity, **the stored row read back once** (`GET …?depth=0`, no draft; the write's locale and
+trash) — when the echo or the body has a row holding a list, or when `--select` projected the echo so it
+cannot tell (`pay publish <c> <id> --select title` sends only `{_status}` — the typical orphaning write).
+One extra request; `--no-echo-check` skips it. Symptoms (`orphans.EchoCheck`): `empty_row`, `extra_row`,
+`no_block_type`, `type_sequence`; a list returned SHORTER than sent is `input_silently_dropped`, not an
+orphan. The warning:
+
+```json
+{"code":"orphan_rows",
+ "message":"the stored row (read back without draft) holds rows this write did not send (3 empty_row): orphan rows that Payload's Postgres adapter left in a nested block table — when this write or an EARLIER one changed or removed the blocks around them …",
+ "paths":["layout[0].blocks[0].blocks[0]","layout[0].blocks[0].blocks[2]","layout[0].blocks[0].blocks[4]"],
+ "hint":"pay update pages 71 --reset-nested --dry-run   # removes them and keeps the document id; …"}
+```
+
+The message does not blame the current write: rows left by REMOVING a nested container sit at a path no
+field reads and surface only when a later write puts a field there again. A read-back that fails is
+`orphan_check_incomplete` (never a silent pass). Not checked: `create` (inserts only), the bulk `--where`
+forms and several-ids publish (one read per document would be needed — a documented gap).
+`get`/`globals get` warn **`empty_rows`** when the returned document has `{}` rows (paths; which row was
+read; hint = the repair dry run).
+
+**10.2.1.4 Prediction — `orphan_risk`.** `orphans.Analyze(stored, next, history, accepts)` applies the
+rule of 10.2.1.1 to `stored` (the row the write overwrites) and `next` (`docdiff.ApplyPatch(newest,
+body)`). Which types a list accepts is learnt from every row seen in that list definition (container =
+parent row kind + field path: `root>layout`, `block:group>blocks`) in stored, next and history, widened
+by the **cached** census (never built). Unknown acceptance counts as NOT cleared — the safe direction.
+A block type with rows at depth ≥ 1 in `stored` that `next` does not clear is a risk; the cause names
+the outermost changed ancestor (`layout[0].blocks[0]: bento → grid`, or `… removed`). Raised on every
+`--dry-run` that reads the pre-image (§12.2; for a plain draft save the message says the save is safe
+and the PUBLISH will leave the rows, hint `pay publish <c> <id> --reset-nested --dry-run`), on a real
+write when the §12.8 backup captured the pre-image ("the pre-write backup predicted …"; costs nothing),
+and by `pay plan`/`sync --dry-run` (§9.15.5). Without a dry run or a backup a removing write's orphans go
+undetected until a later write surfaces them (documented gap; no extra pre-read on real writes).
+
+**10.2.1.5 The remedy — `--reset-nested`.**
+
+*Carriers.* For each block type to clear, PayCLI takes a real occurrence of it (stored row first, then
+history) and copies its ancestor rows into a chain appended to the top-level list: every id removed,
+every nested blocks list emptied except the one link that leads down, arrays without block rows kept.
+The adapter walks the chain, so it clears every table the chain's lists accept and inserts nothing below
+it. Carrier rows whose own type the final write would not clear are peeled by further phases; chains
+that are strict prefixes of another are dropped; at most **6** phases (`reset_nested_incomplete`
+beyond). klixpert's case needs one phase: `group{blocks:[bento{blocks:[]}]}`.
+
+*Validation.* Emptied carriers are not valid content, so carrier phases and the restatement are sent
+with **`?unpublishAllLocales=true`**, which on a project WITHOUT per-locale status skips validation on a
+non-draft write and changes nothing else except that the newest version is updated in place. A
+per-locale `_status` is refused (`feature_unavailable`) — there the switch unpublishes every locale — and
+because a single-locale read cannot see it, the remedy reads `?locale=all&select[_status]=true&depth=0`
+once and refuses when `_status` is an object (skipped when discovery knows localization is off).
+
+*Sequence* (every request audited as its own step, 10.2.1.7):
+
+1. **the requested write**, exactly as without the flag (validated; a rejection writes nothing).
+   Skipped in repair mode.
+2. **carrier phases**: every top-level list that receives carriers, restated as stored by 1, plus that
+   phase's carriers; `depth=0`, no draft, `unpublishAllLocales=true`.
+3. **restatement**: the same lists without carriers, with the write's own params plus
+   `unpublishAllLocales=true`. It removes the carriers and leaves the newest version exactly as 1 made
+   it — no carrier ever reaches the version history. Its echo is the command's `data`.
+
+*Failures.* A repair's phase 1 rejected with a non-retriable code → error, nothing written. A transient
+failure of any phase may have been applied, so the restatement is still sent. The restatement is
+**retried** after 1 s and 3 s on a retriable code; when it still fails, carriers are stored and a re-run
+of the repair cannot see them, so the restatement body is saved to
+`<state_dir>/reset-nested/<profile>/<collection>-<id>|<global>-<UTC time>.json` (0600) and the error (the
+upstream code) names the lists and the recovery command
+`pay update <c> <id> --data-file <file> [--locale L] [--trash] --yes` (`pay globals update <slug> …`),
+plus `pay backups restore <file>` only when this invocation wrote a backup.
+
+*Modes.* **restructure** (a body): the sequence above, `writes` = phases + 2. **repair** (no body:
+`pay update <c> <id> --reset-nested`, `pay globals update <slug> --reset-nested`): no step 1; the
+restatement is the newest version's lists; `writes` = phases + 1; `{}` rows in the stored row are traced
+to a type through the document's last 50 versions, untraceable ones are `reset_nested_unresolved` and
+never guessed. A repair of a published document with a **pending draft** is refused (`invalid_args`: it
+would publish the draft; hint `pay publish <c> <id> --reset-nested --dry-run`) — where "pending draft"
+compares the stored row **without its `{}` rows** with the newest version, because the `{}` rows are only
+ever in the stored row. **not needed**: nothing at risk → one ordinary request +
+`reset_nested_not_needed`; a plain draft save (`--draft`, no `--autosave`, body not publishing) likewise,
+with the hint to publish with the flag. `--autosave` → `invalid_args`. Afterwards the stored row is
+ALWAYS read back (10.2.1.3) and `meta.reset_nested.verified` says whether it is clean.
+
+**10.2.1.6 Surface.**
+
+| command | `--reset-nested` |
+|---|---|
+| `pay update <c> <id>` | restructure; with no body: repair. Bulk `--where` → `invalid_args` |
+| `pay apply` (collection or global) | restructure (the body is the piped edits) |
+| `pay globals update <slug>` | restructure; with no body: repair |
+| `pay publish <c> <id>`, `pay unpublish <c> <id>` | restructure with body `{_status}`. Several ids / `--where` → `invalid_args` |
+
+`meta.reset_nested` (and `data.reset_nested` on a dry run, with `phase_bodies`):
+
+```json
+{"mode":"restructure","phases":1,"writes":3,"cleared_block_types":["bentoItem"],
+ "carriers":[{"phase":1,"list":"layout","chain":["group","bento"],"clears":"bentoItem"}],
+ "at_risk":[{"block_type":"bentoItem","paths":["layout[0].blocks[0].blocks[0]","…"],"causes":["layout[0].blocks[0]: bento → grid"]}],
+ "empty_rows_before":[],"history_versions":0,
+ "steps":["requested write (validated)","carrier phase 1/1 (unpublishAllLocales=true: no validation)","restate the lists without carriers (unpublishAllLocales=true)"],
+ "verified":true}
+```
+
+`mode` ∈ `restructure | repair | not_needed`. A repair dry run with nothing to do has `would_affect: 0`,
+a null request body and `reset_nested_not_needed`.
+
+**10.2.1.7 Audit and backups.** Each request is its own writeOp: pre/post records with `Event.step`
+(`reset-nested requested write`, `reset-nested phase N/M`, `reset-nested restate`). The §12.8 backup is
+taken once, by the first request (idempotent per invocation), and every record names the same file.
+Confirmation (§12.1) runs once, before the reads.
+
+**10.2.1.8 Package API** (`internal/orphans`, pure; imports only `internal/lexical`):
+
+```go
+func Rows(doc map[string]any) []Row              // every row of every row list; kinds block:<slug> / array:<container>
+func EmptyRows(doc map[string]any) []string      // paths of {} rows
+func WithoutEmptyRows(doc map[string]any) map[string]any
+func EchoCheck(sent, stored map[string]any) []Finding   // empty_row | extra_row | no_block_type | type_sequence
+func Analyze(stored, next map[string]any, history []map[string]any, accepts Accepts) *Analysis
+type Accepts map[Container][]string              // extra acceptance knowledge (the census)
+type Analysis struct{ Risks []Risk; Empty, Unresolved []string; Phases [][]Carrier; Incomplete bool }
+func (a *Analysis) NeedsReset() bool; func (a *Analysis) ClearedTypes() []string
+const MaxPhases = 6
+```
+
+#### 10.2.2 A body that publishes — `body_publishes`
+
+`isSavingDraft = draftArg && drafts && data._status !== 'published'` (§2.9): a body with
+`_status: "published"` — every export of a published document carries it — publishes even with
+`?draft=true`. For `update` (by id and bulk), `apply` and `globals update`, when the entity has drafts
+(or unknown):
+
+| flags | body `_status: "published"` | behaviour |
+|---|---|---|
+| `--draft` | yes | **`--draft` wins**: `_status` is REMOVED from the body, the write saves a draft, `body_publishes` says so |
+| none | yes | sent as is — it publishes — `body_publishes` warns loudly ("this write PUBLISHES the document") |
+| `--publish` / `--unpublish` | any | the flag sets `_status`; no warning |
+| `--draft --publish` | — | `invalid_args` before anything is read or sent (`--publish --unpublish` likewise) |
+| `--draft --unpublish` | — | `invalid_args` before anything is read or sent: with `?draft=true` Payload only saves a draft version and the live document stays published (verified on localhost: the echo said `draft`, the page stayed live). One rule, `checkStatusFlags`, for update, apply, globals update and versions restore |
+
+`upsert` and `sync` never take `_status` from the body at all (§9.15.4); `pay diff`'s body form warns.
+Verified on localhost (published page 54): an edited export written with `--draft` → `body_publishes`,
+the published read kept the old title, the draft read had the new one.
+
+#### 10.2.3 A non-draft write never unpublishes by accident
+
+**The failure** (§2.9, localhost pages 63/67/68): an update-by-id merges into the NEWEST version — the
+pending draft — and without `?draft` stores the merge as the main row; the global update does the same.
+So on a published page with a pending draft, `pay update pages 63 --set slug=x` wrote the whole draft
+AND its `_status: "draft"` into the live row: the page went offline, and neither the dry run (its diff
+was against the newest version: one change) nor the write warned. A body carrying `_status: "draft"`
+(every `pay get --draft` export of a draft) did the same to a published page without a pending draft.
+
+**The rule** (`internal/cli/pubguard.go`) — for `update <id>`, `apply` (collection or global),
+`globals update`, and the update half of `upsert`/`sync`, on an entity with drafts (or unknown), for a
+**non-draft write with a body and without `--unpublish`**:
+
+| stored row | newest version | body `_status` | outcome |
+|---|---|---|---|
+| published | draft (pending draft) | none | **refused** `invalid_args` (exit 5): it would publish the draft AND unpublish |
+| published | any | `"draft"` | **refused** `invalid_args`: it would unpublish |
+| published | draft | `"published"` (`--publish`, or a publishing body) | sent; warning **`publishes_pending_draft`** (visitors get the draft's changes too; hint `pay diff <c> <id> --draft-vs-published`) |
+| anything else | | | sent as before |
+
+`upsert` / `sync` never reach the first row: their status `keep` resolves to a `?draft=true` write when
+the newest version is a draft (§9.15.4), which saves into the pending draft and warns `saved_as_draft`.
+For them only the `publishes_pending_draft` row applies (status `published`), and `pay plan` /
+`sync --dry-run` report it from their own stored-status read.
+
+The refusal names the three explicit choices — `--draft` (edit the draft; the live document is
+untouched), `--publish` (publish the draft with this change), `--unpublish` (take it offline
+deliberately; no check). `pay globals update` has `--publish`/`--unpublish` for this, and
+`pay apply --publish/--unpublish` apply to a global too. PayCLI does **not** silently re-route such a
+write into the draft (§1 conflict 44).
+
+**Cost.** The dry run decides from the pre-image it already reads (a preview never promises what the
+write refuses). The real write reads the state first — `GET …?depth=0&select[_status]=true` without
+draft and, only when that is `published`, with `draft=true` — **before** the backup and the PATCH, so a
+refused write takes no backup. `--draft`, `--unpublish`, an entity without drafts and an empty body skip
+it. A failed read: `doc_not_found` → the write proceeds (and fails the same way); a publishing body →
+proceeds; otherwise the error (hint: state the outcome with a flag). Payload's draft read returns the
+stored row itself when no newer draft exists, so "pending draft" is exactly: stored `published`, draft
+read `draft` (stage: 22 published pages, `pay diff --draft-vs-published` identical on all).
+
+**Preview.** A non-draft write whose stored row differs from the newest version adds
+**`data.diff.published`** — `{base: "published", …}` = stored row (without `{}` rows) →
+`ApplyPatch(newest, body)`: what the live page will actually change by (§12.2).
+
+**`pay versions restore`.** payload@3.87.1 `collections/operations/restoreVersion.js` l.206-213 writes
+the version into the stored row unless `?draft`, keeping the VERSION's `_status`. Restoring a draft
+version without `--draft` therefore unpublishes a published document (verified on localhost:3900:
+`pay get --published-only` answered `not_published` afterwards). For a collection with drafts and
+without `--draft`, PayCLI reads the version record (shared with the backup's parent lookup) and, when
+the version is a draft, the stored row's `_status` (`select=_status`); a published stored row is
+**refused** `invalid_args` (dry run too) naming `--draft` (restore as a new draft on top; the live
+document stays) and **`--unpublish`** (new flag: restore into the live row and take it offline
+deliberately). `--unpublish` on a published version is refused (the restore stores it published);
+`--draft --unpublish` is refused (§10.2.2); on a global `--unpublish` is refused — globals are not
+checked: `globals/operations/restoreVersion.js` always rewrites the stored global. A version read that
+fails with `doc_not_found` lets the restore answer; another failure refuses with the flag hint.
+
+**Bulk.** Payload's bulk update merges into the STORED rows unless `?draft=true` (§2.9). So
+`pay update --where` without `--draft` never takes a pending draft's `_status` (no refusal), but it
+**supersedes** pending drafts: its dry-run `data.diff` is based on the stored row (`base: "published"`)
+and warns **`pending_draft_superseded`** for sampled documents with one. **`pay publish --where` sends
+`?draft=true`**, as the admin panel's bulk Publish does, so the newest versions are published (before,
+it re-published the stored content and superseded the drafts). `pay unpublish --where` keeps the plain
+PATCH. Several explicit ids are one PATCH per id (update-by-id, newest version).
 
 ### 10.3 Formats
 
@@ -2694,6 +4626,9 @@ invent a title, a slug and a body for someone else's post. The hint is therefore
 * **any entry has `sent: true`** → the existing text.
 * **every entry has `sent: false`** →
   `"The stored document is already invalid on 3 field(s) you did not send - Payload validates the whole document on update, so your change was rejected by pre-existing state, not by your input. Retry with --draft to store the change without validation, or repair the listed fields in the same request."`
+* **every entry has `sent: false` on a create** (`POST` to the collection root, not `/globals/<slug>`
+  or `/<slug>/<id>/duplicate`) → there is no stored document; the fields are missing from the caller's
+  body: `"The new document is missing 1 required field(s) you did not send: a create must supply every required field. Add them to the body (--set, --set-json, --data), or pass --draft on a collection with drafts to store an incomplete draft without validation. `pay describe pages` lists the required fields."`
 
 `error.fields` is `[]` rather than absent when there are no field-level details.
 
@@ -2754,20 +4689,64 @@ two client-side** and diagnoses the third:
 | Exit | Class | Auto-retry? | Codes |
 |---|---|---|---|
 | 0 | success | — | — |
-| 1 | generic / internal | no | `internal`, `unknown`, `cache_corrupt`, `update_verification_failed`, `audit_write_failed` |
+| 1 | generic / internal | no | `internal`, `unknown`, `cache_corrupt`, `update_verification_failed`, `audit_write_failed`, `backup_failed` |
 | 2 | auth — *your credentials* | no | `auth_missing`, `auth_invalid`, `auth_required`, `auth_locked`, `auth_unverified_email`, `auth_insecure_permissions`, `auth_helper_failed` |
 | 3 | throttled / temporarily unavailable | **yes** | `rate_limited` (429), `doc_locked` (423), `server_busy` (503 with `Retry-After`) |
-| 4 | not found | no | `doc_not_found`, `route_not_found`, `version_not_found` |
-| 5 | validation / bad input | no | `validation_failed`, `query_path_invalid`, `invalid_args`, `invalid_where_syntax`, `invalid_sort_field`, `unknown_field`, `invalid_option`, `invalid_id`, `bad_request_body`, `where_required`, `file_missing`, `not_upload_collection`, `unsupported_operator`, `bulk_limit_exceeded`, `request_too_large`, `format_unsupported`, `invalid_path_expr` |
+| 4 | not found | no | `doc_not_found`, `route_not_found`, `version_not_found`, `selector_no_match`, `not_published`, `ref_unresolved` |
+| 5 | validation / bad input | no | `validation_failed`, `query_path_invalid`, `invalid_args`, `invalid_where_syntax`, `invalid_sort_field`, `unknown_field`, `invalid_option`, `invalid_id`, `bad_request_body`, `where_required`, `file_missing`, `not_upload_collection`, `unsupported_operator`, `bulk_limit_exceeded`, `request_too_large`, `format_unsupported`, `invalid_path_expr`, `selector_ambiguous`, `field_ambiguous`, `no_input`, `no_edits`, `not_rich_text`, `richtext_rendered`, `backup_target_mismatch`, `slug_ambiguous`, `match_ambiguous`, `ref_ambiguous`, `ref_cycle`, `manifest_invalid` |
 | 6 | network / server | **yes**, except 500 | `network_unreachable`, `dns_failure`, `tls_error`, `timeout`, `server_error` (500, **not retried**), `server_unavailable` (502/504), `non_json_response` |
 | 7 | **partial failure** | **never** | `partial_failure` |
-| 8 | **access denied** — identity valid, permission not | no | `access_denied`, `admin_access_denied` |
-| 9 | **config / profile** | no | `config_missing`, `config_secret_in_plaintext`, `profile_unknown`, `base_url_invalid`, `endpoint_not_payload`, `auth_collection_unknown` |
-| 10 | **capability / discovery** | no | `collection_unknown`, `global_unknown`, `feature_unavailable`, `operation_unsupported` (501), `discovery_failed`, `graphql_disabled`, `schema_stale` |
+| 8 | **access denied** — identity valid, permission not | no | `access_denied`, `admin_access_denied`, `preview_denied` |
+| 9 | **config / profile** | no | `config_missing`, `config_secret_in_plaintext`, `profile_unknown`, `base_url_invalid`, `endpoint_not_payload`, `auth_collection_unknown`, `preview_secret_missing` |
+| 10 | **capability / discovery** | no | `collection_unknown`, `global_unknown`, `feature_unavailable`, `operation_unsupported` (501), `discovery_failed`, `graphql_disabled`, `schema_stale`, `block_type_unknown`, `preview_failed` |
 | 11 | **confirmation required** | no | `confirmation_required` |
 
 Never uses 125–128 or 130 (shell/signal territory). A unit test asserts the `Code → exit` map is
 **total** — gsc-cli's `default:` branch silently returns 1 for any new code.
+
+**The codes of the agent-ergonomics release**, with where each is raised:
+
+| code | exit | when |
+|---|---|---|
+| `backup_failed` | 1 | a §12.8 backup could not be taken (read or file write); the write is **aborted**, nothing sent, no audit pre-record (hint names `--no-backup`) |
+| `not_published` | 4 | `pay get --published-only` on a document with no published state (§9.6.2) |
+| `ref_unresolved` | 4 | a `{"$ref": …}` matched no document, or `@key` names no plan item (§9.15.1) |
+| `not_rich_text` | 5 | a `pay lexical` input holds no editor state where one was expected; `did_you_mean` lists the rich-text paths (§9.12.7) |
+| `richtext_rendered` | 5 | a write path was handed a document rendered by `--richtext md\|text`, a bare body whose declared richText field holds a string, or a body with a string where the stored document holds an editor state (§9.12.8.3) |
+| `backup_target_mismatch` | 5 | `pay backups restore` of a backup taken from another profile or server; hint `--profile <theirs>` / `--ignore-target` (§12.8.8) |
+| `slug_ambiguous` | 5 | `--slug` matched more than one document; `did_you_mean` = the ids (§9.17) |
+| `match_ambiguous` | 5 | `pay upsert --match` / a manifest item matched more than one document (§9.15.2) |
+| `ref_ambiguous` | 5 | a `{"$ref": …}` matched more than one document (§9.15.1) |
+| `ref_cycle` | 5 | plan items reference each other in a cycle that contains a document still to be created (§9.15.5) |
+| `manifest_invalid` | 5 | a manifest cannot be planned; `error.failures[]` names every item (§9.15.3) |
+| `preview_denied` | 8 | the site's preview route answered 401/403 (§9.16.3) |
+| `preview_secret_missing` | 9 | `pay url --preview` with `{secret}` in `preview_path` and nothing resolved; raised before any request (§5.5) |
+| `preview_failed` | 10 | 404 at `preview_path`, or no usable cookie issued (§9.16.3) |
+
+Existing codes gained new triggers: `invalid_args` (the §10.2.3 refusal, `--draft --publish`,
+`--draft --unpublish`, a draft version restored over a published document without `--draft`/`--unpublish`,
+`--reset-nested` on a bulk/several-ids write or with `--autosave`, a repair over a pending draft, a
+`--set-md` key through an array or onto a non-rich-text field, an unresolvable nested `--field`);
+`feature_unavailable` (`--reset-nested` on a per-locale `_status`, `pay url` with no path source,
+`--publish`/`--draft` on upsert/sync of an entity without drafts); `validation_failed` (a
+`pay blocks validate` report with an error-severity issue; a publish whose every id is blocked by the
+pre-check, §9.10.4); `selector_no_match`/`selector_ambiguous`/`unknown_field` (nested `--field` paths,
+§9.11.4). `payload.BulkFailure` gained `code`: a per-document write (`--per-doc`, several ids) reports
+each failure's own code (a missing id is `doc_not_found`), not a blanket `validation_failed`.
+
+**Warning codes of the release** (warnings never change `ok` or the exit code):
+
+| area | codes |
+|---|---|
+| block census & writes (§7.10c, §9.7) | `blocks_unchecked`, `census_entity_failed`, `census_truncated`, `census_unavailable`, `census_scope_wide`, `example_moved`, `block_type_shapes_differ`, and the §7.10c.4 issue codes `empty_row`, `missing_block_type`, `invalid_row`, `unknown_block_type`, `block_type_not_observed_here`, `unknown_field`, `value_not_in_enum`, `required_field_missing`, `likely_required` |
+| edit pipeline (§9.11) | `stale_index`, `block_type_omitted`, `apply_all_fields` (plus the existing `field_absent`, `blocks_field_inferred`, `local_validation_skipped`, `populated_relationship`, `envelope_unwrapped`) |
+| rich text (§9.12) | `frontmatter_stripped`, `lexical_<code>` (`lexical_placeholder`, `lexical_normalized`, `lexical_lossy_alignment`, `lexical_lossy_style`, `lexical_lossy_format`, `lexical_lossy_state_keys`, `lexical_html_as_text`, `lexical_comment_dropped`, `lexical_image_as_text`, `lexical_code_block_flattened`, `lexical_table_as_text`, `lexical_list_item_paragraphs_joined`, `lexical_list_item_block_flattened`, `lexical_list_became_checklist`, `lexical_nesting_capped`, `lexical_link_reference_undefined`, `lexical_link_url_invalid`, `lexical_link_url_relative`), `set_md_not_richtext`, `set_md_field_unchecked`, `set_md_literal_newline`, `set_md_empty`, `richtext_as_string`, `array_as_object` (pay diff) |
+| diffs & dry runs (§9.14, §12.2) | `never_published`, `field_not_on_document`, `body_id_mismatch`, `data_redacted`, `diff_unavailable` |
+| echo & publication (§10.2) | `stored_as_string`, `orphan_rows`, `orphan_risk`, `empty_rows`, `orphan_check_incomplete`, `reset_nested_not_needed`, `reset_nested_incomplete`, `reset_nested_unresolved`, `body_publishes`, `publishes_pending_draft`, `pending_draft_superseded` |
+| idempotent writes (§9.15) | `body_status_ignored`, `match_value_normalized`, `redacted_not_sent`, `redacted_removed`, `hook_rewrote_unsent`, `ref_target_unchecked`, `relation_id_not_numeric`, `saved_as_draft` |
+| URLs & preview (§9.16, §5.5) | `url_path_guessed`, `url_not_live`, `preview_credential_withheld`, `preview_secret_shadowed` |
+| publish (§9.10.4) | `publish_blocked` (a dry run's per-id pre-check block) |
+| backups (§12.8) | `backup_skipped`, `backup_redacted`, `backups_disabled`, `backup_fields_not_restored`, `restored_as_draft`, `published_state_not_restored`, `backup_recreated_new_id`, `backup_recreated_in_trash`, `recreate_not_needed`, `restore_two_steps`, `config_path_anchored` |
 
 ### 11.5 HTTP → code mapping
 
@@ -2820,10 +4799,17 @@ than Payload.
 
 | Level | Commands | Behaviour |
 |---|---|---|
-| **L0** read | `find` `get` `count` `versions list/get/diff` `describe` `collections` `explain` `access` `can` `whoami` `download` `discover` `doctor` `cache *` | never prompts |
-| **L1** scoped write | `create`, `update <id>`, `upload`, `duplicate`, `publish <id>` | no prompt by default (single doc, recoverable via versions where enabled); `defaults.confirm_writes = true` opts in |
-| **L2** scoped destructive | `delete <id> --permanent`, `versions restore`, `globals update`, `unpublish <id>` | prompts on a TTY; **requires `--yes` in non-TTY** or exits 11 |
+| **L0** read | `find` `get` `count` `versions list/get/diff` `describe` `collections` `explain` `access` `can` `whoami` `download` `discover` `doctor` `cache *` `globals list/get`, the `pay blocks` edit verbs (`ls mv rm add cp set` — they rewrite stdin, §9.11.5) and catalog verbs (`types schema example new validate learn`, §7.10c), `lexical from-md/to-md/text`, `diff`, `outline`, `plan`, `url` (its preview handshake changes no content) | never prompts |
+| **L1** scoped write | `create`, `update <id>`, `apply` (collection), `upload`, `duplicate`, `publish <id>` (also several explicit ids, each its own write), `restore`, `upsert`, `delete <id>` to the trash | no prompt by default (single doc, recoverable via versions where enabled); `defaults.confirm_writes = true` opts in |
+| **L2** scoped destructive | `delete <id> --permanent` (or on a collection without trash), `versions restore`, `globals update` (and `apply` to a global), `unpublish <id>` (also several explicit ids), `backups restore`, `backups prune` (it deletes the safety net), `sync` (one confirmation for the whole manifest) | prompts on a TTY; **requires `--yes` in non-TTY** or exits 11 |
 | **L3** bulk | `update --where`, `delete --where`, `publish/unpublish --where` | **always** requires `--yes` in non-TTY, always prints the resolved match count before acting, and is capped by `--max-docs` (default `defaults.max_bulk` = 100) unless `--all` is passed. `--limit` on these verbs is `invalid_args` (exit 5) |
+
+**Explicit ids are not bulk.** `pay publish pages 38 39 40` / `pay unpublish pages 38 39 40 --yes`
+(`safety.SelectorIDs`) take the per-document level — publish L1, unpublish L2 — **not** L3: the blast
+radius is exactly the typed ids, never what a filter happens to match. The confirmation line reads
+"unpublish will affect 2 explicitly named document(s) in "pages", one write each". `--where`/filters,
+`--max-docs`, `--all` and `--limit` together with ids are `invalid_args`. `pay backups list|show` and
+`pay auth preview-secret` touch only local files and never prompt.
 
 ### 12.2 `--dry-run`
 
@@ -2838,6 +4824,32 @@ Available on every write. Performs the read half only and emits, with **exit 0**
 
 `request.url` passes through `redact.URL` (§5.3) like every other URL that crosses a boundary;
 otherwise it is printed verbatim so an agent can hand it to `pay raw` or curl.
+
+The op_result may carry four more keys (`safety.DryRunResult`, all omitempty — no new `data_kind`):
+
+* **`would_backup`** `{dir, documents, paths[≤5], truncated}` — the §12.8 files the real run would write,
+  stamped with the dry run's clock. A dry run reads and writes nothing for the backup.
+* **`diff`** — what the write changes in each document it targets, read now and computed by
+  `internal/docdiff` (the "manual `jq -S` diff to prove a dry run touched one block" of the agent session):
+
+  | command | reads | `data.diff` |
+  |---|---|---|
+  | `update <id>`, `apply` (collection) | newest version (+ stored row where drafts exist) | `{base:"latest", id, status, updated_at, identical, summary, changes}` = `docdiff.Diff(newest, ApplyPatch(newest, body))` |
+  | `update --where` | the first `safety.SampleLimit` (5) resolved ids, one `where id in` read per side | `{sampled, of, truncated, base, documents:[{id, …}]}`; `base: "published"` (stored row → stored + body) without `--draft` — Payload's bulk update merges into the stored row — `"latest"` with it |
+  | `publish/unpublish <id>` | stored row + newest version | `{base:"published", …}` = stored row vs `ApplyPatch(newest, {_status})` — what visitors will see change |
+  | `publish/unpublish --where`, several ids | sampled, as `update --where` | `{sampled, …, base:"published", documents}`; a sampled id the read did not return is listed in `missing` with `diff_unavailable` (and, for several ids, left out of `would_backup`) |
+  | `globals update`, `apply` (global) | the global (newest + stored where drafts exist) | `{base:"latest", identical, summary, changes}` |
+  | `backups restore` (in place) | newest (+ stored) | `{base:"latest", …}` of the restore body; a **two-step** restore (backup with `published_doc`) adds `published: {base:"published", …}` = stored row → `ApplyPatch(newest, published body)` (step 1, omitted when step 1 is skipped) and `data.diff` becomes newest → `ApplyPatch(step-1 result, draft body)`; warning `restore_two_steps` says what stays live |
+  | `versions restore <id>` | the version + the document's newest/stored rows | `{base:"published", …}` = stored row → the version's content (`--draft`: `base:"latest"`) |
+  | any non-draft row above whose stored row differs from the newest version | (same reads) | adds `published: {base:"published", …}` = stored row (no `{}` rows) → result (§10.2.3) |
+
+  Cost: 1 GET without drafts, 2 with. The same reads feed `orphan_risk`/`empty_rows` (§10.2.1.4), the
+  §10.2.3 publication verdict (a preview refuses what the write would refuse) and the census overlay
+  (§9.7). A read that fails is the warning `diff_unavailable` (upstream code; hint the `pay get` that
+  shows it) and the preview still succeeds. Secret paths are masked (§9.14.6).
+* **`reset_nested`** — the `--reset-nested` plan with `phase_bodies` (§10.2.1.6).
+* **`steps`** `[{step, method, url, body, skipped?}]` — every request of a write sent as several (the
+  two-step `pay backups restore`, §12.8.8); `request` is then the last one.
 
 ### 12.3 Bulk delete — the three-phase algorithm
 
@@ -2934,6 +4946,24 @@ default agent heuristic (`if exit != 0: retry`) causes real damage.
 antidote to a single bad document poisoning the batch and its innocent batch-mates coming back as
 opaque `"Something went wrong."` It multiplies request count by N, so it is opt-in.
 
+**Several explicit ids** (`pay publish|unpublish <c> <id> <id>…`, §12.1). Every id is validated
+(`id_type`) before anything is sent; exact duplicates are written once; publish pre-validation runs once
+for all ids (§9.10.4). Writes are one PATCH per id (`perDocUpdate`), sequential, fail-soft;
+`--fail-fast` stops at the first failure and lists the rest in `data.not_attempted`. Result
+`bulk_result`; any failure → `partial_failure` (exit 7) with `next.cmd` =
+`pay publish <c> <failed…> <not_attempted…>` (plus ` --yes` for unpublish). Failures with code
+`doc_not_found` are left out of `next.cmd` and `next.args.ids` — a missing id fails the same way on
+every retry — and with nothing left to retry there is no `next`. `error.hint` uses per-document wording
+("N of the listed document(s) were written and stay written; each id is its own request …") instead of
+the bulk "NOT transactional … do not re-run" text. `--dry-run` previews `PATCH …/{id}` with
+`would_affect` = the ids after pre-validation and a `publish_blocked` warning per blocked id (known gap:
+without pre-validation a nonexistent id is still counted). Audit: one pre/post pair with all ids.
+
+**`pay sync` inverts the exit-7 advice.** A sync with ≥ 1 committed write and ≥ 1 failure is
+`partial_failure` (exit 7) too, but because a sync re-plans against the server and skips every item
+already in place, **re-running it is safe** — its hint and `next.cmd` (`pay sync <args> --yes`) say so
+(§9.15.7). Exit 7 remains "never auto-retry *blindly*"; for sync the documented recovery is the re-run.
+
 ### 12.6 Client-side fan-out
 
 `pay update pages --ids 1,2,3` uses the same envelope: a bounded worker pool, fail-soft per item, a
@@ -2948,27 +4978,40 @@ remainder under `data.not_attempted` so the agent can resume.
 
 ```go
 type Event struct {
-    Time       time.Time       `json:"time"`
-    Command    string          `json:"command"`
-    Profile    string          `json:"profile"`
-    BaseURL    string          `json:"base_url"`
-    Collection string          `json:"collection,omitempty"`
-    Global     string          `json:"global,omitempty"`
-    Action     string          `json:"action"`   // create|update|delete|trash|restore|publish|upload|restore_version
-    Method     string          `json:"method"`
-    Path       string          `json:"path"`
-    Where      json.RawMessage `json:"where,omitempty"`
-    IDs        []string        `json:"ids,omitempty"`        // capped at 200 + IDsTruncated
-    Affected   int             `json:"affected"`
-    Failed     int             `json:"failed,omitempty"`
-    DryRun     bool            `json:"dry_run,omitempty"`
-    Status     int             `json:"http_status"`
-    OK         bool            `json:"ok"`
-    Err        string          `json:"error,omitempty"`
-    DurationMS int64           `json:"duration_ms"`
-    RequestID  string          `json:"request_id"`
+    Time         time.Time       `json:"time"`
+    Phase        Phase           `json:"phase"`    // pre | post
+    Command      string          `json:"command"`  // e.g. update, apply, upsert, sync, "backups restore"
+    Profile      string          `json:"profile"`
+    BaseURL      string          `json:"base_url"`
+    Collection   string          `json:"collection,omitempty"`
+    Global       string          `json:"global,omitempty"`
+    Action       string          `json:"action"`   // create|update|delete|trash|restore|publish|unpublish|
+                                                    // upload|restore_version|raw|restore_backup
+    Method       string          `json:"method"`
+    Path         string          `json:"path"`
+    Where        json.RawMessage `json:"where,omitempty"`
+    IDs          []string        `json:"ids,omitempty"`        // capped at 200 + IDsTruncated
+    IDsTruncated bool            `json:"ids_truncated,omitempty"`
+    Affected     int             `json:"affected"`
+    Failed       int             `json:"failed,omitempty"`
+    DryRun       bool            `json:"dry_run,omitempty"`
+    Status       int             `json:"http_status"`
+    OK           bool            `json:"ok"`
+    Err          string          `json:"error,omitempty"`
+    DurationMS   int64           `json:"duration_ms"`
+    RequestID    string          `json:"request_id"`
+    Backups          []string    `json:"backups,omitempty"`           // §12.8 files taken before this write, capped at 200
+    BackupsTruncated bool        `json:"backups_truncated,omitempty"`
+    Step         string          `json:"step,omitempty"`          // one request of a multi-request write
+    RestoredFrom string          `json:"restored_from,omitempty"` // the backup `pay backups restore` wrote back
 }
 ```
+
+**Multi-request writes** record one pre/post pair **per request**, told apart by `step`:
+`reset-nested requested write` / `reset-nested phase N/M` / `reset-nested restate` (§10.2.1.7) and
+`backups restore 1/2: the published state` / `backups restore 2/2: the draft on top` (§12.8.8). `upsert`
+and `sync` records carry `command: upsert|sync` and the write's own `action` (`create`/`update`).
+`backups` and `restored_from` are local paths, never bodies.
 
 `BaseURL` and `Path` are written only after `redact.URL` (§5.3). Never logs the API key, a JWT, an
 `Authorization` header in any form, or full document bodies. `--no-audit` / `PAY_NO_AUDIT=1` disables
@@ -2985,6 +5028,208 @@ destructive op still leaves a trace:
   not change `ok` or the exit code — the mutation already happened and failing the command would
   report a false negative on a committed write.
 * `--no-audit` suppresses both, and `pay doctor` reports audit-log writability.
+* **Order with backups:** the §12.8 backup runs **first** inside `writeOp.pre`, then the pre-record,
+  then the request. A backup that fails aborts before any audit record is written.
+
+### 12.8 Automatic pre-write backups
+
+The migration agent took "manual backups before every risky write" (`pay get … > before.json`, a
+hand-written restore via `pay update --data-file`) and cleared orphan rows by permanent delete +
+re-create, which changed page ids with no record of what was deleted. Payload's versions do not cover
+this: `--permanent` removes the document AND its versions, a global without `versions` has no history,
+and a collection without drafts/versions has nothing to restore from. `internal/backup` owns the
+on-disk format (no HTTP, never imports `internal/cli`); `internal/cli/backup.go` the hook;
+`internal/cli/backups.go` the commands.
+
+#### 12.8.1 Enabling
+
+Backups are **off** until a directory is configured (§1 conflict 47): `--backup-dir DIR` →
+`PAY_BACKUP_DIR` → `./pay.toml backup_dir` → `config.toml backup_dir` → off, with the anchoring rules of
+§4.5. `--no-backup` / `PAY_NO_BACKUP=1` disables **writing** for one invocation without forgetting the
+directory, so `pay backups list|show|restore` still work. `pay config explain` reports `backup_dir`
+(absolute, with its source) and `no_backup`; `pay config paths` adds `backup_dir` (`""` when off).
+
+#### 12.8.2 Which writes are backed up
+
+Every write that **changes or removes an existing document**:
+
+| Command | Backed up |
+|---|---|
+| `update <id>`, `apply` (collection) | the document |
+| `update --where` (`--per-doc` too) | every id §12.3 resolved |
+| `publish`/`unpublish` `<id>`, several ids, `--where` | every targeted id |
+| `delete <id>` (soft, `--permanent`), `delete --where` | every targeted id |
+| `delete --where --unsafe-passthrough-where` | every id matching at resolve time (one extra read, only when backups are on) |
+| `restore` (un-trash) | the document |
+| `versions restore <coll> <versionId>` | the **parent** document (`GET /{coll}/versions/{id}` → `parent`, only when backups are on) |
+| `versions restore --global`, `globals update`, `apply` (global) | the global |
+| `upload --replace ID` | the document (metadata only — the old file bytes are NOT backed up) |
+| `upsert` (update half), every `sync` update item, every `--reset-nested` sequence (once) | the document / global |
+| `backups restore` | the document or global it overwrites |
+
+Not backed up: `create`, `duplicate`, `upload` without `--replace` (they change no existing document)
+and `pay raw` (its body and target are opaque to PayCLI).
+
+#### 12.8.3 The read
+
+Before the §12.7 pre-audit record and before the request:
+
+* Collections: `GET /{coll}?where={"id":{"in":[…]}}&depth=0&limit=100[&draft=true][&trash=true]
+  [&locale=…&fallback-locale=…]` in chunks of 100 ids — one read per 100 documents (verified: a
+  3-document bulk update with backups = 4 requests: count, resolve, **one** backup read, PATCH).
+  `draft=true` exactly when the collection has drafts (the capture is the newest version);
+  `trash=true` exactly when it has trash (it returns trashed **and** live documents, §2.9); the
+  `locale`/`fallback-locale` are the **write's own**.
+* **The published state under a newer draft.** When a chunk holds documents whose newest version is a
+  draft, one more read of the same ids **without** `draft=true` returns their main rows; every main row
+  that is `published` is stored as **`published_doc`**. That is exactly the state a non-draft write over
+  a published document with a pending draft (publish, `update --publish`, …) overwrites, and no other file
+  held it. A published document without a pending draft costs nothing extra.
+* Globals: `GET /globals/{slug}?depth=0[&draft=true][&locale=…]`, with the same `published_doc` rule.
+* Returned documents are paired with the requested ids by the server's id, numerically for number ids
+  (`0108` ↔ `108`). An id the batched read does not return is read once more on its own
+  (`GET /{coll}/{id}` with the same params): a document found there is backed up; only a
+  `doc_not_found` answer makes it **skipped** with `backup_skipped` (hint: the server answered
+  doc_not_found, the write fails for it too); any other failure is `backup_failed`.
+
+#### 12.8.4 The file
+
+```
+<dir>/<profile>/<collection>/<id>/<UTC-timestamp>--<command>.json
+<dir>/<profile>/_globals/<slug>/<UTC-timestamp>--<command>.json
+```
+
+Timestamp `20060102T150405.000Z` (UTC, milliseconds, no `:` so the name is Windows-legal); a command
+with spaces uses `-` (`globals-update`, `backups-restore`); a second file for the same document in the
+same millisecond gets `.2`, `.3`… — nothing is ever overwritten. Path elements are sanitised
+(`[A-Za-z0-9._-]`). Written through `fsatomic`: files **0600**, directories **0700**.
+
+```json
+{"pay_backup": 1, "time": "2026-09-28T13:41:35.519655665Z", "profile": "local",
+ "base_url": "http://localhost:3900", "collection": "pages", "id": 42, "command": "update",
+ "request_id": "01M3M3ZR2E56J8D73VKZXT6M6Q", "draft": true, "trash": false,
+ "locale": "de", "fallback_locale": "none", "redacted_paths": ["createdBy.apiKey"], "cli_version": "0.2.0",
+ "doc": {"id": 42, "title": "…", "_status": "draft", "layout": […]},
+ "published_doc": {"id": 42, "title": "…live…", "_status": "published", "layout": […]}}
+```
+
+`pay_backup` is the format marker (a reader refuses any other value); `global` replaces
+`collection`+`id`; `base_url` passes `redact.URL`; `request_id` is the read that captured `doc`; numbers
+round-trip exactly (`UseNumber`); `published_doc` is present only per §12.8.3.
+
+**Redaction is deliberately narrower than §5.3's output rules**, because every masked value is one a
+restore can never bring back (a JWT-shaped `description` masked by the output rules could not be
+restored). Unless `--no-redact`, `doc`/`published_doc` are scrubbed **for credentials only**
+(`redact.Scrubber.StoredDoc`): `apiKey`, `apiKeyIndex`, `resetPasswordToken`,
+`resetPasswordExpiration`, `_verificationToken` at any depth; `hash`, `salt`, `password`, `sessions`
+only inside an **auth document** (the top-level document of an auth collection, or a nested object
+carrying `email`/`username` — a populated user); and any string containing a resolved literal secret.
+§5.3's `(?i)token|secret` key rule and the JWT-shape rule are **not** applied (they match content —
+`designTokens`, embed tokens — far more often than credentials). Masked paths go to `redacted_paths`
+(a restore never writes them back) and the write warns `backup_redacted` up front.
+
+#### 12.8.5 Failure policy (mirrors §12.7's pre-record)
+
+A backup that cannot be taken — the read fails, or the file cannot be written — **aborts the write**:
+exit 1, `backup_failed`, naming the step and the OS error, hint
+`… or pass --no-backup to write without a backup, deliberately`. Nothing is sent and **no audit
+pre-record** is written. Verified on localhost with `PAY_BACKUP_DIR` pointing at a regular file: exit 1,
+the document unchanged. The user opts out deliberately, never by accident.
+
+#### 12.8.6 Reporting
+
+`meta.backups` lists every file this invocation wrote (on success **and** on a failure after the
+backup; absent when nothing was backed up); both audit records carry `backups` (§12.7); a dry run
+reports `would_backup` (§12.2) and reads and writes nothing for it.
+
+#### 12.8.7 The hook
+
+```go
+// internal/cli/backup.go
+type BackupTarget struct {
+    Collection *collTarget   // exactly one of Collection / Global
+    Global     *globalTarget
+    IDs        []any         // nil on a writeOp = the ids given to withIDs
+    Params     query.Params  // the WRITE's params: Locale, FallbackLocale (and Trash) are honoured
+}
+type BackupResult struct{ Paths []string; Skipped []any }
+
+func (w *writeOp) withBackup(ctx context.Context, bt BackupTarget) *writeOp       // normal path
+func (d *Deps) BackupBeforeWrite(ctx context.Context, command string, bt BackupTarget) (*BackupResult, error)
+func (d *Deps) BackupPreview(command string, bt BackupTarget) *backupPreview   // nil when off
+func (d *Deps) BackupsEnabled() bool
+```
+
+A write through `writeOp` adds `.withBackup(…)`; `pre()` backs up, `emitDryRun` previews. One logical
+change made of several requests (upsert's update half, sync items, the `--reset-nested` phases) calls
+`BackupBeforeWrite` once before its first request and aborts on error. The hook is **idempotent per
+invocation**: a (kind, slug, id, locale) already backed up is not read or written again, so a two-phase
+write backs up the PRE-image once and never its own phase 1. Off, or under `--dry-run`, it does nothing.
+
+#### 12.8.8 `pay backups`
+
+`list`/`show`/`prune` need no server. `list` and `show` are `op_result`; `restore` is `doc`/`global`.
+
+* **`pay backups list [-n N] [--since D] [--collection C] [--id ID] [--global G] [--command C]
+  [--all-profiles]`** — newest first, current profile unless `--all-profiles`; `-n` default 50, `0` =
+  all; read from file names only. `data: {dir, profile, writing, returned, total, backups: [{path,
+  profile, collection|global, id, command, time, bytes}]}`; `next.cmd` = `pay backups show <newest>`. No
+  directory → `ok:true`, empty list, `backups_disabled` (also named when `--no-backup` is set).
+* **`pay backups show <file>`** — the record plus `path`. `<file>` may be absolute, relative to the
+  working directory, to the backup directory, or to the profile's directory under it. Missing →
+  `invalid_args`; not a `pay_backup: 1` record → `bad_request_body`. `next.cmd` =
+  `pay backups restore <file> --dry-run`.
+* **`pay backups restore <file> [--draft|--publish] [--recreate] [--ignore-target] [--depth N]
+  [--no-echo-check] [--dry-run] [--yes]`** — L2, audit action `restore_backup`.
+  1. The backup's `profile` and (redacted) `base_url` must equal the current ones, else
+     `backup_target_mismatch` (exit 5; hint `--profile <theirs>` / `--ignore-target`) — before any request.
+  2. Body = `doc` minus server-owned `id, createdAt, updatedAt, sizes, thumbnailURL, globalType`, `url` on
+     upload collections, join fields, top-level read-only fields (except `_status`, `deletedAt`) and every
+     masked value; masked and other read-only fields are listed in `backup_fields_not_restored`.
+  3. Live read (main row): exists → `PATCH` (with `trash=true` when the collection has trash), the
+     current state backed up first; 404 → `doc_not_found` with hint
+     `pay backups restore <file> --recreate --dry-run`.
+  4. **Drafts** (`restoreDraftMode`): `--draft` → saved as a draft (with a `published_doc` over a live
+     row that is not published: `published_state_not_restored`); `--publish` → the backup's `doc`
+     content is published. A backup **with `published_doc`** restores in **two steps**: (1) a plain
+     PATCH of `published_doc`'s body with `_status: "published"` — skipped when the live row is already
+     published and identical — then (2) `doc` with `draft=true`: the exact pre-write state, live again
+     with the old published content and the old draft pending. Each step is its own audited request
+     (`step`), one confirmation, one backup of the current state; the dry run adds `data.steps`. A
+     failure of step 1 writes nothing; a failure of step 2 says the published state is back and hints
+     `--draft --yes`. The dry run's `data.diff.published` shows step 1's change to the live row and
+`data.diff` the newest version after both steps; `restore_two_steps` warns that two versions are
+written and the document stays published. A backup whose `_status` is `draft` is saved with **`draft=true`** (a draft save
+     skips required-field validation as the original did; verified: pages with `layout: []` restore);
+     over a live published row it warns `restored_as_draft`. Otherwise a plain PATCH. A restore never
+     unpublishes.
+  5. `--recreate` when the document is gone: `POST /{coll}` (draft=true for a draft backup; with a
+     `published_doc`, POST the published state then PATCH the draft onto the new id). **Payload assigns a
+     new id** (§2.9): `backup_recreated_new_id` names old and new id and says relationships to the old id
+     were NOT updated; a backup taken in the trash is re-created in the trash
+     (`backup_recreated_in_trash`, `pay restore` hint); `--recreate` on an existing document restores in
+     place (`recreate_not_needed`); on a global `invalid_args`.
+  6. Globals: `POST /globals/{slug}` with the same body and draft rules.
+  7. The §10.2 echo check (and §10.2.1.3's orphan check) runs on the result.
+  8. Every audit record carries `restored_from`; the envelope `meta.restored_from`.
+* **`pay backups prune --older-than D [--collection C] [--global G] [--id ID] [--all-profiles]
+  [--dry-run] [--yes]`** — L2 (the backups are the safety net); `--older-than` is required (`30d`, `12h`,
+  a date). Removes matching files, then every directory left empty up to (never including) the root.
+  `data: {dir, cutoff, dry_run, removed, would_remove, bytes, sample[≤20], truncated}`.
+
+#### 12.8.9 `pay config set backup_dir <relative>`
+
+`pay config set` writes the **user** config, where a relative value would anchor to the config directory
+— never what an agent in a project means. A relative value is therefore stored as
+`<working directory>/<value>` with `config_path_anchored` (hint: put `backup_dir = "<value>"` in
+`./pay.toml` for a directory next to the project); `data.value` is the stored absolute path.
+
+#### 12.8.10 Known gaps
+
+* Localized collections: a backup holds the write's locale only; a `--permanent` delete + `--recreate`
+  restores one locale.
+* The global two-step restore is exercised by code review and the in-memory store only (no
+  drafts-enabled global on the test sites).
 
 ---
 
@@ -2996,8 +5241,10 @@ destructive op still leaves a trace:
   `"No files were uploaded."`). The part's `Content-Type` is sniffed or taken from `--content-type`.
 * part **`_payload`** — a JSON string of all sibling fields, present only if any were supplied. Built
   by the **§9.10.2 merge**, deep-merged with later winning:
-  `--alt` → `--data`/`--data-file` → `--set` (typed + coerced per §9.10.1) → `--set-json`.
+  `--alt` → `--data`/`--data-file` → `--set` (typed + coerced per §9.10.1) → `--set-json` →
+  `--set-md` (§9.12.8.1; e.g. a media `caption` rich-text field).
   So `--set alt=B --alt A` yields `alt: "B"`. The flags are **combinable**, not alternatives.
+  `{"$ref": …}` references in the metadata are resolved first (§9.15.1).
 
 Go: `multipart.Writer`, `CreatePart` with an explicit
 `Content-Disposition: form-data; name="file"; filename="…"` plus `Content-Type`, `io.Copy` the file
@@ -3010,7 +5257,8 @@ Behaviours surfaced in help and in `warnings[]`:
   an agent will otherwise assume its own name.
 * `--replace <id>` does a `PATCH /{coll}/{id}` with the same multipart body. This also **mints a new
   filename** rather than overwriting in place, so any hardcoded URL to the old file breaks. Stated in
-  the flag help.
+  the flag help. With backups on (§12.8) the document's metadata is backed up first — the old file
+  bytes are not.
 * A URL argument is downloaded **client-side** and re-sent as multipart. A JSON body with a `url` key
   does **not** work over REST (verified: `"No files were uploaded."`) — that is an admin-client
   feature. `--max-size` (default 100 MB) is enforced, and `--allow-remote` is required for non-HTTPS
@@ -3278,7 +5526,9 @@ rarely have sudo, and a user-writable install is a prerequisite for self-update 
 `--version`, `--dir`, `--dry-run`, `--with-skills` flags; `GH_TOKEN` honoured for the
 `api.github.com` call (anonymous GitHub API is 60 req/h per IP and shared CI IPs hit that constantly);
 optional `cosign verify-blob` when cosign is present; and a final JSON line
-`{"version":…,"path":…}` when `PAY_INSTALL_JSON=1`.
+`{"version":…,"path":…}` when `PAY_INSTALL_JSON=1`. It also prints §18's `binary_on_path` advice
+when the install directory is not on the PATH of a non-interactive shell, and warns when another
+`pay` earlier on PATH shadows the installed one.
 
 `install.ps1` does real architecture detection (`[Environment]::Is64BitOperatingSystem` /
 `$env:PROCESSOR_ARCHITECTURE`) rather than gsc-cli's hardcoded `windows_amd64`, because
@@ -3315,17 +5565,44 @@ softened:
 
 | Test | Asserts |
 |---|---|
-| `TestScopeKeyTable` | scope equality/inequality over header set, `graphql_path`, `api_path`, key, profile name, and `auto` vs explicit `auth_collection` (§8.1) |
+| `TestScopeEqualityTable` | scope equality/inequality over header set, `graphql_path`, `api_path`, key, profile name, and `auto` vs explicit `auth_collection` (§8.1) |
 | `TestFingerprintLengthIsSixteen` | every producer of a key fingerprint emits the identical 16 hex chars (§4.4) |
-| `TestIDTypeUnknownIssuesRequest` | `manifest_id_unknown.json` + `pay get c 66f1a2b3…` makes an HTTP request, does not exit 5 (§9.3) |
-| `TestGermanValidationError` | `error_validation_de.json` still normalises to `validation_failed` with per-field paths (§11.2) |
+| `TestGetChecksTheIDType`, `TestIDTypeUnknownIsAnnounced` | an unknown id type never rejects `pay get c 66f1a2b3…` locally: the request is made (no exit 5) and `id_type_unknown` says the check was skipped (§9.3) |
+| `TestClassifyWiring` (case "german validation body still classifies") | a German validation body still normalises to `validation_failed` with per-field paths (§11.2) |
 | `TestNoSecretInAnyOutput` | repo-wide grep of golden `.out`/`.err`, audit lines and log sinks for the fixture key (§3.1) |
-| `TestDiscoveryNeverSetsReactiveFlag` | a full discovery run issues zero `WithReactiveInvalidation` requests (§8.4a) |
-| `TestBulkUpdateSendsNoLimit` | `pay update c --where x --max-docs 2` emits no `limit=` parameter (§12.3) |
+| `TestReactiveIsOptIn` | the reactive invalidator never fires on a request without `WithReactiveInvalidation`, which discovery never sets — exempt by construction (§8.4a) |
+| `TestBulkWriteSendsNoLimit`, `TestBulkWritesAreIDScopedAndNeverSendLimit` | `pay update c --where x --max-docs 2` emits no `limit=` parameter (§12.3) |
 | `TestUpdateSelfAbortsOnBadChecksum` | wrong checksum ⇒ no swap, non-zero exit, `PAY_UPDATE_STRICT` unset (§15.3) |
-| `TestEveryHintIsAnswerable` | every `hint` containing a `pay …` command produces a non-empty answer against the fixture manifest (§7.10) |
-| `TestManifestFieldKeySetIsTotal` | every field entry has exactly the §7.8.2 key set, nulls included |
+| `TestEveryHintIsAnswerable` | every `pay …` command the shipped code names — a backticked span in any string, a `WithHint` argument, an `Example.Cmd`, a `Synopsis` line — resolves against the real command tree: each word a subcommand, each `--flag` defined on it, each value of an enumerated flag one of its `Values` (§7.10, A15) |
+| `TestFieldKeySetIsExactAndTotal` | every field entry has exactly the §7.8.2 key set, nulls included |
 | `BenchmarkWarmPath` | index + one shard resolution stays under **5 ms** for a synthetic 150 × 200 manifest; CI-enforced (§8.2) |
+
+The agent-ergonomics release adds three **in-memory Payload models**, each encoding the verified server
+behaviour its feature depends on, so the rules are tested without a live server:
+
+* **`pgSim`** (`internal/cli/orphans_test.go`) — the drizzle storage of §10.2.1.1: tables per block
+  type, `_path`/`_order`, clearing by reachability, `{}` on read, versions built from the read-back, the
+  `unpublishAllLocales` and draft branches, a required `bento.blocks`, a PATCH failure injector and a
+  per-locale `_status` switch. Mutation-checked: dropping the switch or keeping nested rows in carriers
+  fails the tests.
+* **`docStore`** (`internal/cli/backups_paths_test.go`) — 3.87's draft model (main row vs newest
+  version, draft saves, plain saves merging into the newest) for backups and restores.
+* **`memCMS`** (`internal/cli/sync_test.go`, `sync_align_test.go`) — an in-memory Payload with drafts for plan/sync/upsert.
+
+| Test | Asserts |
+|---|---|
+| `FuzzMarkdownRoundTrip` | md → lexical → md → lexical is stable (§9.12.4); the 7 regressions it found are seeds |
+| `TestIrreversibleWritePathsBackUpFirst` | every write path of §12.8.2 writes one file per id, named after the command, BEFORE its first write request, into `meta.backups` and the audit pre-record; fails when a call site drops `.withBackup` |
+| `TestBackupsRestoreBringsBackThePublishedStateAndTheDraft` | the two-step restore of §12.8.8 restores the exact pre-write state |
+| `TestBackupKeepsContentAndMasksOnlyCredentials` | §12.8.4's narrow rule set + `backup_redacted` |
+| `TestOrphanHintsNameRealCommands`, `TestCensusHintsNameRealCommands`, `TestPlanHintsAndUpsertPublishHint` | the new hints (`--reset-nested --dry-run`, `pay blocks learn`, `pay publish … --reset-nested`, …) name real commands and flags (§7.10's rule) |
+| `TestOutlineFieldsAreUsableWithPayBlocks` | every outline row's `field` + `selector` is listed by `pay blocks ls` (§9.13) |
+| `TestRenderedDocumentsAreRefused` | every write path refuses a `--richtext md\|text` envelope with nothing sent (§9.12.8.3) |
+| `TestStoredDocMasksCredentialsOnly` | `redact.Scrubber.StoredDoc` masks credentials, keeps content |
+
+Pure packages carry their own table tests (`internal/{lexical,docdiff,orphans,manifest,rows}/*_test.go`,
+`internal/discovery/census*_test.go`, `internal/cache/census*_test.go`). Goldens touched by the release:
+`help_root.out` (new commands), `explain_slim.out` (code totals), `explain_section_gotchas.out`.
 
 **Tier 2 — live integration.** Build tag `//go:build live`, skipped unless `PAY_TEST_BASE_URL` and
 `PAY_TEST_API_KEY` are set. Asserts what fixtures cannot: that a bad key yields 200 + `user:null`; that
@@ -3411,6 +5688,42 @@ per-scope ages, and **whether any cache write has been failing** (§8.7); audit-
 (§12.7); whether any cached scope's fingerprint currently mismatches the server; whether the skill is
 installed and stale; and whether a newer release is pending, with its verification outcome (§15.3).
 
+**Checks added by the agent-ergonomics release** (`data.checks[]` in this order on a healthy run —
+verified on localhost: `binary_on_path, base_url, site_url, url_paths, preview, credential,
+reachability, powered_by, discovery, graphql_path, graphql, payload_version, db_adapter,
+auth_collection, api_key_support, identity, cache, cache_writes, cache_fingerprint, block_census,
+audit_log, backups, skill, update`; `data` gains `binary`, `site` and `backups`):
+
+* **`binary_on_path`** (always, first; `data.binary = {executable, dir, on_path, first_on_path}`): looks
+  for `pay` (`pay.exe`) in each `$PATH` entry, resolving symlinks, and compares with the running binary
+  (`App.Executable`, `os.Executable()` taken in `Main`). `ok` — `pay` on PATH is this binary; `warn` —
+  not on PATH (agents' non-interactive shells do not read `~/.bashrc`, §2.9) or another `pay` shadows it;
+  `unknown` — executable not known. Hint: `ln -sf <exe> <dir>/pay` into a directory already on PATH, or
+  export PATH in the agent's own environment (Claude Code: `"env"` in settings.json) and in
+  `~/.profile` + `~/.zshenv`; until then use the absolute path.
+* **`site_url`, `url_paths`, `preview`** (local, no request; `data.site = {site_url, site_url_source,
+  url_paths, preview_path, preview_path_source, preview_env_vars, preview_profile_env_var,
+  preview_key_source, preview_key_fingerprint, cross_origin}`): `preview` warns when `{secret}` is needed
+  and nothing resolves (naming the three ways to configure it) or when `site_url` is cross-origin. The
+  secret value is never printed (tested).
+* **`graphql`** with mode `introspection_disabled` is **`warn`** (was `unknown`) and says exactly what
+  degrades: discovery is REST-observed, field lists come from three sampled documents, required flags are
+  unknown, block slugs and schemas are not published, and the block census stands in (`observed-census`).
+  Hint: set `graphQL: { disableIntrospectionInProduction: false }` in `buildConfig()` and redeploy (the
+  Payload 3.x default is `true`, applied only under `NODE_ENV=production`); until then `pay blocks types`.
+* **`block_census`**: none cached → `ok` ("built on first use of `pay blocks types|schema|new|validate`"),
+  or `warn` when GraphQL is not `ok` (writes cannot check block rows); cached → entities, oldest age,
+  entities with blocks ("ctas (2 types), forms (9 types), pages (33 types)"), `warn` + hint
+  `pay blocks learn` when older than 24 h or an entity read failed; `value` = the census path.
+* **`backups`** (`data.backups = {dir, source, enabled, no_backup, profile_dir, writable, files}`):
+  `skipped` (no directory; hint: set `PAY_BACKUP_DIR`), `warn` (configured but `--no-backup`), `fail`
+  (not writable — "every write would abort with backup_failed"; the probe creates the profile directory
+  and a temp file it removes), `ok`.
+* **Local checks always run.** `audit_log`, `backups`, `skill` and `update` need no server and run on
+  every path, including the early returns for a missing `base_url`, an unusable client and failed
+  discovery (before this release doctor stopped at the first of those, so an agent with no `base_url`
+  never learned its backup directory was unwritable). Server-dependent checks still do not run there.
+
 `pay explain` is the "what can I do here?" call, cache-backed and offline after the first run. It is
 **size-tiered**, because a 400 KB capability dump is functionally the same as no capability dump — the
 agent truncates it arbitrarily:
@@ -3453,6 +5766,21 @@ error surface with no upside here).
 `meta.bytes` is always set so an agent can budget its own context before asking for more.
 The `gotchas` array travels **in the payload**, not only in the skill file, so the warnings reach
 agents that never installed the skill.
+
+The release adds three gotchas, each with a runnable `do` (a unit test resolves every gotcha's `do` to a
+real command and its flags):
+
+* `unknown_fields_dropped` (always): Payload silently drops unknown fields, unknown keys inside block
+  rows and rows whose blockType it does not know, and still answers 200 →
+  `pay blocks validate --collection <collection> --data-file body.json`.
+* `introspection_disabled` (when `capabilities.graphql.mode = introspection_disabled`): describe knows
+  only REST-observed fields; the census learns blocks from real documents → `pay blocks types <collection>`.
+* `nested_block_type_change_orphans` (Postgres): a blockType change (or removing a row holding nested
+  blocks) at a NESTED path leaves `{}` orphan rows; `pay outline` shows them; `--reset-nested` avoids or
+  repairs them keeping the id → `pay update <collection> <id> --data-file body.json --reset-nested`.
+
+A body `_status` that publishes and a `--richtext` write-back are deliberately **not** gotchas: PayCLI
+guards both at runtime (`body_publishes`, `richtext_rendered`).
 
 ---
 
@@ -3537,6 +5865,30 @@ These are accepted, not solved. Each has a mitigation that must be implemented.
     collections anonymous versus 49 authenticated. *Mitigation:* the `anonymous_session` warning on
     **every** envelope (§5.0), `keyFP = "anon"` keeping the two scopes apart (§8.1), and 403 → exit 2
     `auth_required` with a login hint rather than exit 8 `access_denied` (§11.5).
+18. **The block census is observation, and observation lags the site.** A deploy adds block types, a
+    migration moves rows, a sampled collection is truncated at `census_max_docs`. *Mitigation:* an
+    observation only ever warns (§7.10c.4); writes overlay their pre-image and fold their echo (§9.7);
+    `validate` rebuilds reactively with a 10-minute cooldown; every observation-based warning states the
+    census age and names `pay blocks learn`; `census_truncated` is explicit.
+19. **`--reset-nested` depends on drizzle-adapter internals** (§10.2.1.1: which tables an update clears,
+    `unpublishAllLocales` skipping validation). A future `@payloadcms/drizzle` could clear nested tables
+    itself (making the remedy unnecessary) or change the switch. *Mitigation:* the remedy is opt-in, its
+    dry run shows every phase body, the stored row is always read back afterwards
+    (`meta.reset_nested.verified`), a per-locale `_status` is refused, a failed restatement is saved with
+    its recovery command, and `pgSim` pins the modelled behaviour. Re-verify per Payload minor release.
+20. **Publication-state rules assume 3.87's draft model** (update-by-id merges into the newest version;
+    bulk update into the stored row; `isSavingDraft`). *Mitigation:* the rules are guards that refuse or
+    warn, never silent re-routing (§1 conflict 44); each is backed by a verified source line (§2.9) and
+    by `docStore`/`pgSim` tests.
+21. **Backups hold document content in plaintext on disk**, credentials masked but content kept by
+    design (§12.8.4). *Mitigation:* off until a directory is chosen; files 0600, directories 0700;
+    `backups prune` is L2; `pay doctor` reports the directory. Localized collections back up one locale.
+22. **The preview handshake is website-template-specific** (`/next/preview?path=&previewSecret=`).
+    *Mitigation:* `preview_path` is configurable with placeholders; a missing route is `preview_failed`
+    (exit 10), not a Payload error; credentials never cross an origin (§6.3).
+23. **A manifest written without row ids pairs rows by blockType in stored order** (§9.15.5), so deleting
+    a row from an id-less manifest shifts later rows onto their predecessors' ids. *Mitigation:* the plan
+    diff shows it before any write; exporting with `pay get --depth 0 --draft` keeps the ids.
 
 
 ---
@@ -3590,7 +5942,7 @@ each assumption is either verified against the live instance or read out of `pay
 | A1 | A credential is available | Many projects allow public reads; `useAPIKey` is **opt-in per collection** and most projects have none | `auth_mode: "anonymous"`: no `Authorization` header, `/me` skipped, `identity.verified = false`, permissions from the anonymous `/access`, `anonymous_session` warning on every envelope, 403 → exit 2 `auth_required` | §5.0, §11.5 |
 | A2 | The auth collection supports API keys | `apiKey` fields exist only `if (authConfig.useAPIKey)` | `auth_mode: "jwt"` via `POST {api}/{auth}/login`, `Authorization: JWT <t>`; token + expiry stored, never the password; one silent re-login on a read 403, **never** on a write. `pay doctor` reports which collections have `useAPIKey` and prints the JWT command when none does | §5.0, §5.4 |
 | A3 | `auth_collection` is known | The slug is in the header, and a **wrong** slug returns 200 with the anonymous view (10 vs 49 collections) — indistinguishable from a low-privilege key | Stage -1 bootstrap: anonymous `/access` for candidates (never cached, never an inventory) → GraphQL `me{S}`/`initialized{S}` → project source → `/{slug}/init` filter → first `/{slug}/me` with `user != null` wins, deterministic order. Resolved slug persisted in `auth-resolution.json`. Zero matches ⇒ `auth_collection_unknown` (exit 9), never a guess at `users` | §7.0 |
-| A4 | GraphQL is reachable and introspectable | `graphQL.disable: true`; `disableIntrospectionInProduction` (fires only on a literal `__schema`/`__type` field, only under `NODE_ENV=production`); custom `validationRules`; `maxComplexity` | Mode probe **contains `__type`** so the guard actually fires. Any 200 with non-empty `errors[]` or a null expected alias is a **degrade trigger**, not a failure: record the mode, append `diagnostics.degraded[]`, fall through to REST-only, emit a usable manifest. `discovery_failed` (exit 10) only if REST-only *also* fails | §7.6 |
+| A4 | GraphQL is reachable and introspectable | `graphQL.disable: true`; `disableIntrospectionInProduction` (fires only on a literal `__schema`/`__type` field, only under `NODE_ENV=production`); custom `validationRules`; `maxComplexity` | Mode probe **contains `__type`** so the guard actually fires. Any 200 with non-empty `errors[]` or a null expected alias is a **degrade trigger**, not a failure: record the mode, append `diagnostics.degraded[]`, fall through to REST-only, emit a usable manifest. Block knowledge then comes from the block census (§7.10c), and `pay doctor` names the config switch. `discovery_failed` (exit 10) only if REST-only *also* fails | §7.6, §7.10c |
 | A5 | The GraphQL batch fits under `maxComplexity` | 450 aliases / 37 KB passed live (200, 529 KB, 0.47 s), but the ceiling is configurable | Halve the alias batch and retry on a complexity error, a null alias, or a >8 MB body; ≤4 batches; then degrade to REST-only for the unresolved entities | §7.4 |
 | A6 | `id_type` is knowable | GraphQL off **and** MongoDB ⇒ no `Query.{S}(id:)` arg | Ladder: `select[id]=true` sample → `/versions` `docs[0].parent` → profile pin → **`"unknown"`**. `"unknown"` ⇒ the client-side `invalid_id` check is **skipped** and the server answers, with `id_type_unknown` warning. Never defaulted | §7.6, §9.3 |
 | A7 | Capability flags are knowable | `duplicate` is GraphQL-only; `use_api_key` is GraphQL-only | Flags are `true \| false \| null` with per-flag `flags_source`. `null` ⇒ **attempt the operation** and classify the server's 404/501 as `feature_unavailable` after the fact, with `pay discover --refresh`. Never block locally on `null` | §7.6 |
@@ -3601,13 +5953,17 @@ each assumption is either verified against the live instance or read out of `pay
 | A12 | `routes.api` is `/api` and GraphQL is at `/api/graphql` | `routes.graphQL` is **nested under** `routes.api` | `graphql_path = api_path + graphql_route`, derived unless explicitly overridden, shown as `source: "derived:api_path+graphql_route"`; `api_path` autodiscovered; a `route_missing` GraphQL probe with a non-default `api_path` names the derived candidate in its hint | §4.2, §7.2, §7.6 |
 | A13 | The DB adapter is known | Not discoverable from the API; `all` 500s on Postgres and **works** on Mongo | `db_adapter` nullable with provenance, inferred only from observed id shapes. `unsupported_operators` starts **empty** and is learned reactively; the client-side block applies only under `db_adapter_source == "configured"` | §7.11 |
 | A14 | The Payload version is known | No header, no endpoint carries it | From the profile pin, else the project's `package.json` (local FS, no network), else `null` + `PAYLOAD_VERSION_UNKNOWN`. `meta.payload_version` is honestly `null`; version-gated hints use their unconditional wording; the version floor is **advisory only** | §7.11, §20.5 |
-| A15 | Block `blockType` slugs are recoverable from the API | They are not when `interfaceName` is set, and the observed-values fallback yields nothing when every `layout` is `[]` | Profile `blocks` map → project-source scan (`slug:` literals near `fields:`, bounded, never evaluated) → observed values → `blocks_source: "unknown"`, collection `publishable: false` with a plain-words reason and the file to read. **No hint may name a command that cannot answer it** — unit-tested | §7.10 |
+| A15 | Block `blockType` slugs are recoverable from the API | They are not when `interfaceName` is set, and the observed-values fallback yields nothing when every `layout` is `[]` | Profile `blocks` map → project-source scan (`slug:` literals near `fields:`, bounded, never evaluated) → observed values → `blocks_source: "unknown"`, collection `publishable: false` with a plain-words reason and the file to read. The block census (§7.10c) then learns slugs, nested placements and row schemas from real documents, labelled `observed-census`, and never gates on them. **No hint may name a command that cannot answer it** — unit-tested (`TestEveryHintIsAnswerable`) | §7.10, §7.10c |
 | A16 | Hooks do not rewrite submitted values | The official website template's `formatSlug` rewrites `slug`; `email` is normalised | Echo-diff splits into `input_silently_dropped` (path **absent**) and `value_normalized_by_server` (path **present, different**); `hook_mutated` is observation-only; profile `echo_check_ignore` is the manual answer | §10.2 |
 | A17 | Custom endpoints do not shadow built-in routes | `payload-preferences` registers `GET /:key`, which shadows `/versions` and returns a 200 | Every probe validates the **response shape**, never the status alone; the `docs`-is-an-array check on `/versions` is mandatory; `CUSTOM_ENDPOINTS_NOT_ENUMERABLE` declares the gap; `pay raw` reaches anything unmodelled | §7.5, §9.8 |
 | A18 | The project has ~50 collections | A large install has 150+ with 500+ fields | Index + lazy field shards; index decode 1.44 ms at 150 and 4.79 ms at 500; `pay explain` never truncates the slug list and pages detail with `--offset`/`--limit`/`--grep`; a CI benchmark holds warm-path resolution under 5 ms at 150 × 200 | §8.2, §18 |
 | A19 | `endpoints` are enabled on every collection | `payload-migrations` returns 501 `Cannot GET` | The 501 guard runs **first** and skips every other probe for that collection; the entity is recorded in `unreachable[]` with `reason: "endpoints-disabled"` and remains reachable through `pay raw` | §7.5 |
 | A20 | `/api/access` is a complete inventory | It omits `payload-kv` (zero permissions); GraphQL omits `payload-migrations` | The inventory is the **union** of both sources, with `reachability` recording which one saw each entity | §7.3 |
 | A21 | The network and server are reliable | — | Classified retries with decorrelated jitter, a shared retry budget, a wall-clock deadline that outranks the attempt count, and **never** a retried write once a response byte has been read | §6.1 |
+| A22 | A write's echo shows what was stored | On Postgres, a nested block restructure leaves orphan rows visible only in the stored row; the echo and the draft read are clean | The stored row is read back after overwriting writes of versioned entities (`orphan_rows`); dry runs and backups predict (`orphan_risk`); `get` warns `empty_rows`; `--reset-nested` removes them keeping the id | §10.2.1 |
+| A23 | A plain save leaves the publication state alone | Update-by-id merges into the pending draft and stores its `_status: "draft"` in the live row; a body `_status: "published"` publishes even with `?draft=true` | The write is refused until `--draft`/`--publish`/`--unpublish` states the outcome; `--draft` beats a publishing body; `pay publish --where` sends `?draft=true` | §10.2.2, §10.2.3 |
+| A24 | Rich text round-trips through text | Payload stores a string in a richText field and an editor state in a text field as JSON text | `--richtext` renderings are refused on every write path; `--set-md` checks the target field's type (schema, then stored values); `stored_as_string` after the fact | §9.12.8, §10.2 |
+| A25 | Drafts can be viewed without publishing | Only through the site's preview route with its secret | `pay url --preview`: the handshake without redirect, cookies saved 0600 in the agent-browser shape; secret from §5.5, never printed; credentials never cross an origin | §9.16, §6.3 |
 
 ### 21.3 What PayCLI never does
 
@@ -3618,10 +5974,17 @@ Stated as prohibitions because each one was a real defect in an earlier draft of
 2. **Never rejects client-side on a fact it does not know.** Every §9.3 row is gated on provenance.
 3. **Never classifies on a translated string.** Only `errors[].name`, JSON structure, HTTP status, and
    the two hardcoded English strings.
-4. **Never emits a hint naming a command that cannot answer it.** Unit-tested over every hint.
+4. **Never emits a hint naming a command that cannot answer it.** Unit-tested over every command line the shipped code names (`TestEveryHintIsAnswerable`).
 5. **Never prints a credential.** Not in `error.raw`, not in `--output raw`, not in a debug log, not in
    a URL, not in a golden file. Repo-wide test.
 6. **Never retries a write after a response byte has been read** — including on the Level-3
    reactive-invalidation path and the `jwt` re-login path.
 7. **Never fails a command because of a cache problem.** Every cache error is a miss plus a warning.
 8. **Never requires a credential to run.** Anonymous is a supported mode, not an error state.
+9. **Never blocks a write on an observation.** Census facts (`observed-census`) warn; only declared
+   facts and Payload's wire format produce errors (§7.10c.4).
+10. **Never takes a published document offline without `--unpublish`**, and never lets a body's
+    `_status` override the `--draft` the caller typed (§10.2.2, §10.2.3).
+11. **Never writes rendered rich text back** (`richtext_rendered`, §9.12.8.3).
+12. **Never writes without the backup the user asked for** — with a backup directory configured, a
+    backup that cannot be taken aborts the write (§12.8.5).

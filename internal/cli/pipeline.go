@@ -77,6 +77,10 @@ type pipeInput struct {
 	Target   *output.Target
 	Edits    *output.Edits
 	Warnings []output.Warning
+	// RichText is meta.richtext.format of the upstream envelope: "md" or
+	// "text" when the read rendered the rich text (--richtext), "" otherwise.
+	// Every stage that passes a document on towards a write refuses it.
+	RichText string
 }
 
 // readPipeInput decodes the stage's stdin.
@@ -142,7 +146,7 @@ func fromEnvelope(env map[string]any) (*pipeInput, error) {
 		return nil, upstreamError(env)
 	}
 
-	in := &pipeInput{}
+	in := &pipeInput{RichText: envelopeRichText(env)}
 	in.Kind = output.DataKind(envString(env["data_kind"]))
 	in.Target = decodeInto[output.Target](env["target"])
 	in.Edits = decodeInto[output.Edits](env["edits"])
@@ -228,8 +232,21 @@ func envString(v any) string {
 // rowField is the array a transform is about to edit, plus everything known
 // about what may legally go in it.
 type rowField struct {
-	// Path is the document field path, "" when the rows arrived bare.
+	// Path is the array's location with row positions — `layout`,
+	// `layout[2].blocks` — and "" when the rows arrived bare. It is exact for
+	// the document this stage read and is what errors and edits.ops name.
 	Path string
+	// Stable is the same location with each row's shortest selector,
+	// `layout[id:6ab8…].blocks`: the --field a LATER stage should be given.
+	Stable string
+	// Root is the field `pay apply` writes: the object-key prefix up to the
+	// first row (`layout` for `layout[2].blocks`). Payload has no per-row
+	// endpoint, so a nested edit is written as the whole top-level array.
+	Root string
+	// Loc is the resolved location, used to write the edited rows back.
+	Loc rows.Location
+	// Nested reports a location that passes through a row.
+	Nested bool
 	// Rows is the current array.
 	Rows []any
 	// Accepts are the blockType slugs this field takes, nil when discovery
@@ -238,6 +255,13 @@ type rowField struct {
 	Accepts []string
 	// Shard is the collection's field schema when one was available.
 	Shard *discovery.Shard
+	// Census is the merged block knowledge from the CACHED census (never
+	// built by a pipe stage), nil when none was cached. It never gates an
+	// edit; `ls` reports what it observed at this location.
+	Census *discovery.BlockKnowledge
+	// Doc is the whole piped document (nil for bare rows), so an `id:` that
+	// is not in this array can be found in the one it IS in.
+	Doc map[string]any
 }
 
 // resolveRowField finds the array to edit.
@@ -262,52 +286,55 @@ func resolveRowField(ctx context.Context, d *Deps, in *pipeInput, field string) 
 		warns = append(warns, *w)
 	}
 
+	// The cached block census (§7.10c) stands in for a schema that does not
+	// name the blocks fields — every project with GraphQL introspection
+	// disabled. It is read from disk only; a pipe stage never builds it.
+	k := pipeCensus(d, in.Target, shard)
+
 	path := field
 	if path == "" {
-		chosen, inferred, err := pickRowField(in.Doc, shard)
+		chosen, inferred, err := pickRowField(in.Doc, shard, censusTopLevelFields(k))
 		if err != nil {
 			return nil, nil, err
 		}
 		path = chosen
 		if inferred {
-			warns = append(warns, output.Warning{
-				Code: WarnBlocksFieldInferred,
-				Message: fmt.Sprintf(
-					"%q was chosen by looking at the document (it is the only array whose rows all carry a blockType); this project's schema was not available to confirm it", path),
-				Paths: []string{path},
-				Hint:  "run `pay discover --refresh`, or name the field explicitly with --field",
-			})
+			warns = append(warns, inferredFieldWarning(path, in.Target))
 		}
 	}
 
-	value, present := docValueAt(in.Doc, path)
-	list, isArray := value.([]any)
-	switch {
-	case !present || value == nil:
-		// An absent field is empty, not an error: `pay blocks add` has to be
-		// able to fill a layout that is null, and every other verb fails
-		// immediately afterwards with selector_no_match, which says the same
-		// thing more precisely.
-		warns = append(warns, output.Warning{
-			Code:    WarnFieldAbsent,
-			Message: fmt.Sprintf("the piped document has no %q, so it is being treated as an empty array", path),
-			Paths:   []string{path},
-			Hint:    "a --select on the read that produced this document drops the fields it does not name; re-read without it",
-		})
-		list = nil
-	case !isArray:
-		return nil, nil, apierr.New(apierr.CodeInvalidArgs,
-			"%s is %s, not an array of rows", path, jsonKindOf(value)).
-			WithHint("`pay describe <collection> --path .blocks` lists this project's blocks fields")
+	rf, located, err := locateRows(in.Doc, path, shard, censusRowArrays(k))
+	if err != nil {
+		return nil, nil, err
 	}
-
-	rf := &rowField{Path: path, Rows: list, Shard: shard}
-	if shard != nil {
-		if slugs, ok := shard.BlockTypesFor(path); ok {
-			rf.Accepts = slugs
+	if field != "" {
+		if w := staleIndexWarning(field, rf, in.Edits); w != nil {
+			located = append(located, *w)
 		}
 	}
-	return rf, warns, nil
+	rf.Census = k
+	rf.Doc = in.Doc
+	return rf, append(warns, located...), nil
+}
+
+// inferredFieldWarning is blocks_field_inferred: the field was chosen by the
+// document's shape alone. The hint names the command that makes the next run
+// certain — the census, which works without GraphQL introspection — and only
+// when there is a collection to learn.
+func inferredFieldWarning(path string, target *output.Target) output.Warning {
+	hint := "name the field explicitly with --field"
+	if target != nil && target.Slug != "" {
+		hint = fmt.Sprintf("run `pay blocks learn %s` once (it reads real documents, so it works without GraphQL "+
+			"introspection) and later stages choose the field from it, or name the field explicitly with --field", target.Slug)
+	}
+	return output.Warning{
+		Code: WarnBlocksFieldInferred,
+		Message: fmt.Sprintf(
+			"%q was chosen by looking at the document (it is the only array whose rows all carry a blockType); "+
+				"neither this project's schema nor a cached block census was available to confirm it", path),
+		Paths: []string{path},
+		Hint:  hint,
+	}
 }
 
 // pipeShard loads the field schema for the collection the envelope names. It
@@ -325,7 +352,11 @@ func pipeShard(ctx context.Context, d *Deps, target *output.Target) *discovery.S
 }
 
 // pickRowField chooses the field when --field was not given.
-func pickRowField(doc map[string]any, shard *discovery.Shard) (path string, inferred bool, err error) {
+//
+// observed are the top-level blocks fields the cached block census saw for
+// the document's collection; they are consulted only when the schema names
+// none, which is the normal state of a project with introspection disabled.
+func pickRowField(doc map[string]any, shard *discovery.Shard, observed []string) (path string, inferred bool, err error) {
 	// 1. The project's schema, narrowed to the blocks fields this document
 	//    actually carries. A collection may declare a blocks field the caller
 	//    trimmed away with --select, and offering it as a candidate would name
@@ -336,24 +367,17 @@ func pickRowField(doc map[string]any, shard *discovery.Shard) (path string, infe
 			declared = append(declared, p)
 		}
 		sort.Strings(declared)
-
-		present := declared[:0:0]
-		for _, p := range declared {
-			if v, ok := docValueAt(doc, p); ok && v != nil {
-				present = append(present, p)
-			}
+		if p, err := pickKnownField(doc, declared, "this collection has more than one blocks field"); p != "" || err != nil {
+			return p, false, err
 		}
-		switch {
-		case len(present) == 1:
-			return present[0], false, nil
-		case len(present) > 1:
-			return "", false, ambiguousField(present, "this collection has more than one blocks field")
-		case len(declared) == 1:
-			// Declared but absent: name it anyway so the caller gets the
-			// field_absent warning rather than a guess off the document.
-			return declared[0], false, nil
-		case len(declared) > 1:
-			return "", false, ambiguousField(declared, "this collection has more than one blocks field and the piped document carries none of them")
+	}
+
+	// 1b. The block census: the blocks fields real documents of this
+	//     collection carry. It is observation, but it observed exactly the
+	//     property step 2 guesses from one document, over hundreds.
+	if len(observed) > 0 {
+		if p, err := pickKnownField(doc, observed, "the block census saw more than one blocks field in this collection"); p != "" || err != nil {
+			return p, false, err
 		}
 	}
 
@@ -377,6 +401,30 @@ func pickRowField(doc map[string]any, shard *discovery.Shard) (path string, infe
 	default:
 		return "", false, ambiguousField(candidates, "the piped document carries more than one blocks field")
 	}
+}
+
+// pickKnownField chooses among the blocks fields a schema or the census
+// names: the one this document carries, or — when it carries none and only
+// one is known — that one, so the caller gets the field_absent warning
+// rather than a guess off the document. "" and nil mean "no answer".
+func pickKnownField(doc map[string]any, known []string, why string) (string, error) {
+	present := known[:0:0]
+	for _, p := range known {
+		if v, ok := docValueAt(doc, p); ok && v != nil {
+			present = append(present, p)
+		}
+	}
+	switch {
+	case len(present) == 1:
+		return present[0], nil
+	case len(present) > 1:
+		return "", ambiguousField(present, why)
+	case len(known) == 1:
+		return known[0], nil
+	case len(known) > 1:
+		return "", ambiguousField(known, why+" and the piped document carries none of them")
+	}
+	return "", nil
 }
 
 func ambiguousField(candidates []string, why string) error {
@@ -458,7 +506,7 @@ func checkBlockType(rf *rowField, slug string) error {
 // The document — not a summary of the change — is the payload, because the
 // next stage's input is this stage's output. That symmetry is the whole design:
 // any number of transforms compose, in any order, with no temporary files.
-func emitStage(command string, in *pipeInput, rf *rowField, op output.EditOp, warns []output.Warning) *output.Envelope {
+func emitStage(command string, in *pipeInput, rf *rowField, op output.EditOp, warns []output.Warning) (*output.Envelope, error) {
 	kind := in.Kind
 	var data any
 	if in.Bare {
@@ -467,7 +515,14 @@ func emitStage(command string, in *pipeInput, rf *rowField, op output.EditOp, wa
 	} else {
 		doc := shallowCopyDoc(in.Doc)
 		if rf.Path != "" {
-			setPath(doc, rf.Path, rf.Rows)
+			// Copy-on-write along the location: a nested edit replaces the
+			// rows inside ONE group row, and every array and row on the way
+			// is copied rather than mutated.
+			edited, err := rows.Replace(in.Doc, rf.Loc, rf.Rows)
+			if err != nil {
+				return nil, apierr.New(apierr.CodeInternal, "writing %s back into the document: %s", rf.Path, err.Error())
+			}
+			doc = edited
 		}
 		data = doc
 		if kind == "" {
@@ -483,7 +538,10 @@ func emitStage(command string, in *pipeInput, rf *rowField, op output.EditOp, wa
 	op.Field = rf.Path
 	op.Rows = len(rf.Rows)
 	edits.Ops = append(edits.Ops, op)
-	edits.Touch(rf.Path)
+	// The WRITE unit, not the edited array: Payload replaces a whole
+	// top-level array on PATCH, so `layout[2].blocks` is recorded as `layout`
+	// and `pay apply` sends all of layout with the nested edit inside it.
+	edits.Touch(rf.Root)
 
 	env := output.New(command, kind, data).WithEdits(edits)
 	if in.Target != nil {
@@ -498,10 +556,10 @@ func emitStage(command string, in *pipeInput, rf *rowField, op output.EditOp, wa
 	for _, w := range populatedRelationshipWarnings(rf) {
 		env.AddWarning(w)
 	}
-	if next := applyNext(in.Target, rf.Path); next != nil {
+	if next := applyNext(in.Target, rf.Root); next != nil {
 		env.WithNext(next)
 	}
-	return env
+	return env, nil
 }
 
 // shallowCopyDoc copies the top level so the edited field can be replaced

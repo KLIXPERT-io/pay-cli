@@ -19,7 +19,7 @@ func TestErrorEnvelopeAlwaysCarriesTheCommandKey(t *testing.T) {
 		args []string
 		want string
 	}{
-		{"unknown flag on a data command", []string{"get", "pages", "--published-only"}, "get"},
+		{"unknown flag on a data command", []string{"get", "pages", "--no-such-flag"}, "get"},
 		{"missing positional", []string{"find"}, "find"},
 		{"bad flag value", []string{"find", "pages", "--limit", "notanumber"}, "find"},
 		{"unknown flag on a subcommand", []string{"auth", "status", "--nope"}, "auth status"},

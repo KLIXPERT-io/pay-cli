@@ -1,0 +1,4 @@
+normalized	root.children[4]	a quote holding one paragraph reads back as Lexical's native quote (inline children)
+placeholder	root.children[7]	upload node carries more than a reference; written as a lossless placeholder
+placeholder	root.children[8]	block node has no Markdown spelling; written as a lossless placeholder
+placeholder	root.children[11]	table node has no Markdown spelling; written as a lossless placeholder

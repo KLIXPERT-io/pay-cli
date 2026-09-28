@@ -199,9 +199,35 @@ func validationError(r Response, fields []Field) *Error {
 	e := New(CodeValidationFailed, "%d field(s) are invalid%s.", len(sorted), onCollection(r.Collection))
 	e.Fields = sorted
 	if len(sorted) > 0 && !AnySent(sorted) {
-		_ = e.WithHint("The stored document is already invalid on %d field(s) you did not send - Payload validates the whole document on update, so your change was rejected by pre-existing state, not by your input. Retry with --draft to store the change without validation, or repair the listed fields in the same request.", len(sorted))
+		if isCreate(r) {
+			// A create has no stored document: a field it did not send is
+			// missing from the caller's own body, not pre-existing state.
+			describe := "`pay describe <collection>` lists the required fields."
+			if r.Collection != "" {
+				describe = fmt.Sprintf("`pay describe %s` lists the required fields.", r.Collection)
+			}
+			_ = e.WithHint("The new document is missing %d required field(s) you did not send: a create must supply every required field. Add them to the body (--set, --set-json, --data), or pass --draft on a collection with drafts to store an incomplete draft without validation. %s", len(sorted), describe)
+		} else {
+			_ = e.WithHint("The stored document is already invalid on %d field(s) you did not send - Payload validates the whole document on update, so your change was rejected by pre-existing state, not by your input. Retry with --draft to store the change without validation, or repair the listed fields in the same request.", len(sorted))
+		}
 	}
 	return e
+}
+
+// isCreate reports whether the request created a document: a POST to the
+// collection's own root (`/api/pages`), as opposed to a PATCH by id, a POST to
+// /globals/<slug> (a global update) or /<slug>/<id>/duplicate. Unknown
+// collection: not a create, which keeps the update wording.
+func isCreate(r Response) bool {
+	if !strings.EqualFold(r.Method, "POST") || r.Collection == "" {
+		return false
+	}
+	path := strings.Trim(pathOnly(r.URL), "/")
+	segs := strings.Split(path, "/")
+	if len(segs) == 0 || segs[len(segs)-1] != r.Collection {
+		return false
+	}
+	return len(segs) < 2 || segs[len(segs)-2] != "globals"
 }
 
 // byStatus is §11.5's table. It returns nil when the status carries no signal.

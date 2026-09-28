@@ -254,6 +254,18 @@ func mergeCommandMeta(base *output.Meta, extra output.Meta) {
 	if extra.DryRun {
 		base.DryRun = true
 	}
+	if extra.RichText != nil {
+		base.RichText = extra.RichText
+	}
+	if extra.ResetNested != nil {
+		base.ResetNested = extra.ResetNested
+	}
+	if extra.Upsert != nil {
+		base.Upsert = extra.Upsert
+	}
+	if extra.RestoredFrom != "" {
+		base.RestoredFrom = extra.RestoredFrom
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -478,6 +490,9 @@ type readFlags struct {
 	depth         int
 	populate      []string
 	joins         []string
+	// richtext is --richtext json|md|text (§9.12.8): how rich text is
+	// rendered in the output. It changes nothing that is sent.
+	richtext richTextFlag
 
 	draft         bool
 	draftOnly     bool
@@ -527,6 +542,7 @@ func (f *readFlags) registerSelectionFlags(cmd *cobra.Command, depthDefault int)
 	fl.BoolVar(&f.draft, "draft", false, "swap in the newest draft for documents that have a published version")
 	fl.StringVar(&f.locale, "locale", "", "locale code, or 'all'")
 	fl.StringVar(&f.fallbackLocale, "fallback-locale", "", "fallback locale ('none' is the default on a localised project)")
+	f.richtext.register(cmd)
 }
 
 // registerPagingFlags adds page-size and pagination.
@@ -890,6 +906,9 @@ func (f *readFlags) reinvocation(d *Deps, t *collTarget, b *builtQuery, o reinvo
 	}
 	if f.draft {
 		on("draft", "draft")
+	}
+	if f.richtext.active() {
+		str("richtext", "richtext", f.richtext.normalized())
 	}
 	if b != nil && b.Params.Locale != "" {
 		str("locale", "locale", b.Params.Locale)
@@ -1446,6 +1465,7 @@ func findHelp() *Help {
 			"q":          {Note: "OR-contains across the collection's title-ish text fields"},
 			"max":        {Min: intPtr(0), Note: "only with --all; 0 means no cap"},
 			"count-only": {Note: "same request as `pay count`, returning data_kind count"},
+			"richtext":   richTextFlagInfo,
 		},
 		Output: OutputSpec{
 			Kind: output.KindDocList, Paginated: true,
@@ -1455,6 +1475,8 @@ func findHelp() *Help {
 		Examples: []Example{
 			{Why: "the cheapest possible look at a collection",
 				Cmd: "pay find pages --limit 5 --select id,title,_status"},
+			{Why: "the posts' bodies as Markdown, to read (not to write back)",
+				Cmd: "pay find posts --limit 3 --select title,content --richtext md"},
 			{Why: "live content only, newest first (a bare read returns drafts too)",
 				Cmd: "pay find posts --published-only --sort -publishedAt --limit 10"},
 			{Why: "substring filter; % _ and \\ are escaped for you",
@@ -1500,6 +1522,9 @@ func runFind(ctx context.Context, cmd *cobra.Command, d *Deps, f *readFlags, slu
 		f.depth = cfg.Depth
 	}
 
+	if err := f.richtext.validate(); err != nil {
+		return nil, err
+	}
 	client, err := d.requireClient()
 	if err != nil {
 		return nil, err
@@ -1584,6 +1609,11 @@ func runFind(ctx context.Context, cmd *cobra.Command, d *Deps, f *readFlags, slu
 			return nil, err
 		}
 		docs, page, raw = list.Docs, list.Page, list.Raw
+		// A paginated read answers "did I get everything?" the same way
+		// --all does (§10.1): more matching documents exist than this
+		// envelope holds. Leaving it false made an agent that branches on
+		// page.truncated stop after page 1 and treat a partial set as whole.
+		truncated = page.HasNextPage
 	}
 	if docs == nil {
 		docs = []payload.Doc{}
@@ -1636,5 +1666,6 @@ func runFind(ctx context.Context, cmd *cobra.Command, d *Deps, f *readFlags, slu
 			}},
 		})
 	}
+	f.richtext.apply(env)
 	return env, nil
 }

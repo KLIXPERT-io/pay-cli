@@ -79,11 +79,14 @@ func newDescribeCmd(rt *Runtime) *cobra.Command {
 				return env, nil
 			}
 
+			// §7.10c: when GraphQL / project source cannot answer a blocks
+			// question, the block census can — built lazily, only then.
+			census := rt.describeCensus(ctx, m, slug, targetKind, shard)
 			if f.block != "" {
-				return describeOneBlock(rt, slug, targetKind, shard, f.block, f.field, header)
+				return describeOneBlock(rt, slug, targetKind, shard, f.block, f.field, header, census)
 			}
 			if f.field != "" {
-				return describeOneField(rt, slug, targetKind, shard, f.field, header, f.blocksDetail)
+				return describeOneField(rt, slug, targetKind, shard, f.field, header, f.blocksDetail, census)
 			}
 
 			fields := filterFields(shard.Fields, f)
@@ -131,7 +134,7 @@ func newDescribeCmd(rt *Runtime) *cobra.Command {
 	cmd.Flags().BoolVar(&f.queryable, "queryable", false, "only fields usable in --where")
 	cmd.Flags().BoolVar(&f.examples, "examples", false, "add generated, copy-pasteable commands for this entity")
 	cmd.Flags().BoolVar(&f.sample, "sample", false, "also fetch one real document (one extra request)")
-	_ = cmd.RegisterFlagCompletionFunc("field", CompleteFieldPaths(rt, FieldSelectable))
+	_ = cmd.RegisterFlagCompletionFunc("field", CompleteCensusFieldPaths(rt, true, CompleteFieldPaths(rt, FieldSelectable)))
 	_ = cmd.RegisterFlagCompletionFunc("block", CompleteBlockSlugs(rt))
 
 	SetHelp(cmd, &Help{
@@ -278,8 +281,11 @@ func filterFields(fields []discovery.Field, f *describeFlags) []discovery.Field 
 }
 
 func describeOneField(rt *Runtime, slug, targetKind string,
-	shard *discovery.Shard, path string, header map[string]any, blocksDetail bool) (*output.Envelope, error) {
+	shard *discovery.Shard, path string, header map[string]any, blocksDetail bool, census lazyCensus) (*output.Envelope, error) {
 	field, ok := shard.Field(path)
+	if env := describeFieldFromCensus(slug, targetKind, shard, path, header, field, ok, census); env != nil {
+		return env, nil
+	}
 	if !ok {
 		return nil, apierr.New(apierr.CodeUnknownField,
 			"%q has no field %q", slug, path).
@@ -319,6 +325,9 @@ func describeOneField(rt *Runtime, slug, targetKind string,
 		case len(bf.Slugs) == 0:
 			data["blocks_help"] = discovery.DescribeBlocksHelp(bf.InterfaceNames, rt.Cfg.Profile, path)
 			rt.Warnf(discovery.LimBlockSlugsUnknown, "%s", discovery.UnresolvedBlocksReason(path))
+		case reconcileWithCensus(data, bf, path, census):
+			// The census confirmed or corrected the inferred slugs; the
+			// declared list is kept beside it as declared_block_types.
 		case bf.Reason != "":
 			// A partly-inferred list is usable but not confirmed; saying so is
 			// the difference between a hint and a silent wrong answer.
@@ -388,8 +397,13 @@ func fieldDocSource(shard *discovery.Shard, documented bool) string {
 // meaningless on forms.fields, and answering for the wrong entity would
 // produce a document Payload silently drops (§9.7).
 func describeOneBlock(rt *Runtime, slug, targetKind string, shard *discovery.Shard,
-	block, fieldPath string, header map[string]any) (*output.Envelope, error) {
+	block, fieldPath string, header map[string]any, census lazyCensus) (*output.Envelope, error) {
 	accepted := blockFieldsAccepting(shard, block, fieldPath)
+	if _, declared := shard.BlockSchemaFor(block); len(accepted) == 0 || !declared {
+		if env := describeBlockFromCensus(slug, targetKind, block, fieldPath, header, census); env != nil {
+			return env, nil
+		}
+	}
 	known := shard.BlockSlugsFor()
 	if fieldPath != "" {
 		if bf, ok := shard.BlockFieldFor(fieldPath); ok {
@@ -401,9 +415,20 @@ func describeOneBlock(rt *Runtime, slug, targetKind string, shard *discovery.Sha
 		if fieldPath != "" {
 			where = slug + "." + fieldPath
 		}
+		// On a site without introspection the shard names no slug at all;
+		// the census (already loaded above when there is one) does.
+		var observed []string
+		if census != nil {
+			if k, _ := census(); k != nil {
+				observed = k.KnownTypes()
+			}
+		}
 		err := apierr.New(apierr.CodeInvalidOption,
 			"no blocks field of %s accepts blockType %q", where, block).
-			WithDidYouMean(apierr.DidYouMean(block, known)...)
+			WithDidYouMean(apierr.DidYouMean(block, dedupe(append(append([]string{}, known...), observed...)))...)
+		if len(known) == 0 && len(observed) > 0 {
+			return nil, err.WithHint("pay blocks types %s lists the %d blockTypes real %s documents use", slug, len(observed), slug)
+		}
 		if len(known) == 0 {
 			return nil, err.WithHint(
 				"pay describe %s --path .blocks lists the blockTypes this entity accepts; it is empty here, "+

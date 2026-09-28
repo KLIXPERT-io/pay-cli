@@ -9,6 +9,7 @@ import (
 	"github.com/KLIXPERT-io/pay-cli/internal/apierr"
 	"github.com/KLIXPERT-io/pay-cli/internal/cache"
 	"github.com/KLIXPERT-io/pay-cli/internal/discovery"
+	"github.com/KLIXPERT-io/pay-cli/internal/orphans"
 	"github.com/KLIXPERT-io/pay-cli/internal/output"
 	"github.com/KLIXPERT-io/pay-cli/internal/payload"
 	"github.com/KLIXPERT-io/pay-cli/internal/payload/query"
@@ -201,6 +202,7 @@ func newGlobalsGetCmd(rt *Runtime) *cobra.Command {
 		depth   int
 		selectF []string
 		locale  string
+		rich    richTextFlag
 	)
 	cmd := &cobra.Command{
 		Use:   "get <slug>",
@@ -213,6 +215,9 @@ func newGlobalsGetCmd(rt *Runtime) *cobra.Command {
 	cmd.RunE = runData(rt, safety.CmdGlobalsGet, func(ctx context.Context, cmd *cobra.Command, d *Deps, args []string) (*output.Envelope, error) {
 		{
 			cfg := d.cfg()
+			if err := rich.validate(); err != nil {
+				return nil, err
+			}
 			client, err := d.requireClient()
 			if err != nil {
 				return nil, err
@@ -253,6 +258,11 @@ func newGlobalsGetCmd(rt *Runtime) *cobra.Command {
 			if locWarn != nil {
 				env.AddWarning(*locWarn)
 			}
+			// §10.2.1: a {} row is an orphan the Postgres adapter left behind.
+			if paths := orphans.EmptyRows(map[string]any(doc)); len(paths) > 0 {
+				env.AddWarning(emptyRowsWarning(orphanTarget{g: g}, paths, draft))
+			}
+			rich.apply(env)
 			return env, nil
 		}
 	})
@@ -260,6 +270,7 @@ func newGlobalsGetCmd(rt *Runtime) *cobra.Command {
 	cmd.Flags().IntVar(&depth, "depth", 0, "relationship expansion depth")
 	cmd.Flags().StringSliceVar(&selectF, "select", nil, "return only these fields")
 	cmd.Flags().StringVar(&locale, "locale", "", "locale code, or 'all'")
+	rich.register(cmd)
 
 	SetHelp(cmd, globalsGetHelp())
 	return cmd
@@ -287,9 +298,10 @@ func globalsGetHelp() *Help {
 				ValuesFrom: "discovery.globals", Example: "header"},
 		},
 		FlagInfo: map[string]FlagInfo{
-			"depth":  {Min: intPtr(0), Max: intPtr(10)},
-			"select": {Grammar: "field,field.sub", Repeatable: true},
-			"draft":  {Note: "only on a global whose versions.drafts is enabled; exit 10 otherwise"},
+			"depth":    {Min: intPtr(0), Max: intPtr(10)},
+			"select":   {Grammar: "field,field.sub", Repeatable: true},
+			"draft":    {Note: "only on a global whose versions.drafts is enabled; exit 10 otherwise"},
+			"richtext": richTextFlagInfo,
 		},
 		Output: OutputSpec{
 			Kind:     output.KindGlobal,
@@ -302,6 +314,7 @@ func globalsGetHelp() *Help {
 			{Why: "embed relationships one level", Cmd: "pay globals get header --depth 1"},
 			{Why: "one field only", Cmd: "pay globals get footer --select navItems"},
 			{Why: "a scalar straight out of it", Cmd: "pay globals get crm-brand --path '.companyName'"},
+			{Why: "its rich text as plain text", Cmd: "pay globals get footer --richtext text"},
 		},
 		Mistakes: []Mistake{
 			{Wrong: "Passing --draft to a global that has no drafts.",
@@ -322,10 +335,13 @@ func newGlobalsUpdateCmd(rt *Runtime) *cobra.Command {
 	var (
 		data        writeData
 		draft       bool
+		publish     bool
+		unpublish   bool
 		depth       int
 		selectF     []string
 		locale      string
 		noEchoCheck bool
+		resetNested bool
 	)
 	cmd := &cobra.Command{
 		Use:   "update <slug>",
@@ -340,7 +356,6 @@ create (§9.10.2), later winning.`,
 	}
 	cmd.RunE = runData(rt, safety.CmdGlobalsUpdate, func(ctx context.Context, cmd *cobra.Command, d *Deps, args []string) (*output.Envelope, error) {
 		{
-			cfg := d.cfg()
 			client, err := d.requireClient()
 			if err != nil {
 				return nil, err
@@ -349,7 +364,10 @@ create (§9.10.2), later winning.`,
 			if err != nil {
 				return nil, err
 			}
-			if draft {
+			if err := checkStatusFlags(draft, publish, unpublish); err != nil {
+				return nil, err
+			}
+			if draft || publish || unpublish {
 				if err := checkDrafts(g.Slug, g.flags().Drafts); err != nil {
 					return nil, err
 				}
@@ -359,7 +377,16 @@ create (§9.10.2), later winning.`,
 			if err != nil {
 				return nil, err
 			}
-			if len(body) == 0 {
+			if warn := applyBodyStatus(body, draft, publish || unpublish, g.flags().Drafts); warn != nil {
+				warnings = append(warnings, *warn)
+			}
+			if publish {
+				body["_status"] = "published"
+			}
+			if unpublish {
+				body["_status"] = "draft"
+			}
+			if len(body) == 0 && !resetNested {
 				return nil, apierr.New(apierr.CodeBadRequestBody, "globals update needs at least one field").
 					WithHint("pass --set k=v, --data '{...}' or --data-file body.json")
 			}
@@ -375,67 +402,57 @@ create (§9.10.2), later winning.`,
 			if draft {
 				p.Draft = query.BoolPtr(true)
 			}
-
-			op := safety.Op{Command: safety.CmdGlobalsUpdate, Selector: safety.SelectorNone, Global: true}
-			path := payload.GlobalPath(g.Slug)
-			w := d.newWriteOp(op, g.Slug, "POST", path)
-			w.global = true
-
-			if cfg.DryRun {
-				q, _ := p.Encode()
-				return emitDryRun(d, w, safety.CmdGlobalsUpdate, "POST",
-					client.URLFor(&payload.Request{Method: "POST", Path: path, Query: q}), body, 1, nil,
-					warnings...)
-			}
-			if err := w.confirm(1); err != nil {
-				return nil, err
-			}
-			if err := w.pre(1); err != nil {
-				return nil, err
-			}
-
-			res, err := client.GlobalUpdate(ctx, g.Slug, body, p,
-				payload.WithClassify(payload.ClassifyContext{SentPaths: payload.SentPaths(body), IncludeRaw: true, NoRedact: !cfg.Redact}),
-				payload.WithKnownRoute())
+			// F6: {"$ref": …} objects become ids before anything is previewed or sent.
+			// §9.15.2: masked values from an export are handled first.
+			body, prepWarns, err := d.prepareWriteBody(ctx, writeScope{shard: g.Shard,
+				preimage: func(ctx context.Context) (map[string]any, error) {
+					doc, err := d.readOrphanTarget(ctx, client, orphanTarget{g: g}, p, true)
+					return map[string]any(doc), err
+				}}, body, p.Locale)
 			if err != nil {
-				w.post(false, statusOf(res), 0, 1, err.Error(), "")
 				return nil, err
 			}
-			env := output.New(safety.CmdGlobalsUpdate, output.KindGlobal, res.Doc).
-				WithTarget(g.envTarget()).
-				WithChanged(&output.Changed{Updated: 1, IDs: []any{}}).
-				WithMeta(w.run.meta()).
-				WithRawBody(res.Raw, !cfg.Redact).
-				WithNext(&output.Next{
-					Reason: output.ReasonVerifyWrite,
-					Cmd:    fmt.Sprintf("pay globals get %s --depth 0%s", g.Slug, d.profileFlag()),
-				})
-			for _, warn := range warnings {
-				env.AddWarning(warn)
+			warnings = append(warnings, prepWarns...)
+			// --set-md into a field the schema cannot type: checked against
+			// the global's stored value.
+			mdWarns, err := data.guardMDTargets(ctx, d, client, orphanTarget{g: g}, p)
+			if err != nil {
+				return nil, err
 			}
-			// See create.go: --select narrows the echo, so the dropped-input
-			// check has to be narrowed with it or it fires on fields the
-			// server was explicitly asked not to return.
-			for _, warn := range echoWarnings(g.Slug, body, res.Doc, selectF, echoConfig{
-				Shard:     g.Shard,
-				Ignore:    cfg.EchoCheckIgnore,
-				LocaleAll: locale == "all",
-				Disabled:  noEchoCheck,
-			}) {
-				env.AddWarning(warn)
-			}
-			return w.finish(env, res.HTTP, 1, 0, "")
+			warnings = append(warnings, mdWarns...)
+			return runGlobalWrite(ctx, d, client, globalWriteSpec{
+				command: safety.CmdGlobalsUpdate, g: g, body: body, p: p, selectF: selectF,
+				noEcho: noEchoCheck, localeAll: locale == "all", resetNested: resetNested, unpublish: unpublish,
+				warnings: warnings,
+			})
 		}
 	})
 	data.register(cmd)
 	cmd.Flags().BoolVar(&draft, "draft", false, "save as a draft")
+	cmd.Flags().BoolVar(&publish, "publish", false, "also set _status=published (publishes the newest draft with this change)")
+	cmd.Flags().BoolVar(&unpublish, "unpublish", false, "also set _status=draft (takes the global offline deliberately; not with --draft)")
 	cmd.Flags().IntVar(&depth, "depth", 0, "relationship expansion depth of the echoed document")
 	cmd.Flags().StringSliceVar(&selectF, "select", nil, "return only these fields")
 	cmd.Flags().StringVar(&locale, "locale", "", "locale to write into")
 	cmd.Flags().BoolVar(&noEchoCheck, "no-echo-check", false, "skip the §10.2 echo-diff")
+	cmd.Flags().BoolVar(&resetNested, "reset-nested", false,
+		"remove nested block rows the write would leave behind (orphans); with no body it repairs the stored global")
 
 	SetHelp(cmd, globalsUpdateHelp())
 	return cmd
+}
+
+// runGlobalUpdateOne is the global write (POST /globals/{slug}) for the
+// global items of `pay sync`. It is runGlobalWrite — the path `pay globals
+// update` and `pay apply` on a global take — so every verb that writes a
+// global makes the same backup, confirmation, audit, echo-diff and orphan
+// decisions. command is what the envelope and the audit record call it.
+func runGlobalUpdateOne(ctx context.Context, d *Deps, client *payload.Client, command string, g *globalTarget,
+	body map[string]any, p query.Params, selectF []string, noEchoCheck bool, warnings []output.Warning) (*output.Envelope, error) {
+	return runGlobalWrite(ctx, d, client, globalWriteSpec{
+		command: command, opCommand: command, g: g, body: body, p: p, selectF: selectF,
+		noEcho: noEchoCheck, localeAll: p.Locale == "all", warnings: warnings,
+	})
 }
 
 // globalsUpdateHelp is §10.5's model for `pay globals update`.
@@ -453,8 +470,11 @@ func globalsUpdateHelp() *Help {
 		FlagInfo: map[string]FlagInfo{
 			"set":       {Grammar: "key=value  (dotted keys nest)", Repeatable: true},
 			"set-json":  {Grammar: "key=JSON", Repeatable: true},
+			"set-md":    {Grammar: setMDGrammar, Repeatable: true, Note: setMDBodyNote},
 			"data-file": {Grammar: "a path, or - for stdin"},
 			"depth":     {Min: intPtr(0), Max: intPtr(10)},
+			"reset-nested": {Note: "carrier phases so Payload's Postgres adapter clears nested block tables the write " +
+				"would skip; with no body it repairs the stored global"},
 		},
 		Output: OutputSpec{
 			Kind:     output.KindGlobal,
@@ -472,6 +492,8 @@ func globalsUpdateHelp() *Help {
 				Cmd: "pay globals update footer --set-json navItems='[]' --yes"},
 			{Why: "a whole body from a file",
 				Cmd: "pay globals update footer --data-file ./footer.json --dry-run"},
+			{Why: "a nested block restructure without leaving {} rows behind (or, with no body, a repair)",
+				Cmd: "pay globals update footer --data-file ./footer.json --reset-nested --dry-run"},
 		},
 		Mistakes: []Mistake{
 			{Wrong: "Expecting a PATCH-style merge.",
@@ -488,4 +510,213 @@ func globalsUpdateHelp() *Help {
 		SeeAlso: []string{"pay globals get <slug>", "pay globals list",
 			"pay describe <slug>", "pay versions list --global <slug>"},
 	}
+}
+
+// globalWriteSpec is one write of a global: `pay globals update` or a
+// pipeline ending in `pay apply` on a global.
+type globalWriteSpec struct {
+	command string
+	// opCommand is the safety.Op command (risk level, audit record). Empty
+	// means CmdGlobalsUpdate; `pay sync` passes its own (also L2).
+	opCommand   string
+	g           *globalTarget
+	body        map[string]any
+	p           query.Params
+	selectF     []string
+	noEcho      bool
+	localeAll   bool
+	resetNested bool
+	// unpublish is --unpublish: a body _status "draft" is deliberate.
+	unpublish bool
+	edits     *output.Edits
+	warnings  []output.Warning
+}
+
+// runGlobalWrite is the POST /globals/{slug} both verbs share. It keeps the
+// CmdGlobalsUpdate risk level (L2) whichever verb asked: going through a
+// pipeline must not make a global cheaper to confirm.
+func runGlobalWrite(ctx context.Context, d *Deps, client *payload.Client, s globalWriteSpec) (*output.Envelope, error) {
+	cfg := d.cfg()
+	g, p, body, warnings := s.g, s.p, s.body, s.warnings
+	opCommand := s.opCommand
+	if opCommand == "" {
+		opCommand = safety.CmdGlobalsUpdate
+	}
+	op := safety.Op{Command: opCommand, Selector: safety.SelectorNone, Global: true}
+	path := payload.GlobalPath(g.Slug)
+	newOp := func() *writeOp {
+		w := d.newWriteOp(op, g.Slug, "POST", path).withBackup(ctx, BackupTarget{Global: g, Params: p})
+		w.global = true
+		return w
+	}
+	w := newOp()
+	o := orphanTarget{g: g}
+	fixCmd := "re-run this command with --reset-nested added (`pay globals update " + g.Slug + " … --reset-nested --dry-run` shows the plan)"
+	spec := resetSpec{o: o, command: s.command, body: body, params: p,
+		op: func(step string) *writeOp {
+			nw := newOp()
+			nw.step = step
+			return nw
+		},
+		send: func(ctx context.Context, b map[string]any, p query.Params) (*payload.WriteResult, error) {
+			return client.GlobalUpdate(ctx, g.Slug, b, p,
+				payload.WithClassify(payload.ClassifyContext{SentPaths: payload.SentPaths(b), IncludeRaw: true, NoRedact: !cfg.Redact}),
+				payload.WithKnownRoute())
+		},
+	}
+
+	if cfg.DryRun {
+		diff, pre, dw := d.dryRunDiff(ctx, client, o, body, p, diffBaseLatest, fixCmd)
+		warnings = append(warnings, dw...)
+		if diff != nil {
+			w.dryDiff = diff
+		}
+		if pre != nil {
+			// §9.7: the document as it is now outranks an older census.
+			warnings = refineBlockWarnings(d, g.asCollTarget(), g.Shard, body, pre.latest, warnings)
+			// §9.12.8.3: a string over an editor state, an object over an array.
+			if err := d.checkStoredShapes(ctx, client, o, p, body, pre.latest); err != nil {
+				return nil, err
+			}
+		}
+		// §10.2.3: the preview refuses what the write would refuse.
+		if pre != nil {
+			pw, err := d.checkPublication(ctx, client, o, body, p, s.unpublish, pre)
+			if err != nil {
+				return nil, err
+			}
+			if pw != nil {
+				warnings = append(warnings, *pw)
+			}
+		}
+		sent, reqParams, affected := body, p, 1
+		if s.resetNested {
+			plan, pw, err := d.planReset(ctx, client, spec, pre)
+			if err != nil {
+				return nil, err
+			}
+			warnings = append(warnings, pw...)
+			w.dryReset = plan.report(true)
+			switch {
+			case plan.repair && !plan.skip:
+				// A repair's request is the restatement, sent without
+				// validation (see reset_nested.go).
+				sent, reqParams = plan.restatement(plan.base), unvalidated(p, true)
+			case plan.repair:
+				// Nothing to repair: the real run sends nothing.
+				affected = 0
+				warnings = append(warnings, repairNotNeededWarning(o, true))
+			}
+		}
+		q, _ := reqParams.Encode()
+		env, err := emitDryRun(d, w, s.command, "POST",
+			client.URLFor(&payload.Request{Method: "POST", Path: path, Query: q}), sent, affected, nil, warnings...)
+		if err != nil {
+			return nil, err
+		}
+		if s.edits != nil {
+			env.WithEdits(s.edits)
+		}
+		return env, nil
+	}
+	// §9.12.8.3: refused before the prompt.
+	if err := d.checkStoredShapes(ctx, client, o, p, body, nil); err != nil {
+		return nil, err
+	}
+	if err := w.confirm(1); err != nil {
+		return nil, err
+	}
+
+	var plan *resetPlan
+	if s.resetNested {
+		var pw []output.Warning
+		var err error
+		plan, pw, err = d.planReset(ctx, client, spec, nil)
+		if err != nil {
+			return nil, err
+		}
+		warnings = append(warnings, pw...)
+		if plan.skip && plan.repair {
+			return resetNothingToDo(s.command, o, plan, w.run.meta(), warnings), nil
+		}
+	}
+	// §10.2.3: never unpublish by accident.
+	var pre *preimage
+	if plan != nil {
+		pre = plan.pre
+	}
+	if pw, err := d.checkPublication(ctx, client, o, body, p, s.unpublish, pre); err != nil {
+		return nil, err
+	} else if pw != nil {
+		warnings = append(warnings, *pw)
+	}
+	var (
+		res *payload.WriteResult
+		rep *resetReport
+		err error
+	)
+	if plan != nil && !plan.skip {
+		var rw []output.Warning
+		res, rep, rw, err = d.execReset(ctx, spec, plan, w)
+		warnings = append(warnings, rw...)
+		if err != nil {
+			return nil, err
+		}
+		if plan.repair {
+			body = plan.restatement(plan.base)
+		}
+	} else {
+		if err := w.pre(1); err != nil {
+			return nil, err
+		}
+		warnings = append(warnings, d.riskFromBackup(o, body, p, fixCmd)...)
+		warnings = refineBlockWarnings(d, g.asCollTarget(), g.Shard, body, d.backedUpDoc("global", g.Slug, "", p.Locale), warnings)
+		res, err = spec.send(ctx, body, p)
+		if err != nil {
+			w.post(false, statusOf(res), 0, 1, err.Error(), "")
+			return nil, err
+		}
+	}
+	env := output.New(s.command, output.KindGlobal, res.Doc).
+		WithTarget(g.envTarget()).
+		WithChanged(&output.Changed{Updated: 1, IDs: []any{}}).
+		WithMeta(w.run.meta()).
+		WithRawBody(res.Raw, !cfg.Redact).
+		WithNext(&output.Next{
+			Reason: output.ReasonVerifyWrite,
+			Cmd:    fmt.Sprintf("pay globals get %s --depth 0%s", g.Slug, d.profileFlag()),
+		})
+	if s.edits != nil {
+		env.WithEdits(s.edits)
+	}
+	for _, warn := range warnings {
+		env.AddWarning(warn)
+	}
+	// See create.go: --select narrows the echo, so the dropped-input
+	// check has to be narrowed with it or it fires on fields the
+	// server was explicitly asked not to return.
+	for _, warn := range echoWarnings(g.Slug, body, res.Doc, s.selectF, echoConfig{
+		Shard:     g.Shard,
+		Ignore:    cfg.EchoCheckIgnore,
+		LocaleAll: s.localeAll,
+		Disabled:  s.noEcho,
+	}) {
+		env.AddWarning(warn)
+	}
+	if rep != nil {
+		for _, warn := range d.finishReset(ctx, client, spec, body, res, rep) {
+			env.AddWarning(warn)
+		}
+		env.Meta.ResetNested = rep
+	} else {
+		if plan != nil {
+			env.Meta.ResetNested = plan.report(false)
+		}
+		warns, _ := d.orphanCheckAfterWrite(ctx, client, o, body, res.Doc, p, s.noEcho, false)
+		for _, warn := range warns {
+			env.AddWarning(warn)
+		}
+	}
+	d.foldIntoCensus(discovery.EntityKindGlobal, g.Slug, p, res.Doc)
+	return w.finish(env, res.HTTP, 1, 0, "")
 }

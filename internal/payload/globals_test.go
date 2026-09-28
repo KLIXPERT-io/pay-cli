@@ -53,3 +53,22 @@ func TestGlobalPathEscapes(t *testing.T) {
 		t.Fatalf("GlobalPath = %q", got)
 	}
 }
+
+// Payload 3.87 answers a global update with {"message","result":{…}} — the
+// document under `result` (verified live). Reading the envelope itself as the
+// document made the §10.2 echo-diff report every sent field as dropped.
+func TestGlobalUpdateUnwrapsResult(t *testing.T) {
+	s := newStub(t, jsonHandler(200,
+		`{"message":"Updated successfully.","result":{"id":1,"globalType":"header","navItems":[{"id":"a","link":{"label":"x"}}]}}`))
+	c, _ := newTestClient(t, s, nil)
+	res, err := c.GlobalUpdate(context.Background(), "header", map[string]any{"navItems": []any{}}, query.Params{})
+	if err != nil {
+		t.Fatalf("GlobalUpdate: %v", err)
+	}
+	if res.Doc["globalType"] != "header" || res.Doc["navItems"] == nil {
+		t.Fatalf("doc = %v, want the unwrapped result", res.Doc)
+	}
+	if _, wrapped := res.Doc["result"]; wrapped {
+		t.Fatalf("doc still carries the wrapper: %v", res.Doc)
+	}
+}

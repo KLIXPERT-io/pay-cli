@@ -45,6 +45,8 @@ func (r Request) Line() string {
 		return fmt.Sprintf("%s will affect %d document(s) in %s", verb, r.Affected, target)
 	case r.Op.Selector == SelectorBulk:
 		return fmt.Sprintf("%s will affect every document matching --where in %s", verb, target)
+	case r.Op.Selector == SelectorIDs:
+		return fmt.Sprintf("%s will affect %d explicitly named document(s) in %s, one write each", verb, r.Affected, target)
 	case r.Op.Global:
 		return fmt.Sprintf("%s will modify the global %s", verb, target)
 	default:

@@ -80,6 +80,19 @@ type Event struct {
 	Err          string          `json:"error,omitempty"`
 	DurationMS   int64           `json:"duration_ms"`
 	RequestID    string          `json:"request_id"`
+	// Backups are the §12.8 backup files written before this write, capped
+	// like IDs (BackupsTruncated reports the overflow). They are local paths,
+	// never document bodies.
+	Backups          []string `json:"backups,omitempty"`
+	BackupsTruncated bool     `json:"backups_truncated,omitempty"`
+	// Step names one request of a write made of several (the orphan-row
+	// remedy's phases: "reset-nested 1/2", "reset-nested final"). Empty for
+	// an ordinary one-request write.
+	Step string `json:"step,omitempty"`
+	// RestoredFrom is the backup file a `pay backups restore` wrote back
+	// (§12.8.8), so the log answers "which backup was put back". Backups
+	// above are the files taken of the state it overwrote.
+	RestoredFrom string `json:"restored_from,omitempty"`
 }
 
 // Options configures a Logger.
@@ -267,6 +280,10 @@ func (l *Logger) sanitize(e Event) Event {
 	}
 	for i, id := range e.IDs {
 		e.IDs[i] = l.text(id)
+	}
+	if len(e.Backups) > MaxIDs {
+		e.Backups = append([]string(nil), e.Backups[:MaxIDs]...)
+		e.BackupsTruncated = true
 	}
 	return e
 }

@@ -252,24 +252,119 @@ func TestCopyStripsIDsAtEveryDepth(t *testing.T) {
 	}
 }
 
+// TestCopyKeepsReferenceAndLexicalIDs is the regression for the copy that
+// stripped EVERY `id`: on klixpert stage (pages 35, read at depth 0) a
+// content column's rich text holds a mediaBlock node whose upload reads back
+// populated, and the copy lost both the node's fields.id and media.id — the
+// copied image named no upload any more. Only row ids may go.
+func TestCopyKeepsReferenceAndLexicalIDs(t *testing.T) {
+	list := decode(t, `[{"id":"row1","blockType":"content",
+	  "media":{"id":848,"filename":"a.png","createdAt":"2026-01-01","updatedAt":"2026-01-02","sizes":{"thumb":{"url":"/t"}}},
+	  "gallery":[{"id":7,"filename":"b.png","createdAt":"x"},{"id":8,"filename":"c.png","updatedAt":"y"}],
+	  "related":[{"relationTo":"pages","value":{"id":3,"title":"P","createdAt":"x"}}],
+	  "settings":{"items":[{"id":"it1","label":"x","doc":{"id":5,"createdAt":"x"}}]},
+	  "columns":[{"id":"col1","richText":{"root":{"type":"root","children":[
+	    {"type":"block","version":2,"fields":{"id":"6aba78573fd56967ea7d3aec","blockType":"mediaBlock","blockName":"",
+	      "media":{"id":848,"filename":"a.png","createdAt":"x","folder":{"id":7,"createdAt":"x"}}}},
+	    {"type":"upload","id":"6ab000000000000000000001","relationTo":"media","value":{"id":12,"createdAt":"x"}},
+	    {"type":"link","id":"lnk1","fields":{"linkType":"custom","url":"/x"},"children":[]}]}}}]}]`)
+	got, _, err := Copy(list, 0, Anchor{Mode: ModeAppend})
+	if err != nil {
+		t.Fatalf("Copy: %v", err)
+	}
+	dup := got[1].(map[string]any)
+	// Row ids go, at every depth, including inside a group.
+	if _, ok := dup["id"]; ok {
+		t.Error("the copy kept its own id")
+	}
+	col := dup["columns"].([]any)[0].(map[string]any)
+	if _, ok := col["id"]; ok {
+		t.Error("the copy kept a nested row id")
+	}
+	item := dup["settings"].(map[string]any)["items"].([]any)[0].(map[string]any)
+	if _, ok := item["id"]; ok {
+		t.Error("the copy kept the id of a row inside a group")
+	}
+	// References keep theirs.
+	if m := dup["media"].(map[string]any); m["id"] != json.Number("848") {
+		t.Errorf("a populated upload lost its id: %v", m)
+	}
+	for i, g := range dup["gallery"].([]any) {
+		if g.(map[string]any)["id"] == nil {
+			t.Errorf("gallery[%d] (a populated hasMany upload) lost its id", i)
+		}
+	}
+	if v := dup["related"].([]any)[0].(map[string]any)["value"].(map[string]any); v["id"] != json.Number("3") {
+		t.Errorf("a polymorphic relation lost its id: %v", v)
+	}
+	if d := item["doc"].(map[string]any); d["id"] != json.Number("5") {
+		t.Errorf("a relationship inside a nested row lost its id: %v", d)
+	}
+	// Nothing inside rich text is touched.
+	children := col["richText"].(map[string]any)["root"].(map[string]any)["children"].([]any)
+	block := children[0].(map[string]any)["fields"].(map[string]any)
+	if block["id"] != "6aba78573fd56967ea7d3aec" {
+		t.Errorf("the lexical block node lost fields.id: %v", block["id"])
+	}
+	if m := block["media"].(map[string]any); m["id"] != json.Number("848") || m["folder"].(map[string]any)["id"] != json.Number("7") {
+		t.Errorf("the lexical block's upload lost its id: %v", m)
+	}
+	if children[1].(map[string]any)["id"] != "6ab000000000000000000001" {
+		t.Error("the lexical upload node lost its id")
+	}
+	if children[2].(map[string]any)["id"] != "lnk1" {
+		t.Error("the lexical link node lost its id")
+	}
+}
+
+func TestStripIDsBareRowList(t *testing.T) {
+	list := decode(t, `[{"id":"a","blocks":[{"id":"b"}]},{"id":9,"createdAt":"x"}]`)
+	StripIDs(list)
+	if _, ok := list[0].(map[string]any)["id"]; ok {
+		t.Error("a row of the list kept its id")
+	}
+	if _, ok := list[0].(map[string]any)["blocks"].([]any)[0].(map[string]any)["id"]; ok {
+		t.Error("a nested row kept its id")
+	}
+	if list[1].(map[string]any)["id"] != json.Number("9") {
+		t.Error("a populated document in the list lost its id")
+	}
+}
+
 func TestSetAndUnset(t *testing.T) {
 	list := decode(t, layout)
-	got, err := Set(list, 0, map[string]any{"blockName": "Renamed", "links.0.url": "/pricing"}, []string{"richText"})
+	got, err := Set(list, 1, map[string]any{"blockName": "Renamed", "settings.theme": "dark"}, []string{"columns"})
 	if err != nil {
 		t.Fatalf("Set: %v", err)
 	}
-	row := got[0].(map[string]any)
+	row := got[1].(map[string]any)
 	if row["blockName"] != "Renamed" {
 		t.Errorf("blockName = %v", row["blockName"])
 	}
-	if _, ok := row["richText"]; ok {
-		t.Error("--unset richText left the key behind")
+	if cols, ok := row["columns"].([]any); !ok || len(cols) != 0 {
+		// Cleared, not deleted: Payload keeps a key the row omits.
+		t.Errorf("--unset columns = %#v, want []", row["columns"])
 	}
-	if links, ok := row["links"].(map[string]any); !ok || links["0"].(map[string]any)["url"] != "/pricing" {
-		t.Errorf("dotted set produced %#v", row["links"])
+	if settings, ok := row["settings"].(map[string]any); !ok || settings["theme"] != "dark" {
+		t.Errorf("dotted set produced %#v", row["settings"])
 	}
-	if orig := list[0].(map[string]any); orig["blockName"] != "Top CTA" {
+	if orig := list[1].(map[string]any); orig["blockName"] != nil {
 		t.Error("Set mutated the source row")
+	}
+}
+
+// `--set links.0.url=…` on a row that has no links used to create
+// {"links":{"0":{"url":…}}} — an object where Payload expects an array, which
+// it silently dropped. A row-shaped step into nothing is now an error.
+func TestSetRefusesToInventAnArray(t *testing.T) {
+	list := decode(t, layout)
+	_, err := Set(list, 0, map[string]any{"links.0.url": "/pricing"}, nil)
+	var pe *PathError
+	if !asErr(err, &pe) || pe.Kind != PathAbsent || pe.At.String() != "links" {
+		t.Fatalf("Set(links.0.url) on a row without links = %v, want PathAbsent at links", err)
+	}
+	if orig := list[0].(map[string]any); orig["links"] != nil {
+		t.Error("a failed Set mutated the source row")
 	}
 }
 

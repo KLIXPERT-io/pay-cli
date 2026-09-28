@@ -1,0 +1,5 @@
+lossy_alignment	root.children[0]	paragraph alignment "center" has no Markdown spelling and was dropped
+lossy_alignment	root.children[1]	paragraph indent 1 has no Markdown spelling and was dropped
+lossy_style	root.children[2].children[0]	text style "color: red" was dropped
+lossy_format	root.children[3].children[0]	text format bits 512 (lowercase/uppercase/capitalize) have no Markdown spelling and were dropped
+lossy_alignment	root.children[4]	heading alignment "right" has no Markdown spelling and was dropped

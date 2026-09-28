@@ -68,6 +68,11 @@ func newHTTPClient(cfg Config) *http.Client {
 // the Authorization header, because a redirect to another host that then
 // answers 200 would look like success.
 func checkRedirect(req *http.Request, via []*http.Request) error {
+	if noRedirect(req.Context()) {
+		// Request.NoRedirect: hand the 3xx itself back to the caller, with
+		// its Location and Set-Cookie headers intact.
+		return http.ErrUseLastResponse
+	}
 	if len(via) >= maxRedirects {
 		return apierr.New(apierr.CodeNetworkUnreachable,
 			"the server redirected more than %d times", maxRedirects).
@@ -100,6 +105,16 @@ func checkRedirect(req *http.Request, via []*http.Request) error {
 	return nil
 }
 
+// noRedirectKey marks an attempt whose redirects must not be followed. It is a
+// context value rather than a second *http.Client because §6 allows exactly one
+// client (and one connection pool) per process.
+type noRedirectKey struct{}
+
+func noRedirect(ctx context.Context) bool {
+	v, _ := ctx.Value(noRedirectKey{}).(bool)
+	return v
+}
+
 // isHTTPS is scheme comparison the way RFC 3986 requires it: case-insensitive.
 // An http -> https *upgrade* is deliberately still allowed; a proxy that
 // upgrades a plaintext base_url is a normal, safe setup.
@@ -121,6 +136,16 @@ type requestPlan struct {
 	multipart *Multipart
 	readOnly  bool
 	retriable bool
+	// secrets are Request.Secrets, carried so every URL this plan shows is
+	// scrubbed of them (see shownURL).
+	secrets []string
+}
+
+// shownURL is the plan's URL as it may cross a boundary: §5.3's structural
+// redaction plus the request's own literal secrets. It is the ONLY form of the
+// URL that reaches a log line, a Response or an error.
+func (p *requestPlan) shownURL() string {
+	return redact.URLWithSecrets(p.url, p.secrets)
 }
 
 // plan resolves a Request into its wire form, including §6.2's promotion.
@@ -135,6 +160,7 @@ func (c *Client) plan(req *Request) (*requestPlan, error) {
 		contentType: req.ContentType,
 		multipart:   req.Multipart,
 		readOnly:    isReadOnly(req),
+		secrets:     req.Secrets,
 	}
 	if err := promoteIfTooLong(p, req); err != nil {
 		return nil, err
@@ -198,7 +224,7 @@ func (c *Client) send(ctx context.Context, req *Request, plan *requestPlan) (*Re
 			retries++
 			atomic.AddInt64(&c.state.stats.Retries, 1)
 			c.log.Debug("retrying a closed idle connection with no backoff",
-				logging.URL("url", plan.url), "attempt", attempts)
+				logging.URL("url", plan.shownURL()), "attempt", attempts)
 			continue
 		case retryPromote:
 			// §6.2: a 413/414/431 triggers the method-override fallback once.
@@ -207,7 +233,7 @@ func (c *Client) send(ctx context.Context, req *Request, plan *requestPlan) (*Re
 				return c.finish(last, lastErr, attempts, retries, started)
 			}
 			c.log.Debug("promoting to a method-override POST after a header/URI length rejection",
-				logging.URL("url", plan.url))
+				logging.URL("url", plan.shownURL()))
 			continue
 		case retryBackoff:
 			if attempts >= policy.MaxAttempts || !c.budget.Take() {
@@ -228,7 +254,7 @@ func (c *Client) send(ctx context.Context, req *Request, plan *requestPlan) (*Re
 			retries++
 			atomic.AddInt64(&c.state.stats.Retries, 1)
 			c.log.Debug("retrying",
-				logging.URL("url", plan.url),
+				logging.URL("url", plan.shownURL()),
 				"attempt", attempts,
 				"sleep_ms", wait.Milliseconds())
 			if err := c.sleep(ctx, wait); err != nil {
@@ -267,6 +293,9 @@ func (c *Client) attempt(ctx context.Context, req *Request, plan *requestPlan, a
 	}
 	attemptCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	if req.NoRedirect {
+		attemptCtx = context.WithValue(attemptCtx, noRedirectKey{}, true)
+	}
 
 	requestID := c.newRequestID()
 	c.state.lastRequestID.Store(requestID)
@@ -301,7 +330,7 @@ func (c *Client) attempt(ctx context.Context, req *Request, plan *requestPlan, a
 		Header:      httpResp.Header.Clone(),
 		ContentType: httpResp.Header.Get("Content-Type"),
 		Method:      plan.method,
-		URL:         redact.URL(plan.url),
+		URL:         plan.shownURL(),
 		RequestID:   requestID,
 		Promoted:    plan.promoted,
 	}
@@ -495,8 +524,12 @@ func (c *Client) buildHTTPRequest(ctx context.Context, req *Request, plan *reque
 			httpReq.Header.Add(k, v)
 		}
 	}
-	for k, v := range c.cfg.Headers {
-		httpReq.Header.Set(k, v)
+	// The profile's configured headers are secret (§5.3) and belong to the
+	// Payload origin: a site route on another origin never receives them.
+	if !c.crossOrigin(req) {
+		for k, v := range c.cfg.Headers {
+			httpReq.Header.Set(k, v)
+		}
 	}
 
 	httpReq.Header.Set("User-Agent", c.userAgent())
@@ -528,7 +561,7 @@ func (c *Client) buildHTTPRequest(ctx context.Context, req *Request, plan *reque
 // (§5.0). The returned string is never logged: transport.go is also the only
 // place it exists.
 func (c *Client) authorization(req *Request) string {
-	if req.NoAuth || c.cfg.Credential == "" {
+	if req.NoAuth || c.cfg.Credential == "" || c.crossOrigin(req) {
 		return ""
 	}
 	switch c.cfg.AuthMode {
@@ -571,7 +604,7 @@ func (c *Client) transportError(err error, plan *requestPlan, requestID string) 
 	e := apierr.Network(err)
 	return e.WithHTTP(&apierr.HTTP{
 		Method: plan.method,
-		URL:    plan.url,
+		URL:    plan.shownURL(),
 	}).WithHint("%s", e.Hint+" (request id "+requestID+")")
 }
 

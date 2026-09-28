@@ -40,6 +40,95 @@ type GlobalInfo struct {
 	Features []string `json:"features,omitempty"`
 }
 
+// GraphQLInfo is discovery's GraphQL ladder result (§7.6), as PROJECT.md
+// reports it: whether introspection answered, and so what `pay describe` can
+// and cannot know on this project.
+type GraphQLInfo struct {
+	// Mode is discovery's mode string: "ok", "introspection_disabled",
+	// "disabled", "route_missing", "unreachable" or "errors".
+	Mode string
+	// Introspection is tri-state: nil when discovery learned nothing.
+	Introspection *bool
+	// Path is the GraphQL endpoint path discovery probed.
+	Path string
+}
+
+// BlockTypeCount is one blockType and how many rows of it the census saw.
+type BlockTypeCount struct {
+	Slug  string
+	Count int
+}
+
+// BlockFieldInfo is one blocks-field path pattern of an entity (`layout`,
+// `layout[].blocks`) with the types observed there.
+type BlockFieldInfo struct {
+	Path  string
+	Types []BlockTypeCount
+	Rows  int
+	Docs  int
+	// EmptyRows are `{}` rows (orphans of a nested restructure); UntypedRows
+	// are non-empty rows without a blockType.
+	EmptyRows   int
+	UntypedRows int
+	// Authoritative is true only when a declared source enumerates the list.
+	Authoritative bool
+	Source        string
+}
+
+// BlockNestedInfo is a parent-scoped pattern (`group.blocks`): what rows of
+// one block type hold in one of their blocks fields.
+type BlockNestedInfo struct {
+	Pattern string
+	Types   []BlockTypeCount
+}
+
+// BlockEntityInfo is one collection's or global's block catalog.
+type BlockEntityInfo struct {
+	Kind        string // "collection" | "global"
+	Slug        string
+	BuiltAt     time.Time
+	DocsScanned int
+	// TotalDocs is negative when unknown.
+	TotalDocs int
+	Truncated bool
+	Error     string
+	Fields    []BlockFieldInfo
+	Nested    []BlockNestedInfo
+}
+
+// BlockCatalog is PROJECT.md's view of the CACHED block census (§7.10c). It is
+// never built for PROJECT.md: a nil catalog means the caller did not look, a
+// catalog with Cached false means no census is cached for this profile.
+type BlockCatalog struct {
+	Cached bool
+	// Entities holds only entities whose documents contain block rows.
+	Entities []BlockEntityInfo
+	// Censused counts every entity the census read, with or without blocks.
+	Censused int
+	// Oldest is the build time of the oldest entity census.
+	Oldest time.Time
+}
+
+// SiteInfo is the profile's frontend-URL, draft-preview and backup state as
+// `pay doctor` reports it. It never carries the preview secret: only where it
+// resolves from.
+type SiteInfo struct {
+	SiteURL           string
+	SiteURLSource     string
+	URLPaths          map[string]string
+	PreviewPath       string
+	PreviewPathSource string
+	// PreviewNeedsSecret is true when PreviewPath contains {secret}.
+	PreviewNeedsSecret bool
+	// PreviewSecretSource is where the secret resolves from ("" = none).
+	PreviewSecretSource string
+	// PreviewSecretEnv is the profile's preview_secret_env (a variable NAME).
+	PreviewSecretEnv string
+	BackupDir        string
+	BackupDirSource  string
+	NoBackup         bool
+}
+
 // ProjectContext is everything PROJECT.md is rendered from. It carries no
 // credential of any kind: the auth header is documented as a form, never with
 // a value, and BaseURL is redacted on render (§14 Privacy).
@@ -57,7 +146,11 @@ type ProjectContext struct {
 	DefaultLocale     string
 	Collections       []CollectionInfo
 	Globals           []GlobalInfo
-	// Examples overrides the three generated example commands.
+	// GraphQL, Blocks and Site are optional: nil omits their section.
+	GraphQL *GraphQLInfo
+	Blocks  *BlockCatalog
+	Site    *SiteInfo
+	// Examples overrides the generated example commands.
 	Examples []string
 }
 
@@ -95,8 +188,11 @@ func RenderProject(ctx ProjectContext) []byte {
 	b.WriteString("\n")
 
 	writeAuth(&b, ctx)
+	writeSchemaDiscovery(&b, ctx)
 	writeCollections(&b, ctx)
 	writeGlobals(&b, ctx)
+	writeBlocks(&b, ctx)
+	writeSite(&b, ctx)
 	writeExamples(&b, ctx)
 
 	return []byte(b.String())
@@ -183,13 +279,15 @@ func writeExamples(b *strings.Builder, ctx ProjectContext) {
 	b.WriteString("```\n")
 }
 
-// examples produces three runnable commands built from this project's real
-// slugs, so the snapshot is never illustrated with invented ones.
+// examples produces runnable commands built from this project's real slugs,
+// so the snapshot is never illustrated with invented ones: three about
+// collections and globals, plus two about blocks when a census is cached.
 func examples(ctx ProjectContext) []string {
 	if len(ctx.Examples) > 0 {
 		return ctx.Examples
 	}
 	var content, drafts, upload string
+	draftsDocs := -2
 	for _, c := range ctx.Collections {
 		if c.Internal {
 			continue
@@ -197,12 +295,18 @@ func examples(ctx ProjectContext) []string {
 		if content == "" {
 			content = c.Slug
 		}
-		if drafts == "" && c.HasFeature("drafts") {
-			drafts = c.Slug
+		// The drafts collection with the most documents is the one an agent
+		// is most likely to work on (pages, posts), and the one where
+		// forgetting --published-only hurts most.
+		if c.HasFeature("drafts") && c.TotalDocs > draftsDocs {
+			drafts, draftsDocs = c.Slug, c.TotalDocs
 		}
 		if upload == "" && c.HasFeature("upload") {
 			upload = c.Slug
 		}
+	}
+	if drafts != "" {
+		content = drafts
 	}
 	if content == "" {
 		content = "<collection>"
@@ -224,7 +328,7 @@ func examples(ctx ProjectContext) []string {
 	default:
 		out = append(out, fmt.Sprintf("pay count %s --where 'updatedAt gt 2026-01-01'", content))
 	}
-	return out
+	return append(out, blockExamples(ctx.Blocks)...)
 }
 
 func codeList(items []string) string {

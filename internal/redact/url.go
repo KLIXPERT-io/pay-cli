@@ -77,3 +77,30 @@ func redactPath(path string) string {
 	}
 	return strings.Join(segs, "/")
 }
+
+// URLWithSecrets is URL for a request that carries a secret somewhere the
+// structural rules cannot see it — a preview secret in a path segment, or
+// under a query-parameter name that does not say "secret" (F9's preview_path
+// is a user template). Every literal, and its query- and path-escaped forms,
+// is replaced with Mask before the structural rules run, so the value never
+// reaches a log line, an error or an envelope in any encoding.
+//
+// Literals shorter than the Scrubber's minimum are ignored for the same reason
+// they are there: replacing a 3-character "secret" would shred unrelated URL
+// text. The structural query-name rule still masks ?previewSecret=… whatever
+// its length.
+func URLWithSecrets(raw string, secrets []string) string {
+	if len(secrets) == 0 || raw == "" {
+		return URL(raw)
+	}
+	out := raw
+	for _, s := range secrets {
+		if len(s) < minLiteral {
+			continue
+		}
+		for _, form := range []string{s, url.QueryEscape(s), url.PathEscape(s)} {
+			out = strings.ReplaceAll(out, form, Mask)
+		}
+	}
+	return URL(out)
+}

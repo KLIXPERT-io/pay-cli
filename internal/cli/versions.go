@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/KLIXPERT-io/pay-cli/internal/apierr"
 	"github.com/KLIXPERT-io/pay-cli/internal/discovery"
+	"github.com/KLIXPERT-io/pay-cli/internal/docdiff"
 	"github.com/KLIXPERT-io/pay-cli/internal/output"
 	"github.com/KLIXPERT-io/pay-cli/internal/payload"
 	"github.com/KLIXPERT-io/pay-cli/internal/payload/query"
@@ -301,7 +301,7 @@ pay raw GET pages/versions --query 'where[version._status][equals]=published'`,
 			}
 			env := output.New(safety.CmdVersionsList, output.KindVersionList, docs).
 				WithTarget(scope.envTarget()).
-				WithPage(envPage(list.Page, len(docs), false)).
+				WithPage(envPage(list.Page, len(docs), list.Page.HasNextPage)).
 				WithMeta(run.meta()).
 				WithRawBody(list.Raw, !cfg.Redact)
 			return env, nil
@@ -381,6 +381,7 @@ func newVersionsGetCmd(rt *Runtime) *cobra.Command {
 	var (
 		globalSlug string
 		depth      int
+		rich       richTextFlag
 	)
 	cmd := &cobra.Command{
 		Use:   "get [collection] <versionId>",
@@ -396,6 +397,9 @@ The version id is the id of the VERSION record, not of the document. Get it from
 	cmd.RunE = runData(rt, safety.CmdVersionsGet, func(ctx context.Context, cmd *cobra.Command, d *Deps, args []string) (*output.Envelope, error) {
 		{
 			cfg := d.cfg()
+			if err := rich.validate(); err != nil {
+				return nil, err
+			}
 			client, err := d.requireClient()
 			if err != nil {
 				return nil, err
@@ -423,11 +427,13 @@ The version id is the id of the VERSION record, not of the document. Get it from
 				WithTarget(scope.envTarget()).
 				WithMeta(run.meta()).
 				WithRawBody(raw, !cfg.Redact)
+			rich.apply(env)
 			return env, nil
 		}
 	})
 	cmd.Flags().StringVar(&globalSlug, "global", "", "target this global instead of a collection")
 	cmd.Flags().IntVar(&depth, "depth", 0, "relationship expansion depth")
+	rich.register(cmd)
 
 	SetHelp(cmd, versionsGetHelp())
 	return cmd
@@ -446,8 +452,9 @@ func versionsGetHelp() *Help {
 			{Name: "versionId", Required: true, Type: "string", Example: "20"},
 		},
 		FlagInfo: map[string]FlagInfo{
-			"depth":  {Min: intPtr(0), Max: intPtr(10)},
-			"global": {Note: "target a global instead of a collection"},
+			"depth":    {Min: intPtr(0), Max: intPtr(10)},
+			"global":   {Note: "target a global instead of a collection"},
+			"richtext": richTextFlagInfo,
 		},
 		Output: OutputSpec{
 			Kind:     output.KindVersion,
@@ -463,6 +470,7 @@ func versionsGetHelp() *Help {
 			{Why: "one field as it was at that point",
 				Cmd: "pay versions get pages 20 --path '.version.title'"},
 			{Why: "a global's version", Cmd: "pay versions get --global crm-brand 11"},
+			{Why: "how an old version's text read, as Markdown", Cmd: "pay versions get pages 20 --richtext md --path '.version.layout'"},
 		},
 		Mistakes: []Mistake{
 			{Wrong: "Passing the document id.",
@@ -483,6 +491,7 @@ func newVersionsRestoreCmd(rt *Runtime) *cobra.Command {
 	var (
 		globalSlug string
 		draft      bool
+		unpublish  bool
 		depth      int
 	)
 	cmd := &cobra.Command{
@@ -513,6 +522,33 @@ on a versioned collection.
 			if err != nil {
 				return nil, err
 			}
+			if err := checkStatusFlags(draft, false, unpublish); err != nil {
+				return nil, err
+			}
+			if unpublish && scope.global != nil {
+				return nil, apierr.New(apierr.CodeInvalidArgs,
+					"--unpublish applies to a collection document; a global's restore always rewrites the stored global").
+					WithHint("drop --unpublish")
+			}
+			// The version record is read at most once: the guard below and
+			// the backup (its parent document id) both need it.
+			var version payload.Doc
+			readVersion := func() (payload.Doc, error) {
+				if version != nil {
+					return version, nil
+				}
+				v, _, err := client.VersionGet(ctx, scope.target, versionID, query.Params{Depth: query.IntPtr(0)},
+					payload.WithKnownRoute())
+				if err == nil {
+					version = v
+				}
+				return v, err
+			}
+			// §10.2.3: a draft version restored without --draft unpublishes
+			// a published document — refused unless --unpublish says so.
+			if err := d.checkVersionRestore(ctx, client, scope, versionID, draft, unpublish, readVersion); err != nil {
+				return nil, err
+			}
 
 			p := query.Params{Depth: query.IntPtr(depth)}
 			if draft {
@@ -529,11 +565,26 @@ on a versioned collection.
 			}
 			w := d.newWriteOp(op, scope.slug(), "POST", path).withIDs([]any{versionID})
 			w.global = scope.global != nil
+			// §12.8: back up the document the version is about to overwrite.
+			// The ids on this writeOp are VERSION ids, so the document's own
+			// id is looked up from the version record — only when backups are
+			// on, so nobody else pays for the read.
+			if bt, err := versionRestoreBackupTarget(d, scope, versionID, p, readVersion); err != nil {
+				return nil, err
+			} else if bt != nil {
+				w = w.withBackup(ctx, *bt)
+			}
 
 			if cfg.DryRun {
+				// F7 stage B / §10.2.1: what the restore changes, and the
+				// nested rows it would leave behind.
+				diff, dw := d.versionRestorePreview(ctx, client, scope, versionID, p)
+				if diff != nil {
+					w.dryDiff = diff
+				}
 				q, _ := p.Encode()
 				return emitDryRun(d, w, safety.CmdVersionsRestore, "POST",
-					client.URLFor(&payload.Request{Method: "POST", Path: path, Query: q}), nil, 1, []any{versionID})
+					client.URLFor(&payload.Request{Method: "POST", Path: path, Query: q}), nil, 1, []any{versionID}, dw...)
 			}
 			if err := w.confirm(1); err != nil {
 				return nil, err
@@ -567,11 +618,21 @@ on a versioned collection.
 					Cmd:    fmt.Sprintf("pay get %s %s --depth 0%s", scope.slug(), res.Doc.IDString(), d.profileFlag()),
 				})
 			}
+			// §10.2.1: restoring a version with a different nested structure
+			// is a restructure like any other; the stored row is read back.
+			o := orphanTarget{t: scope.coll, g: scope.global, id: res.Doc.IDString()}
+			if scope.global != nil || (scope.coll != nil && o.id != "") {
+				warns, _ := d.orphanCheckAfterWrite(ctx, client, o, nil, res.Doc, p, false, false)
+				for _, warn := range warns {
+					env.AddWarning(warn)
+				}
+			}
 			return w.finish(env, res.HTTP, 1, 0, "")
 		}
 	})
 	cmd.Flags().StringVar(&globalSlug, "global", "", "target this global instead of a collection")
-	cmd.Flags().BoolVar(&draft, "draft", false, "restore into the draft rather than publishing it")
+	cmd.Flags().BoolVar(&draft, "draft", false, "restore as a new draft on top; without it the version's own _status is written to the live document")
+	cmd.Flags().BoolVar(&unpublish, "unpublish", false, "allow restoring a DRAFT version over a published document, taking it offline")
 	cmd.Flags().IntVar(&depth, "depth", 0, "relationship expansion depth of the echoed document")
 
 	SetHelp(cmd, versionsRestoreHelp())
@@ -582,7 +643,7 @@ on a versioned collection.
 func versionsRestoreHelp() *Help {
 	return &Help{
 		Synopsis: []string{
-			"pay versions restore <collection> <versionId> [--draft] [--depth N] --yes",
+			"pay versions restore <collection> <versionId> [--draft|--unpublish] [--depth N] --yes",
 			"pay versions restore --global <slug> <versionId> --yes",
 		},
 		Args: []ArgSpec{
@@ -591,9 +652,11 @@ func versionsRestoreHelp() *Help {
 			{Name: "versionId", Required: true, Type: "string", Example: "20"},
 		},
 		FlagInfo: map[string]FlagInfo{
-			"depth":  {Min: intPtr(0), Max: intPtr(10)},
-			"draft":  {Note: "restore into the draft instead of publishing the restored content"},
-			"global": {Note: "target a global instead of a collection"},
+			"depth": {Min: intPtr(0), Max: intPtr(10)},
+			"draft": {Note: "restore as a new draft on top; the live document stays as it is. Without it the version's own " +
+				"_status is written to the live row, so a draft version would unpublish a published document (refused unless --unpublish)"},
+			"unpublish": {Note: "restore a draft version into the live row of a published document, taking it offline deliberately"},
+			"global":    {Note: "target a global instead of a collection"},
 		},
 		Output: OutputSpec{
 			Kind:     output.KindDoc,
@@ -609,7 +672,7 @@ func versionsRestoreHelp() *Help {
 				Cmd: "pay versions restore pages 20 --dry-run"},
 			{Why: "run it; --yes is required in a non-TTY (else exit 11)",
 				Cmd: "pay versions restore pages 20 --yes"},
-			{Why: "restore into the draft rather than publishing the old content",
+			{Why: "restore as a new draft on top; the live page stays as it is",
 				Cmd: "pay versions restore pages 20 --draft --yes"},
 			{Why: "a global", Cmd: "pay versions restore --global crm-brand 11 --dry-run"},
 		},
@@ -620,8 +683,10 @@ func versionsRestoreHelp() *Help {
 				Right: "On a versioned collection the overwritten content becomes a version of its own, so `pay versions list` still has it."},
 			{Wrong: "Passing the document id instead of the version id.",
 				Right: "Use the `id` from `pay versions list <collection> --id <docId>`; `parent` there is the document id."},
+			{Wrong: "Restoring a draft version of a published page without --draft.",
+				Right: "Payload writes the version's _status \"draft\" into the live row and the page goes offline, so PayCLI refuses it. --draft restores it as a new draft on top; --unpublish takes the page offline deliberately."},
 			{Wrong: "Restoring without diffing first.",
-				Right: "`pay versions diff <collection> <old> <new>` names every changed leaf path, client-side, before you overwrite anything."},
+				Right: "`pay versions diff <collection> <old> <new>` lists every change (rows by id, rich text as text), client-side, before you overwrite anything."},
 		},
 		SeeAlso: []string{"pay versions diff <collection> <a> <b>",
 			"pay versions list <collection> --id <docId>", "pay update <collection> <id>"},
@@ -630,14 +695,19 @@ func versionsRestoreHelp() *Help {
 
 func newVersionsDiffCmd(rt *Runtime) *cobra.Command {
 	var globalSlug string
+	var ignore []string
+	var includeTimestamps, full bool
 	cmd := &cobra.Command{
 		Use:   "diff [collection] <versionA> <versionB>",
 		Short: "Compare two versions field by field",
-		Long: `Compare two version records CLIENT-SIDE and report the changed leaf paths.
+		Long: `Compare two version records CLIENT-SIDE and report what changed.
 
 Payload has no diff endpoint, so this fetches both versions and compares their
-"version" sub-documents. Volatile bookkeeping keys (updatedAt, createdAt and the
-version record's own id) are excluded.
+"version" sub-documents with the same structural diff as ` + "`pay diff`" + `: rows are
+matched by id (a reorder is reported as moves, an edit inside a moved row at its
+new path), a block whose type changed is one row change, and rich text is
+reported once per field as plain text. createdAt/updatedAt (at every depth) and
+the version record's own id are excluded.
 
 `,
 		Args: cobra.RangeArgs(2, 3),
@@ -676,19 +746,34 @@ version record's own id) are excluded.
 				return nil, err
 			}
 
-			changes := diffVersions(versionBody(docA), versionBody(docB))
-			env := output.New(safety.CmdVersionsDiff, output.KindOpResult, map[string]any{
-				"a":       vA,
-				"b":       vB,
-				"changes": changes,
-				"changed": len(changes),
-			}).
+			opts := versionDiffOptions(ignore, includeTimestamps, full)
+			res := docdiff.Diff(versionBody(docA), versionBody(docB), opts)
+			var warns []output.Warning
+			if d.cfg().Redact {
+				if paths := redactChanges(res.Changes); len(paths) > 0 {
+					warns = append(warns, output.DataRedactedWarning(paths))
+				}
+			}
+			var data any = versionsDiffData(vA, vB, res, full)
+			if d.RT != nil && d.RT.Out != nil && d.RT.Out.Format == output.FormatTable && d.cfg().Path == "" {
+				// --output table is for a person reading a change list, exactly
+				// like `pay diff`; every other format gets the object.
+				data = diffTableRows(res)
+				d.RT.Out.Columns = []string{"op", "path", "from", "to"}
+			}
+			env := output.New(safety.CmdVersionsDiff, output.KindOpResult, data).
 				WithTarget(scope.envTarget()).
 				WithMeta(run.meta())
+			for _, w := range warns {
+				env.AddWarning(w)
+			}
 			return env, nil
 		}
 	})
 	cmd.Flags().StringVar(&globalSlug, "global", "", "target this global instead of a collection")
+	cmd.Flags().StringArrayVar(&ignore, "ignore", nil, "ignore a path and everything below it (repeatable; `[]` matches any index: layout[].blockName)")
+	cmd.Flags().BoolVar(&includeTimestamps, "include-timestamps", false, "also compare createdAt/updatedAt")
+	cmd.Flags().BoolVar(&full, "full", false, "keep rich-text editor states and nested values lossless instead of abbreviating them to text")
 
 	SetHelp(cmd, versionsDiffHelp())
 	return cmd
@@ -708,11 +793,19 @@ func versionsDiffHelp() *Help {
 			{Name: "versionB", Required: true, Type: "string", Example: "37"},
 		},
 		FlagInfo: map[string]FlagInfo{
-			"global": {Note: "target a global instead of a collection"},
+			"global":             {Note: "target a global instead of a collection"},
+			"ignore":             {Grammar: "PATH", Repeatable: true, Note: "a path and its subtree; `[]` or `[*]` matches any index (layout[].blockName), `[3]` one index"},
+			"include-timestamps": {Note: "createdAt/updatedAt are ignored at every depth unless this is set"},
+			"full":               {Note: "rich-text changes carry the editor states in a/b; values nested in added/removed rows are not abbreviated"},
 		},
 		Output: OutputSpec{
-			Kind:     output.KindOpResult,
-			Skeleton: `{"a":"20","b":"37","changed":3,"changes":[{"path":"slug","a":"old","b":"new","kind":"changed"}]}`,
+			Kind: output.KindOpResult,
+			Skeleton: `{"a":"20","b":"37","identical":false,"changed":3,
+ "summary":{"total":3,"added":0,"removed":1,"changed":1,"moved":1,"rich_text":1,"fields":["layout","slug"]},
+ "changes":[{"path":"slug","kind":"changed","a":"old","b":"new","op":"change"},
+            {"path":"layout[1]","kind":"moved","a":null,"b":null,"op":"move","value_kind":"row","id":"6ab8…","block_type":"cta","from_index":3,"to_index":1},
+            {"path":"layout[2].content","kind":"changed","a":"Alter Text","b":"Neuer Text","op":"change","value_kind":"richtext","a_text":"Alter Text","b_text":"Neuer Text"}]}
+--output table prints one line per change: OP PATH FROM TO.`,
 		},
 		ExitCodes: ReadExitCodes,
 		Examples: []Example{
@@ -722,15 +815,21 @@ func versionsDiffHelp() *Help {
 				Cmd: "pay versions diff pages 20 37"},
 			{Why: "the changed paths only",
 				Cmd: "pay versions diff pages 20 37 --path '.changes[].path'"},
-			{Why: "how many leaves differ at all",
+			{Why: "how many changes at all",
 				Cmd: "pay versions diff pages 20 37 --path '.changed'"},
+			{Why: "which top-level fields a restore would rewrite",
+				Cmd: "pay versions diff pages 20 37 --path '.summary.fields'"},
+			{Why: "a readable change list",
+				Cmd: "pay versions diff pages 20 37 --output table"},
 			{Why: "a global", Cmd: "pay versions diff --global crm-brand 11 11"},
 		},
 		Mistakes: []Mistake{
 			{Wrong: "Expecting Payload to compute the diff.",
 				Right: "There is no diff endpoint. This fetches BOTH versions (two requests) and compares them client-side."},
-			{Wrong: "Reading `changed: 0` as \"the versions are identical\".",
-				Right: "updatedAt, createdAt and the version record's own id are excluded as volatile bookkeeping. Two snapshots with no content change report 0 deliberately."},
+			{Wrong: "Reading `changed: 0` as \"the versions are byte-identical\".",
+				Right: "updatedAt, createdAt (at every depth) and the version record's own id are excluded as volatile bookkeeping, and null equals an absent key. Two snapshots with no content change report `identical: true` deliberately; --include-timestamps compares the timestamps too."},
+			{Wrong: "Expecting one change per changed leaf inside a rich-text field or a re-typed block.",
+				Right: "Rich text is one change per field (a/b and a_text/b_text are its plain text; --full keeps the editor states), and a block whose blockType changed is one row change (value_kind: row). A reorder is reported as moves, not as every row after it changing."},
 			{Wrong: "Passing document ids.",
 				Right: "Both arguments are VERSION record ids from `pay versions list`."},
 			{Wrong: "Diffing across two different documents and trusting the result.",
@@ -772,53 +871,86 @@ func versionBody(doc payload.Doc) map[string]any {
 	return map[string]any(doc)
 }
 
-// versionChange is one differing leaf path.
+// versionDiffOptions are the docdiff options of `pay versions diff`. The
+// version record's own id (and a Mongo _id) always differs between two
+// records and is never news.
+func versionDiffOptions(ignore []string, includeTimestamps, full bool) docdiff.Options {
+	return docdiff.Options{
+		IncludeTimestamps: includeTimestamps,
+		IgnorePaths:       append([]string{"id", "_id"}, ignore...),
+		Full:              full,
+	}
+}
+
+// versionChange is one change in `pay versions diff`'s data.changes.
+//
+// The first four keys are the shape this command has always printed —
+// {path, kind: added|removed|changed, a, b} — so a caller written against
+// v0.1.0 keeps working; kind gained "moved". Everything after them is the
+// docdiff change in this command's a/b vocabulary: op (add|remove|change|move,
+// the same values `pay diff` prints), value_kind (row|richtext), the row's id
+// and block_type, from/to_index for a move, a_text/b_text for rich text, and
+// detail.
 type versionChange struct {
 	Path string `json:"path"`
+	Kind string `json:"kind"`
 	A    any    `json:"a"`
 	B    any    `json:"b"`
-	Kind string `json:"kind"` // added | removed | changed
+
+	Op        docdiff.Op `json:"op"`
+	ValueKind string     `json:"value_kind,omitempty"`
+	ID        any        `json:"id,omitempty"`
+	BlockType string     `json:"block_type,omitempty"`
+	FromIndex *int       `json:"from_index,omitempty"`
+	ToIndex   *int       `json:"to_index,omitempty"`
+	AText     *string    `json:"a_text,omitempty"`
+	BText     *string    `json:"b_text,omitempty"`
+	Detail    string     `json:"detail,omitempty"`
 }
 
-var versionDiffSkip = map[string]bool{
-	"id": true, "updatedAt": true, "createdAt": true, "_id": true,
+// legacyVersionKind maps a docdiff op to the word this command has always
+// used in `kind`.
+var legacyVersionKind = map[docdiff.Op]string{
+	docdiff.OpAdd: "added", docdiff.OpRemove: "removed",
+	docdiff.OpChange: "changed", docdiff.OpMove: "moved",
 }
 
-// diffVersions walks both documents' leaf paths and reports the differences.
-func diffVersions(a, b map[string]any) []versionChange {
-	leftLeaves := map[string]any{}
-	rightLeaves := map[string]any{}
-	collectLeaves("", a, nil, leftLeaves)
-	collectLeaves("", b, nil, rightLeaves)
-
-	seen := map[string]bool{}
-	var paths []string
-	for p := range leftLeaves {
-		seen[p] = true
-		paths = append(paths, p)
-	}
-	for p := range rightLeaves {
-		if !seen[p] {
-			paths = append(paths, p)
+// versionChanges renders a docdiff result in this command's vocabulary. A
+// rich-text change that docdiff abbreviated carries its plain text in a/b
+// as well as in a_text/b_text, so a v0.1.0 caller reading a/b sees words,
+// not two nulls.
+func versionChanges(res docdiff.Result, full bool) []versionChange {
+	out := make([]versionChange, 0, len(res.Changes))
+	for _, c := range res.Changes {
+		vc := versionChange{
+			Path: c.Path, Kind: legacyVersionKind[c.Op], A: c.From, B: c.To,
+			Op: c.Op, ValueKind: c.Kind, ID: c.ID, BlockType: c.BlockType,
+			FromIndex: c.FromIndex, ToIndex: c.ToIndex,
+			AText: c.FromText, BText: c.ToText, Detail: c.Detail,
 		}
-	}
-	sort.Strings(paths)
-
-	out := []versionChange{}
-	for _, path := range paths {
-		if versionDiffSkip[rootOf(strings.SplitN(path, "[", 2)[0])] {
-			continue
+		if c.Kind == docdiff.KindRichText && !full {
+			vc.A, vc.B = nil, nil
+			if c.FromText != nil {
+				vc.A = *c.FromText
+			}
+			if c.ToText != nil {
+				vc.B = *c.ToText
+			}
 		}
-		lv, lok := leftLeaves[path]
-		rv, rok := rightLeaves[path]
-		switch {
-		case lok && !rok:
-			out = append(out, versionChange{Path: path, A: lv, Kind: "removed"})
-		case !lok && rok:
-			out = append(out, versionChange{Path: path, B: rv, Kind: "added"})
-		case !jsonEqual(lv, rv):
-			out = append(out, versionChange{Path: path, A: lv, B: rv, Kind: "changed"})
-		}
+		out = append(out, vc)
 	}
 	return out
+}
+
+// versionsDiffData is data for `pay versions diff`: the two version ids,
+// identical, the docdiff summary, changes, and changed (their count).
+func versionsDiffData(vA, vB string, res docdiff.Result, full bool) map[string]any {
+	return map[string]any{
+		"a":         vA,
+		"b":         vB,
+		"identical": res.Identical,
+		"summary":   res.Summary,
+		"changes":   versionChanges(res, full),
+		"changed":   len(res.Changes),
+	}
 }

@@ -35,6 +35,19 @@ type Record struct {
 	LoginField      string     `json:"login_field,omitempty"`
 	Fingerprint     string     `json:"fingerprint,omitempty"`
 	UpdatedAt       *time.Time `json:"updated_at,omitempty"`
+	// PreviewSecret is the site's draft-preview secret (F9: the Payload
+	// website template's PREVIEW_SECRET). It is a credential in its own right
+	// and independent of the API credential: `pay auth login` replacing the
+	// key or token keeps it (see Put), and `pay auth logout` removes it with
+	// the rest of the record.
+	PreviewSecret string `json:"preview_secret,omitempty"`
+}
+
+// HasAPICredential reports whether the record carries an API credential at
+// all. A record that holds only a preview secret does not authenticate
+// anything.
+func (r *Record) HasAPICredential() bool {
+	return r != nil && (r.APIKey != "" || r.Token != "" || r.Keyring)
 }
 
 // JWT returns the record's token as a JWT record.
@@ -123,6 +136,12 @@ func (s *FileStore) Put(profile string, rec *Record, now time.Time) error {
 		return err
 	}
 	stamped := *rec
+	// A login replaces the API credential, never the preview secret: the two
+	// are rotated independently, and losing the preview secret on every
+	// re-login would make `pay url --preview` fail for no visible reason.
+	if prev, ok := creds.Profiles[profile]; ok && prev != nil && stamped.PreviewSecret == "" {
+		stamped.PreviewSecret = prev.PreviewSecret
+	}
 	stamped.Fingerprint = recordFingerprint(&stamped)
 	stamp := now.UTC()
 	stamped.UpdatedAt = &stamp

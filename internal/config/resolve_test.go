@@ -388,6 +388,7 @@ func TestDefaultsAreTheSpecDefaults(t *testing.T) {
 		{"accept_language", got.AcceptLanguage, "en"},
 		{"max_bulk", got.MaxBulk, 100},
 		{"max_docs", got.MaxDocs, 100},
+		{"census_max_docs", got.CensusMaxDocs, 500},
 		{"confirm_writes", got.ConfirmWrites, false},
 		{"discovery_ttl", got.DiscoveryTTL, 24 * time.Hour},
 		{"access_ttl", got.AccessTTL, 10 * time.Minute},

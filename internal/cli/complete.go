@@ -174,7 +174,8 @@ func CompleteFieldPaths(rt *Runtime, mode FieldMode) func(*cobra.Command, []stri
 // CompleteProfiles completes --profile from the two config files. It reads no
 // credentials and never touches the keychain.
 // CompleteBlockSlugs completes `pay describe <entity> --block <slug>` from the
-// cached shard's block schemas.
+// cached shard's block schemas and the cached block census (§7.10c) — on a
+// project with introspection disabled the census is the only source of slugs.
 //
 // It suggests the slugs, never the GraphQL interfaceNames: an interfaceName is
 // exactly the value Payload silently drops (§7.10), so offering one on TAB
@@ -185,36 +186,22 @@ func CompleteBlockSlugs(rt *Runtime) func(*cobra.Command, []string, string) ([]s
 		if !rt.completionSetup(cmd) || len(args) == 0 {
 			return noSuggestions()
 		}
-		slug := args[0]
-		m, ok := rt.CachedManifest()
+		ref, ok := rt.completionEntity(args[0])
 		if !ok {
 			return noSuggestions()
 		}
-		kind := cache.KindCollection
-		if _, isColl := m.Collection(slug); !isColl {
-			if _, isGlobal := m.Global(slug); !isGlobal {
-				return noSuggestions()
-			}
-			kind = cache.KindGlobal
-		}
-		shard, ok := rt.CachedShard(slug, kind)
-		if !ok || rt.overBudget(started) {
+		// The slug is what gets written; the block's own label or
+		// description rides along as cobra's tab-completion description
+		// (value\tdescription), so choosing between cta, content and
+		// mediaBlock does not need a second command. A block the project
+		// never documented completes with what the census observed of it,
+		// or as a bare slug — nothing is invented.
+		shard, _ := rt.CachedShard(ref.Slug, ref.cacheKind())
+		if rt.overBudget(started) {
 			return noSuggestions()
 		}
-		out := []string{}
-		for _, b := range shard.BlockSlugsFor() {
-			if !strings.HasPrefix(b, toComplete) {
-				continue
-			}
-			// The slug is what gets written; the block's own label or
-			// description rides along as cobra's tab-completion description
-			// (value\tdescription), so choosing between cta, content and
-			// mediaBlock does not need a second command. A block the project
-			// never documented completes as a bare slug — nothing is invented.
-			out = append(out, b+completionDescription(shard, b))
-		}
-		sort.Strings(out)
-		return out, cobra.ShellCompDirectiveNoFileComp
+		k := discovery.NewBlockKnowledge(ref.Kind, ref.Slug, rt.completionCensus(started), shard)
+		return censusSlugCandidates(toComplete, k, nil), cobra.ShellCompDirectiveNoFileComp
 	}
 }
 

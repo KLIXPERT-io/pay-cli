@@ -39,9 +39,10 @@ func newAuthCmd(rt *Runtime) *cobra.Command {
 		newAuthRenameCmd(rt),
 		newAuthStatusCmd(rt),
 		newAuthFixPermsCmd(rt),
+		newAuthPreviewSecretCmd(rt),
 	)
 	SetHelp(cmd, &Help{
-		Synopsis: []string{"pay auth login|list|use|logout|test|rename|status|fix-perms"},
+		Synopsis: []string{"pay auth login|list|use|logout|test|rename|status|fix-perms|preview-secret"},
 		Long: "Auth is verified by ONE thing only: GET {base}{api_path}/{authCollection}/me returning\n" +
 			"a non-null user. Status codes prove nothing here — a wrong API key returns 200 with\n" +
 			"{\"user\":null} (verified), and many projects allow unauthenticated reads.",
@@ -567,7 +568,9 @@ func newAuthStatusCmd(rt *Runtime) *cobra.Command {
 					data["auth_collection_source"] = discovery.SourceCached
 				}
 			}
-			if rec, ok, err := rt.SecretStore().File.Get(rt.Cfg.Profile); err == nil && ok && rec != nil {
+			// A record that holds only a preview secret (F9) authenticates
+			// nothing, so it must not flip `authenticated`.
+			if rec, ok, err := rt.SecretStore().File.Get(rt.Cfg.Profile); err == nil && ok && rec.HasAPICredential() {
 				data["key_fingerprint"] = rec.Fingerprint
 				data["authenticated"] = true
 				switch {

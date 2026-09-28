@@ -111,6 +111,7 @@ func uploadHelp() *Help {
 		FlagInfo: map[string]FlagInfo{
 			"set":          {Grammar: "key=value", Repeatable: true},
 			"set-json":     {Grammar: "key=JSON", Repeatable: true},
+			"set-md":       {Grammar: setMDGrammar, Repeatable: true, Note: setMDBodyNote},
 			"filename":     {Note: "REQUIRED when the source is -"},
 			"content-type": {Note: "sniffed from the extension when omitted"},
 			"max-size":     {Grammar: "100MB | 2GB | 512KB"},
@@ -171,9 +172,11 @@ func runUpload(ctx context.Context, d *Deps, f *uploadFlags, slug, source string
 		return nil, err
 	}
 	if f.replace != "" {
-		if e := d.checkID(t, t.Slug, f.replace); e != nil {
+		canon, e := d.canonicalID(t, t.Slug, f.replace)
+		if e != nil {
 			return nil, e
 		}
+		f.replace = canon
 	}
 
 	maxSize, err := parseSize(f.maxSize)
@@ -184,6 +187,27 @@ func runUpload(ctx context.Context, d *Deps, f *uploadFlags, slug, source string
 	if err != nil {
 		return nil, err
 	}
+	// F6: a {"$ref": …} in the metadata (a folder, a relationship) becomes
+	// an id before the file is opened, looked up in the --locale given.
+	sc := writeScope{shard: t.Shard}
+	if f.replace != "" {
+		sc.preimage = func(ctx context.Context) (map[string]any, error) {
+			doc, err := d.readOrphanTarget(ctx, client, orphanTarget{t: t, id: f.replace}, query.Params{Locale: f.locale}, true)
+			return map[string]any(doc), err
+		}
+	}
+	fields, prepWarns, err := d.prepareWriteBody(ctx, sc, fields, f.locale)
+	if err != nil {
+		return nil, err
+	}
+	warnings = append(warnings, prepWarns...)
+	// --set-md into a field the schema cannot type: checked against the
+	// replaced document, else against other documents of the collection.
+	mdWarns, err := f.data.guardMDTargets(ctx, d, client, orphanTarget{t: t, id: f.replace}, query.Params{Locale: f.locale})
+	if err != nil {
+		return nil, err
+	}
+	warnings = append(warnings, mdWarns...)
 
 	body, filename, contentType, closer, err := openUploadSource(ctx, d, f, source)
 	if err != nil {
@@ -234,7 +258,10 @@ func runUpload(ctx context.Context, d *Deps, f *uploadFlags, slug, source string
 	}
 	w := d.newWriteOp(op, t.Slug, method, path)
 	if f.replace != "" {
-		w = w.withIDs([]any{f.replace})
+		// §12.8: --replace overwrites an existing document's metadata (and
+		// its file); the document is backed up, the old file bytes are not.
+		w = w.withIDs([]any{f.replace}).
+			withBackup(ctx, BackupTarget{Collection: t, Params: uploadParams})
 	}
 
 	if cfg.DryRun {

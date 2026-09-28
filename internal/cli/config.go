@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -85,6 +87,9 @@ func newConfigPathsCmd(rt *Runtime) *cobra.Command {
 			data["project_config"] = rt.Project.ConfigPath
 			data["config_file_exists"] = rt.UserFile != nil && rt.UserFile.Exists
 			data["project_file_exists"] = rt.ProjectFile != nil && rt.ProjectFile.Exists
+			// §12.8: "" when backups are off. It is a setting, not one of the
+			// fixed §4.1 directories, so its source is in `pay config explain`.
+			data["backup_dir"] = rt.Cfg.BackupDir
 			return output.New("config paths", output.KindOpResult, data), nil
 		}),
 	}
@@ -366,6 +371,23 @@ func (rt *Runtime) editConfig(command, key, value string, remove bool) (*output.
 		return nil, err
 	}
 
+	// A relative backup_dir anchors to the directory of the file that sets it
+	// (§12.8.1) — here the USER config's — which is never what an agent that
+	// types `pay config set backup_dir .pay-backups` in a project means. Store
+	// the directory it means: relative to where the command runs.
+	var anchored *output.Warning
+	if !remove && key == "backup_dir" && value != "" && !filepath.IsAbs(value) &&
+		value != "~" && !strings.HasPrefix(value, "~/") && rt.App.WorkDir != "" {
+		abs := filepath.Join(rt.App.WorkDir, value)
+		anchored = &output.Warning{
+			Code: WarnConfigPathAnchored,
+			Message: fmt.Sprintf("backup_dir %q is relative; the user config would anchor it to its own directory, so the "+
+				"absolute path %s (relative to the working directory) was stored", value, abs),
+			Hint: "for a backup directory next to the project, put backup_dir = \"" + value + "\" in ./pay.toml instead: a relative value there anchors to that file",
+		}
+		value = abs
+	}
+
 	changed := false
 	if remove {
 		changed = tomlDelete(doc, segments)
@@ -396,8 +418,16 @@ func (rt *Runtime) editConfig(command, key, value string, remove bool) (*output.
 		data["value"] = typedConfigValueFor(segments, value)
 		data["written"] = changed
 	}
-	return output.New(command, output.KindOpResult, data), nil
+	env := output.New(command, output.KindOpResult, data)
+	if anchored != nil {
+		env.AddWarning(*anchored)
+	}
+	return env, nil
 }
+
+// WarnConfigPathAnchored: `pay config set` stored a relative path as the
+// absolute path it means.
+const WarnConfigPathAnchored = "config_path_anchored"
 
 func decodeTOMLFile(path string) (map[string]any, error) {
 	data, err := os.ReadFile(path)

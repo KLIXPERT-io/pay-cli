@@ -23,6 +23,10 @@ const (
 	CodeCacheCorrupt             Code = "cache_corrupt"
 	CodeUpdateVerificationFailed Code = "update_verification_failed"
 	CodeAuditWriteFailed         Code = "audit_write_failed"
+
+	// CodeBackupFailed is §12.8's pre-write backup failing. Like the pre-write
+	// audit record it ABORTS the write: nothing was sent.
+	CodeBackupFailed Code = "backup_failed"
 )
 
 // Exit 2 — auth: *your credentials* are the problem.
@@ -53,6 +57,15 @@ const (
 	// well formed and the document simply does not contain that row — the same
 	// distinction doc_not_found draws for a document.
 	CodeSelectorNoMatch Code = "selector_no_match"
+	// CodeNotPublished is `pay get --published-only` on a document that
+	// exists but has no published state (never published, or unpublished).
+	// It is a not-found: the caller asked for the published document and
+	// there is none.
+	CodeNotPublished Code = "not_published"
+	// CodeRefUnresolved is a {"$ref": …} in a write body (create, update,
+	// upsert, a sync manifest) that matched no document, or a plan-local
+	// {"$ref":"@key"} naming no item of the plan.
+	CodeRefUnresolved Code = "ref_unresolved"
 )
 
 // Exit 5 — validation / bad input.
@@ -87,6 +100,39 @@ const (
 	// CodeNoEdits is `pay apply` on an envelope no transform ever touched, so
 	// there is no field list to narrow the write to.
 	CodeNoEdits Code = "no_edits"
+	// CodeNotRichText is a `pay lexical` input that holds no Lexical editor
+	// state where one was expected: a bare value that is not {"root":…}, a
+	// document without a richText field, or a --field that names something
+	// else.
+	CodeNotRichText Code = "not_rich_text"
+	// CodeRichTextRendered is a write (pay apply, --data/--data-file, a
+	// `pay blocks` edit stage) handed a document whose rich text was rendered
+	// to Markdown or plain text by `--richtext md|text`. Payload does not
+	// reject a string in a richText field — it stores it, and the editor can
+	// no longer open the field — so PayCLI refuses before anything is sent.
+	CodeRichTextRendered Code = "richtext_rendered"
+	// CodeBackupTargetMismatch is `pay backups restore` pointed at a backup
+	// taken from a different profile or server than the one it would write
+	// to — restoring a stage document into production by accident.
+	CodeBackupTargetMismatch Code = "backup_target_mismatch"
+	// CodeSlugAmbiguous is a --slug that matched more than one document where
+	// the command acts on exactly one. error.did_you_mean lists the ids.
+	CodeSlugAmbiguous Code = "slug_ambiguous"
+	// CodeMatchAmbiguous is `pay upsert --match` (or a sync manifest item's
+	// "match") finding more than one document: the command would not know
+	// which one to update. error.did_you_mean lists the ids.
+	CodeMatchAmbiguous Code = "match_ambiguous"
+	// CodeRefAmbiguous is a {"$ref": …} matching more than one document.
+	// error.did_you_mean lists the ids, exactly like slug_ambiguous.
+	CodeRefAmbiguous Code = "ref_ambiguous"
+	// CodeRefCycle is a plan whose items reference each other in a cycle
+	// that contains a document still to be created: no order can give every
+	// item the id it needs.
+	CodeRefCycle Code = "ref_cycle"
+	// CodeManifestInvalid is a `pay plan`/`pay sync` manifest that cannot be
+	// planned: unreadable JSON, an unknown key, a missing collection, two
+	// items writing the same document. error.failures names every item.
+	CodeManifestInvalid Code = "manifest_invalid"
 )
 
 // Exit 6 — network / server.
@@ -109,6 +155,10 @@ const (
 const (
 	CodeAccessDenied      Code = "access_denied"
 	CodeAdminAccessDenied Code = "admin_access_denied"
+	// CodePreviewDenied is the site's preview route refusing the handshake
+	// (HTTP 403 from the website template's /next/preview): a wrong preview
+	// secret, or a credential payload.auth() did not accept.
+	CodePreviewDenied Code = "preview_denied"
 )
 
 // Exit 9 — config / profile.
@@ -119,6 +169,9 @@ const (
 	CodeBaseURLInvalid          Code = "base_url_invalid"
 	CodeEndpointNotPayload      Code = "endpoint_not_payload"
 	CodeAuthCollectionUnknown   Code = "auth_collection_unknown"
+	// CodePreviewSecretMissing is `pay url --preview` with a preview_path that
+	// needs {secret} and no preview secret configured for the profile.
+	CodePreviewSecretMissing Code = "preview_secret_missing"
 )
 
 // Exit 10 — capability / discovery.
@@ -135,6 +188,11 @@ const (
 	// project, not of the command line: Payload silently drops a row whose
 	// blockType it does not recognise and still answers 201.
 	CodeBlockTypeUnknown Code = "block_type_unknown"
+	// CodePreviewFailed is a preview handshake the site answered without
+	// issuing a cookie (no preview route at preview_path, a 5xx, a 2xx with
+	// no Set-Cookie). The site does not do draft preview the way the profile
+	// describes it.
+	CodePreviewFailed Code = "preview_failed"
 )
 
 // Exit 11 — confirmation required.
