@@ -776,10 +776,32 @@ with the fix for each.
 ```sh
 make check        # exactly what CI runs: fmt, vet, staticcheck, arch-lint, tests
 make test         # offline unit tests, -race -shuffle=on
+make test-focus RUN=TestGet PKG=./internal/cli   # one test, verbose
 make test-live    # integration tests; needs PAY_TEST_BASE_URL + PAY_TEST_API_KEY
 make build        # ./pay
 make snapshot     # full release artefacts, locally, without publishing
 ```
+
+To drive the CLI by hand against a local Payload, `make run` and friends use a sandbox
+`PAY_HOME` at `.pay-test/`, so a hand-run can neither read your real credentials nor
+rewrite your real config:
+
+```sh
+make dev                        # build, log a sandbox 'local' profile in, run pay doctor
+make run ARGS='get posts -l 3'  # run this build against that profile
+make dev-shell                  # a subshell where `pay` IS this build
+make dev-reset                  # throw the sandbox home away
+```
+
+Those need `PAY_TEST_BASE_URL` and `PAY_TEST_API_KEY` — export them, or write a
+gitignored `.env.local` that the Makefile includes:
+
+```make
+PAY_TEST_BASE_URL ?= http://localhost:3900
+PAY_TEST_API_KEY  ?= 1a2b3c...
+```
+
+`?=` keeps a value already exported in your shell winning over the file.
 
 `make lint` runs [`scripts/arch-lint.sh`](./scripts/arch-lint.sh), which enforces the
 architectural rules that cannot be expressed as types — process-surface confinement,
